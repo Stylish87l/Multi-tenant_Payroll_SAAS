@@ -1,0 +1,259 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Company {
+  id          String       @id @default(uuid())
+  name        String
+  tin         String?      @unique
+  address     String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+  employees   Employee[]
+  invites     Invite[]
+  payrollRuns PayrollRun[]
+  taxConfigs  TaxConfig[]
+  users       User[]
+
+  @@map("companies")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  companyId     String
+  email         String         @unique
+  password      String
+  name          String?
+  role          Role           @default(EMPLOYEE)
+  status        Status         @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
+  auditLogs     AuditLog[]
+  invites       Invite[]
+  notifications Notification[]
+  processedRuns PayrollRun[]   @relation("RunProcessor")
+  refreshTokens RefreshToken[]
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("users")
+}
+
+model Employee {
+  id                  String        @id @default(uuid())
+  companyId           String
+  name                String
+  email               String
+  age                 Int           @default(30)
+  basicSalary         Decimal       @db.Decimal(18, 4)
+  housingAllowance    Decimal       @default(0) @db.Decimal(18, 4)
+  transportAllowance  Decimal       @default(0) @db.Decimal(18, 4)
+  otherAllowance      Decimal       @default(0) @db.Decimal(18, 4)
+  isMarried           Boolean       @default(false)
+  hasResponsibility   Boolean       @default(false)
+  childrenCount       Int           @default(0)
+  isDisabled          Boolean       @default(false)
+  agedDependentsCount Int           @default(0)
+  bankName            String?
+  bankAccount         String?
+  ssnitNumber         String?       @unique
+  ghanaCardPin        String?       @unique
+  position            String?
+  isActive            Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  deletedAt           DateTime?
+  company             Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  payrollItems        PayrollItem[]
+
+  @@unique([companyId, email])
+  @@index([companyId, isActive])
+  @@map("employees")
+}
+
+model PayrollRun {
+  id            String        @id @default(uuid())
+  companyId     String
+  month         String
+  status        PayrollStatus @default(DRAFT)
+  runType       RunType       @default(REGULAR)
+  processedById String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+  items         PayrollItem[]
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  processedBy   User?         @relation("RunProcessor", fields: [processedById], references: [id])
+
+  @@unique([companyId, month])
+  @@index([companyId])
+  @@map("payroll_runs")
+}
+
+model PayrollItem {
+  id            String        @id @default(uuid())
+  payrollRunId  String
+  employeeId    String
+  grossSalary   Decimal       @db.Decimal(18, 4)
+  taxableIncome Decimal       @db.Decimal(18, 4)
+  ssnitEmployee Decimal       @db.Decimal(18, 4)
+  ssnitEmployer Decimal       @db.Decimal(18, 4)
+  ssnitTier1    Decimal       @db.Decimal(18, 4)
+  ssnitTier2    Decimal       @db.Decimal(18, 4)
+  payeTax       Decimal       @db.Decimal(18, 4)
+  netPay        Decimal       @db.Decimal(18, 4)
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentRef    String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollRun    PayrollRun    @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+
+  @@index([payrollRunId])
+  @@index([employeeId])
+  @@index([paymentStatus])
+  @@map("payroll_items")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  userId        String?
+  action        String
+  details       Json
+  ipAddress     String?
+  createdAt     DateTime @default(now())
+  correlationId String?
+  performedBy   String?
+  resourceId    String?
+  resourceType  String?
+  userAgent     String?
+  user          User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+model RefreshToken {
+  id               String    @id @default(uuid())
+  userId           String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  deviceInfo       String?
+  ipAddress        String?
+  lastUsedAt       DateTime?
+  revocationReason String?
+  revokedBy        String?
+  tokenId          String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenId])
+  @@map("refresh_tokens")
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  type      NotificationType
+  channel   NotificationChannel
+  status    NotificationStatus  @default(PENDING)
+  content   Json
+  expiresAt DateTime?
+  createdAt DateTime            @default(now())
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+model Invite {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  email     String
+  role      Role
+  expiresAt DateTime
+  companyId String
+  userId    String
+  createdAt DateTime @default(now())
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("invites")
+}
+
+model TaxConfig {
+  id        String   @id @default(uuid())
+  companyId String
+  year      Int
+  type      String
+  config    Json
+  createdAt DateTime @default(now())
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, type, year])
+  @@map("tax_configs")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  HR
+  ACCOUNTANT
+  EMPLOYEE
+  CUSTOM
+}
+
+enum Status {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum PayrollStatus {
+  DRAFT
+  FINALIZED
+  CANCELLED
+}
+
+enum RunType {
+  REGULAR
+  BONUS
+  ADJUSTMENT
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum NotificationType {
+  INVITE
+  PAYSLIP
+  ALERT
+  APPROVAL
+  SYSTEM
+  REMINDER
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+}

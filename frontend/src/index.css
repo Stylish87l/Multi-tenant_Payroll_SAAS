@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prefer loading Inter via <link rel="preload"> and <link rel="stylesheet"> in HTML.
+   If you must use @import, ensure font-display: swap is set in the hosted CSS. */
+
+/* Safe Design Tokens */
+:root {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+
+  /* Glass Variables */
+  --glass-bg: rgba(255, 255, 255, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-blur: 12px;
+
+  /* Primary color: keep both hex and rgb for flexibility */
+  --primary-hex: #10b981;
+  --primary-rgb: 16, 185, 129;
+  --glow-shadow: 0 0 20px rgba(var(--primary-rgb), 0.3);
+
+  /* Transition tokens scoped to theme changes */
+  --theme-transition-duration: 0.4s;
+  --theme-transition-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Safe area fallbacks */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.dark {
+  --bg-primary: #020617;
+  --bg-secondary: #0f172a;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+
+  --glass-bg: rgba(15, 23, 42, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-blur: 16px;
+
+  --primary-hex: #34d399;
+  --primary-rgb: 52, 211, 153;
+  --glow-shadow: 0 0 25px rgba(var(--primary-rgb), 0.2);
+}
+
+@layer base {
+  /* Limit global resets to avoid accessibility regressions */
+  html, body, #root {
+    height: 100%;
+  }
+
+  /* Apply border color defaults only to form controls and focusable elements */
+  input, textarea, select, button {
+    @apply border-slate-200 dark:border-slate-800;
+  }
+
+  /* Keep outlines for keyboard users; style them instead of removing */
+  :focus {
+    outline: 2px solid rgba(var(--primary-rgb), 0.18);
+    outline-offset: 2px;
+  }
+
+  body {
+    @apply antialiased selection:bg-emerald-500/30;
+    margin: 0;
+    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition:
+      background-color var(--theme-transition-duration) var(--theme-transition-ease),
+      color var(--theme-transition-duration) ease;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Respect reduced motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition: none !important;
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+}
+
+@layer components {
+  .glass-panel {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    transform: translateZ(0);
+    @apply shadow-xl shadow-black/5;
+    transition: box-shadow 0.25s ease, background-color 0.25s ease;
+  }
+
+  .btn-glow {
+    @apply transition-transform duration-200 active:scale-95 inline-flex items-center justify-center;
+    background: rgb(var(--primary-rgb));
+    color: white;
+    border-radius: 0.5rem;
+  }
+
+  .btn-glow:hover {
+    box-shadow: var(--glow-shadow);
+    filter: brightness(1.05);
+  }
+
+  .text-title {
+    @apply text-3xl font-bold tracking-tight text-slate-900 dark:text-white;
+  }
+}
+
+/* Scrollbar: WebKit + Firefox */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 9999px;
+}
+
+@supports (scrollbar-color: auto) {
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+}
+
+/* Safe area insets utility */
+.safe-area-inset {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
