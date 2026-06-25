@@ -47,20 +47,30 @@ app.use(
   })
 );
 
-// FIX: Removed conflicting 'origin: true' line to prevent browser blocking
+// FIXED: Added production Vercel deployment link to allowedOrigins
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5173',
   'https://studio.apollographql.com',
   'https://sandbox.embed.apollographql.com',
+  'https://multi-tenant-payroll-saas.vercel.app', // Your live frontend URL (No trailing slash)
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+    // Check if the system environment has a custom FRONTEND_URL variable defined
+    const dynamicFrontend = process.env.FRONTEND_URL;
+    
+    if (
+      !origin || 
+      allowedOrigins.includes(origin) || 
+      origin === dynamicFrontend ||
+      process.env.NODE_ENV !== 'production'
+    ) {
       callback(null, true);
     } else {
+      logger.warn(`Rejected Origin blocked by CORS: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
