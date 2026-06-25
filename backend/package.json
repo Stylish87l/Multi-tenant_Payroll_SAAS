@@ -7,6 +7,7 @@
  "scripts": {
     "start": "node server.js",
     "dev": "node --env-file=.env --watch server.js",
+    "build": "prisma generate", 
     "test": "jest --coverage",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
@@ -16,7 +17,7 @@
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed"
   },
-  
+
   "prisma": {
     "seed": "node prisma/seed.js"
   },
