@@ -57,7 +57,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://studio.apollographql.com',
   'https://sandbox.embed.apollographql.com',
-  'https://multi-tenant-payroll-saas.vercel.app', // Your live frontend URL (No trailing slash)
+  'https://usepaylio.vercel.app', // Your live frontend URL (No trailing slash)
 ];
 
 app.use(cors({
