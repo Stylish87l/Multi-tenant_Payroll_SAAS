@@ -1,13 +1,15 @@
 import "dotenv/config";
-import { defineConfig } from "prisma/config";
+import { defineConfig, env } from "prisma/config";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
   datasource: {
-    url: process.env.DATABASE_URL,
+    // 🚀 Uses the built-in type-safe helper instead of raw process.env
+    url: env("DATABASE_URL"),
   },
   migrations: {
-  
-    seed: 'node --env-file=.env prisma/seed.js',
+    path: "prisma/migrations",
+    // 🛠️ Removed the problematic '--env-file=.env' flags so it works perfectly in cloud containers
+    seed: "node prisma/seed.js",
   },
 });
