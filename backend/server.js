@@ -29,6 +29,9 @@ import resolvers from './graphql/resolvers.js';
 const app = express();
 const httpServer = http.createServer(app);
 
+// FIXED: Tell Express to trust the proxy headers from Railway
+app.enable('trust proxy'); 
+
 // 1. Core Middlewares: Cookie parser MUST be before routes
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
