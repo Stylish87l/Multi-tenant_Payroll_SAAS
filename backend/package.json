@@ -38,7 +38,7 @@
   },
   "homepage": "https://github.com/yourname/backend#readme",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19.0"
   },
   "dependencies": {
     "@apollo/server": "^5.0.0",
