@@ -1,9 +1,11 @@
-// config/db.js
 console.log('>>> LOADING PRISMA CONFIG WITH ADAPTER <<<');
 import logger from './logger.js';
-import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
+
+// FIXED: Destructure PrismaClient from default package export for ESM compatibility
+import pkgPrisma from '@prisma/client';
+const { PrismaClient } = pkgPrisma;
 
 /**
  * Prisma Singleton - Production Ready (Prisma 7+ with driver adapter)
@@ -19,7 +21,6 @@ const pool = new Pool({
   max: Number(process.env.DB_POOL_SIZE) || 20,
   idleTimeoutMillis: 30000,           // close idle connections after 30s
   connectionTimeoutMillis: 10000,      // fail fast if DB is down
-  // You can add ssl: { rejectUnauthorized: false } if using self-signed certs
 });
 
 // Create the Prisma driver adapter using the pool
@@ -30,7 +31,7 @@ const adapter = new PrismaPg(pool);
  */
 const prismaClientSingleton = () => {
   const client = new PrismaClient({
-    adapter,                              // ← This is the required fix
+    adapter,                              
     log: [
       { emit: 'event', level: 'query' },
       { emit: 'event', level: 'info' },
