@@ -6,16 +6,14 @@ import { ApolloProvider } from '@apollo/client';
 import App from './app';
 import './index.css';
 
-// Import your AuthProvider and Apollo client
 import { AuthProvider } from './context/AuthContext';
-import client from './lib/apolloClient'; // adjust path if needed
+import client from './lib/apolloClient'; 
 
 /**
  * Environment configuration
- * - REQUIRED: app cannot run without these
- * - OPTIONAL: helpful but not fatal
+ * - FIXED: Aligned with the exact production environment key naming conventions
  */
-const REQUIRED_ENV = ['VITE_API_URL'];
+const REQUIRED_ENV = ['VITE_GRAPHQL_API_URL']; // 👈 CHANGED THIS
 const OPTIONAL_ENV = ['VITE_GRAPHQL_WS_URL'];
 
 /* Small React UI to show configuration errors outside the app tree */

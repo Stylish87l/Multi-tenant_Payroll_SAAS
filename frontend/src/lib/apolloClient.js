@@ -14,7 +14,8 @@ import { createClient } from 'graphql-ws';
 import { getMainDefinition } from '@apollo/client/utilities';
 
 // --- Environment variables ---
-const HTTP_URL = import.meta.env.VITE_API_URL;
+// FIXED: Updated to read from VITE_GRAPHQL_API_URL to match main.jsx and Vercel configs
+const HTTP_URL = import.meta.env.VITE_GRAPHQL_API_URL; 
 const WS_URL = import.meta.env.VITE_GRAPHQL_WS_URL;
 const REFRESH_URL = import.meta.env.VITE_AUTH_REFRESH_URL;
 
@@ -22,8 +23,7 @@ console.log("Apollo HTTP_URL:", HTTP_URL);
 console.log("Apollo WS_URL:", WS_URL);
 console.log("Apollo REFRESH_URL:", REFRESH_URL);
 
-if (!HTTP_URL) throw new Error('VITE_API_URL is not defined');
-
+if (!HTTP_URL) throw new Error('VITE_GRAPHQL_API_URL is not defined');
 // --- Refresh singleton to avoid concurrent refreshes ---
 let refreshPromise = null;
 
@@ -37,8 +37,8 @@ export const doRefresh = async () => {
     try {
       console.log("🔄 doRefresh: Calling /api/auth/refresh");
 
-      const res = await fetch('/api/auth/refresh', {
-        method: 'POST',
+const res = await fetch(`${HTTP_URL.replace('/graphql', '')}/api/auth/refresh`, {       
+   method: 'POST',
         credentials: 'include',
         headers: { 
           'Content-Type': 'application/json' 
