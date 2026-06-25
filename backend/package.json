@@ -5,9 +5,9 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
+    "start": "prisma migrate deploy && node server.js",
     "dev": "node --env-file=.env --watch server.js",
-    "build": "prisma generate && prisma migrate deploy",
+    "build": "prisma generate",
     "test": "jest --coverage",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
