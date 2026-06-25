@@ -4,8 +4,8 @@
   "description": "Multi-Tenant Ghana Payroll System",
   "main": "server.js",
   "type": "module",
-  "scripts": {
-    "start": "node --env-file=.env server.js",
+ "scripts": {
+    "start": "node server.js",
     "dev": "node --env-file=.env --watch server.js",
     "test": "jest --coverage",
     "lint": "eslint . --ext .js",
@@ -16,6 +16,7 @@
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed"
   },
+  
   "prisma": {
     "seed": "node prisma/seed.js"
   },
