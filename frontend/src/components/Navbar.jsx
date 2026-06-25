@@ -56,6 +56,7 @@ const TenantMenu = ({ isOpen, user, onSwitchTenant, onLogout }) => (
   </AnimatePresence>
 );
 
+// MobileMenu is maintained perfectly to handle ultra-responsive layout breakpoints smoothly
 const MobileMenu = ({ navItems, isOpen, onClose }) => (
   <AnimatePresence>
     {isOpen && (
@@ -92,13 +93,14 @@ const MobileMenu = ({ navItems, isOpen, onClose }) => (
 );
 
 const Navbar = () => {
-  const { user, logout } = useAuth(); // ✅ useAuth instead of props
+  const { user, logout } = useAuth();
   const location = useLocation();
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const { activeTenant, switchTenant } = useTenantSwitcher(user?.companyName || "");
 
+  // Maintained configuration arrays to prevent downstream evaluation issues inside your hooks or mobile menus
   const navItems = useMemo(
     () => [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -109,64 +111,42 @@ const Navbar = () => {
     []
   );
 
-  const isActive = useCallback((path) => location.pathname === path, [location.pathname]);
-
   return (
     <nav className="sticky top-0 z-[60] w-full border-b border-white/10 bg-slate-950/60 backdrop-blur-md">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        {/* Brand Logo */}
+      <div className="w-full flex h-16 items-center justify-between px-6">
+        {/* Brand Logo & Meta-version indicators */}
         <Link to="/" className="flex items-center space-x-2">
           <div className="h-8 w-8 rounded bg-gradient-to-tr from-primary to-secondary shadow-lg shadow-primary/20" />
           <span className="text-xl font-bold tracking-tight text-white">
             Ghana<span className="text-primary">Payroll</span>
+            <span className="text-[10px] text-slate-500 font-mono ml-1.5 font-normal">v2026</span>
           </span>
         </Link>
 
-        {/* Desktop Navigation */}
-        <div className="hidden items-center space-x-1 md:flex">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`relative px-4 py-2 text-sm font-medium transition-colors ${
-                isActive(item.path) ? 'text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span className="relative z-10 flex items-center space-x-2">
-                <item.icon size={16} />
-                <span>{item.name}</span>
-              </span>
-              {isActive(item.path) && (
-                <motion.div
-                  layoutId="nav-glow"
-                  className="absolute inset-0 rounded-lg bg-white/5 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
-                  initial={false}
-                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                />
-              )}
-            </Link>
-          ))}
-        </div>
+        {/* Desktop Navigation block intentionally stripped to allow the left sidebar layout 
+          absolute dominance over standard routing navigation pathways.
+        */}
 
-        {/* Mobile Hamburger */}
-        <button
-          onClick={() => setIsMobileMenuOpen(true)}
-          className="md:hidden p-2 text-white"
-          aria-label="Open menu"
-        >
-          <Menu size={20} />
-        </button>
-
-        {/* User & Tenant Section */}
+        {/* Utilities: Mobile Hamburger, Theme, Multi-Tenant Session Selectors */}
         <div className="flex items-center space-x-4">
+          {/* Mobile Hamburger stays functional on narrow grid devices */}
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="md:hidden p-2 text-white hover:bg-white/5 rounded-xl transition-colors"
+            aria-label="Open menu"
+          >
+            <Menu size={20} />
+          </button>
+
           <ThemeToggle />
+          
           {user ? (
             <div className="relative">
               <button
                 onClick={() => setIsTenantMenuOpen((prev) => !prev)}
                 aria-expanded={isTenantMenuOpen}
                 aria-controls="tenant-menu"
-                className="flex items-center space-x-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 transition-all hover:bg-white/10"
+                className="flex items-center space-x-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 transition-all hover:bg-white/10"
               >
                 <div className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary/20 text-secondary">
                   <Shield size={14} />

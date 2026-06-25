@@ -58,8 +58,11 @@ const PrivateRoute = ({ children }) => {
 PrivateRoute.propTypes = { children: PropTypes.node.isRequired };
 
 const AuthSidebarWrapper = React.memo(() => {
-  const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <Sidebar /> : null;
+  const { isAuthenticated, user } = useAuth();
+  // FIX: Sidebar's role-based menu filter needs the actual user object -
+  // it was previously rendered with no props at all, so the nav was always
+  // empty regardless of role.
+  return isAuthenticated ? <Sidebar user={user} /> : null;
 });
 
 const AuthNavbarWrapper = React.memo(() => {
@@ -67,11 +70,19 @@ const AuthNavbarWrapper = React.memo(() => {
   return isAuthenticated ? <Navbar /> : null;
 });
 
+/**
+ * Canonical route table.
+ * '/dashboard' is the path every other part of the app already assumes:
+ * Navbar links, sidebarConfig.js, and the post-login redirect in Login.jsx.
+ * Previously Dashboard was only registered at '/', so '/dashboard' silently
+ * fell through to the catch-all NotFound route below with zero errors logged
+ * anywhere - that's the "Lost in the Cloud?" screen from the bug report.
+ */
 const protectedRoutes = [
-  { path: '/', element: <Dashboard /> },
-  { path: '/employees/*', element: <Employees /> }, // Allow sub-routes for employee details
-  { path: '/payroll/*', element: <Payroll /> },   // FIX: Allow sub-routes like /payroll/run
-  { path: '/reports/*', element: <Reports /> },   // FIX: Allow sub-routes for specific reports
+  { path: '/dashboard', element: <Dashboard /> },
+  { path: '/employees/*', element: <Employees /> },
+  { path: '/payroll/*', element: <Payroll /> },
+  { path: '/reports/*', element: <Reports /> },
   { path: '/settings/*', element: <Settings /> },
 ];
 
@@ -83,6 +94,11 @@ function AppRoutes() {
       <Routes location={location} key={location.pathname}>
         <Route path="/login" element={<Login />} />
 
+        {/* '/' is not a real page on its own - redirect to the canonical
+            dashboard route instead of letting it die against an
+            unregistered path. */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
         {protectedRoutes.map((r) => (
           <Route
             key={r.path}
@@ -90,9 +106,16 @@ function AppRoutes() {
             element={
               <PrivateRoute>
                 <PageWrapper>
-                  <Suspense fallback={<Loader />}>
-                    {r.element}
-                  </Suspense>
+                  {/* Per-route error boundary: a crash on THIS page now
+                      shows a localized "Something went wrong" inside the
+                      content area only. The navbar/sidebar stay mounted and
+                      the user can navigate away instead of facing a fully
+                      blank app. */}
+                  <ErrorBoundary>
+                    <Suspense fallback={<Loader />}>
+                      {r.element}
+                    </Suspense>
+                  </ErrorBoundary>
                 </PageWrapper>
               </PrivateRoute>
             }
@@ -116,6 +139,9 @@ function AppRoutes() {
 
 export default function App() {
   const providers = useMemo(() => (
+    // Outer boundary is now a last-resort safety net only (e.g. a crash in
+    // AuthProvider/ApolloProvider themselves) - it should rarely fire now
+    // that every individual route has its own boundary above.
     <ErrorBoundary>
       <ApolloProvider client={client}>
         <AuthProvider>

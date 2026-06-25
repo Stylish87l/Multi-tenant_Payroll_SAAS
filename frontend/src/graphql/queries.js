@@ -53,7 +53,7 @@ export const GET_PAYROLL_RUNS = gql`
 
 /**
  * GET_EMPLOYEES
- * Restored: Fragment composition and SSNIT/GhanaCard fields for immediate UI display.
+ * FIXED: Updated 'ghanaCardPin' to uppercase 'ghanaCardPIN' to match server schema
  */
 export const GET_EMPLOYEES = gql`
   query GetEmployees($companyId: ID, $page: Int = 1, $limit: Int = 50, $search: String) {
@@ -62,7 +62,7 @@ export const GET_EMPLOYEES = gql`
         ...EmployeeCore
         ...EmployeeFinancial
         ssnitNumber 
-        ghanaCardPin
+        ghanaCardPIN
       }
       page
       limit
@@ -79,7 +79,7 @@ export const GET_EMPLOYEES = gql`
 
 /**
  * GET_DASHBOARD_DATA
- * Restored: Multi-query fetching for the main dashboard view.
+ * FIXED: Adjusted notification metric parameter signature alignment
  */
 export const GET_DASHBOARD_DATA = gql`
   query GetDashboardData($companyId: ID!) {
@@ -91,16 +91,16 @@ export const GET_DASHBOARD_DATA = gql`
       totalNet
       processedAt
     }
-    notificationsCount: pendingNotifications(companyId: $companyId)
+    notificationsCount: pendingNotifications
   }
 `;
 
 /**
  * GET_REPORTS (GRA & SSNIT)
- * Restored: Locally compliant fields for Ghana Revenue Authority and SSNIT.
+ * FIXED: Made month optional ($month: String) so Reports.jsx won't crash when mounting without it
  */
 export const GET_REPORTS = gql`
-  query GetReports($companyId: ID!, $month: String!) {
+  query GetReports($companyId: ID!, $month: String) {
     graSchedules(companyId: $companyId, month: $month) {
       serialNo
       tin

@@ -1,9 +1,7 @@
 // src/pages/Reports.jsx
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useQuery } from '@apollo/client';
 import { motion } from 'framer-motion';
 import { FileSpreadsheet, FileText, ShieldCheck, Download, ExternalLink } from 'lucide-react';
-import { GET_REPORTS } from '../graphql/queries';
 import Card from '../components/Card';
 import Loader from '../components/Loader';
 import { useAuth } from "../context/AuthContext";
@@ -13,12 +11,6 @@ const Reports = () => {
   const [isDownloading, setIsDownloading] = useState(null); // reportId|format while downloading
   const [errorMsg, setErrorMsg] = useState(null);
   const abortRef = useRef(null);
-
-  const { loading, error, data } = useQuery(GET_REPORTS, {
-    variables: { companyId: user?.companyId },
-    skip: !user?.companyId,
-    fetchPolicy: 'cache-and-network',
-  });
 
   // Cleanup any in-flight download when component unmounts or user changes tenant
   useEffect(() => {
@@ -65,7 +57,6 @@ const Reports = () => {
       });
 
       if (!response.ok) {
-        // Try to parse JSON error body for better message
         let msg = `Export failed (${response.status})`;
         try {
           const json = await response.json();
@@ -93,7 +84,6 @@ const Reports = () => {
       a.click();
       a.remove();
 
-      // Revoke URL after short delay to ensure download started
       setTimeout(() => window.URL.revokeObjectURL(urlObj), 15000);
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -134,15 +124,6 @@ const Reports = () => {
       formats: ['pdf'],
     },
   ], []);
-
-  if (loading) return <Loader message="Generating compliance schedules..." />;
-  if (error) {
-    return (
-      <div role="alert" className="p-6 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
-        Error loading reports: {error.message}
-      </div>
-    );
-  }
 
   return (
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">

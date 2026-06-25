@@ -1,4 +1,4 @@
-// src/pages/Payroll.jsx (Updated to Perfectly Match Your Latest subscriptions.js)
+// src/pages/Payroll.jsx
 
 import React, { useCallback } from 'react';
 import { useQuery, useMutation, useSubscription } from '@apollo/client';
@@ -16,9 +16,9 @@ import { useAuth } from "../context/AuthContext";
 const Payroll = () => {
   const { user } = useAuth(); // RBAC and tenant context
 
-  // Query: list existing runs (flat array to match your component usage)
+  // Query: list existing runs with paginated structure parsing
   const { loading, error, data, refetch } = useQuery(GET_PAYROLL_RUNS, {
-    variables: { companyId: user?.companyId },
+    variables: { companyId: user?.companyId, page: 1, limit: 50 },
     fetchPolicy: 'cache-and-network',
     skip: !user?.companyId,
     notifyOnNetworkStatusChange: true,
@@ -41,16 +41,23 @@ const Payroll = () => {
       const newRun = result?.runPayroll;
       if (!newRun) return;
       try {
+        const queryVars = { companyId: user?.companyId, page: 1, limit: 50 };
         const existing = cache.readQuery({
           query: GET_PAYROLL_RUNS,
-          variables: { companyId: user?.companyId },
+          variables: queryVars,
         });
-        if (existing?.payrollRuns) {
-          const updatedList = [newRun, ...existing.payrollRuns.filter(r => r.id !== newRun.id)];
+        
+        if (existing?.payrollRuns?.items) {
+          const updatedList = [newRun, ...existing.payrollRuns.items.filter(r => r.id !== newRun.id)];
           cache.writeQuery({
             query: GET_PAYROLL_RUNS,
-            variables: { companyId: user?.companyId },
-            data: { payrollRuns: updatedList },
+            variables: queryVars,
+            data: { 
+              payrollRuns: {
+                ...existing.payrollRuns,
+                items: updatedList
+              } 
+            },
           });
         }
       } catch (e) {
@@ -59,7 +66,7 @@ const Payroll = () => {
     },
   });
 
-  // Subscription: matches your exact PAYROLL_UPDATED_SUB (fields: id, month, status, totalNet, processedAt)
+  // Subscription: handles the incoming data stream matching paginated structure paths
   useSubscription(PAYROLL_UPDATED_SUB, {
     variables: { companyId: user?.companyId },
     skip: !user?.companyId,
@@ -67,16 +74,23 @@ const Payroll = () => {
       const updated = subData?.data?.payrollUpdated;
       if (!updated) return;
       try {
+        const queryVars = { companyId: user?.companyId, page: 1, limit: 50 };
         const existing = client.cache.readQuery({
           query: GET_PAYROLL_RUNS,
-          variables: { companyId: user?.companyId },
+          variables: queryVars,
         });
-        if (existing?.payrollRuns) {
-          const updatedList = [updated, ...existing.payrollRuns.filter(r => r.id !== updated.id)];
+        
+        if (existing?.payrollRuns?.items) {
+          const updatedList = [updated, ...existing.payrollRuns.items.filter(r => r.id !== updated.id)];
           client.cache.writeQuery({
             query: GET_PAYROLL_RUNS,
-            variables: { companyId: user?.companyId },
-            data: { payrollRuns: updatedList },
+            variables: queryVars,
+            data: { 
+              payrollRuns: {
+                ...existing.payrollRuns,
+                items: updatedList
+              } 
+            },
           });
         }
       } catch (e) {
@@ -116,7 +130,8 @@ const Payroll = () => {
     );
   }
 
-  const runs = data?.payrollRuns ?? [];
+  // FIXED: Extract the items flat array from the paginated object wrapper safely
+  const runs = data?.payrollRuns?.items ?? [];
 
   return (
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">

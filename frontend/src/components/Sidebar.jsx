@@ -26,7 +26,7 @@ const MobileSidebar = ({ isOpen, onClose, user }) => (
         </button>
         <nav className="space-y-2">
           {sidebarMenuItems
-            .filter((item) => item.roles.includes(user.role))
+            .filter((item) => user?.role && item.roles.includes(user.role))
             .map((item) => (
               <NavLink
                 key={item.path}
@@ -80,7 +80,6 @@ const Sidebar = ({ user }) => {
         <nav className="flex-1 space-y-2 p-4 pt-20 overflow-y-auto custom-scrollbar">
           {sidebarMenuItems
             .filter((item) => user?.role && item.roles.includes(user.role))
-
             .map((item) => (
               <NavLink
                 key={item.path}
@@ -94,37 +93,41 @@ const Sidebar = ({ user }) => {
                   )
                 }
               >
-                <div className="flex items-center">
-                  <item.icon
-                    size={22}
-                    className={cn(
-                      'min-w-[22px] transition-colors',
-                      isActive
-                        ? 'text-primary'
-                        : 'text-slate-500 group-hover:text-slate-300'
+                {/* FIXED: We pass a callback function to evaluate children props cleanly */}
+                {({ isActive }) => (
+                  <>
+                    <div className="flex items-center">
+                      <item.icon
+                        size={22}
+                        className={cn(
+                          'min-w-[22px] transition-colors',
+                          isActive
+                            ? 'text-primary'
+                            : 'text-slate-500 group-hover:text-slate-300'
+                        )}
+                      />
+                      <AnimatePresence>
+                        {!isCollapsed && (
+                          <motion.span
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -10 }}
+                            className="ml-4 whitespace-nowrap font-medium"
+                          >
+                            {item.name}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                    {/* The layout glow marker can now cleanly track the true active layout value */}
+                    {isActive && (
+                      <motion.div
+                        layoutId="sidebar-glow"
+                        className="absolute left-0 h-6 w-1 rounded-r-full bg-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.8)]"
+                      />
                     )}
-                  />
-                  <AnimatePresence>
-                    {!isCollapsed && (
-                      <motion.span
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        className="ml-4 whitespace-nowrap font-medium"
-                      >
-                        {item.name}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </div>
-                {({ isActive }) =>
-                  isActive && (
-                    <motion.div
-                      layoutId="sidebar-glow"
-                      className="absolute left-0 h-6 w-1 rounded-r-full bg-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.8)]"
-                    />
-                  )
-                }
+                  </>
+                )}
               </NavLink>
             ))}
         </nav>

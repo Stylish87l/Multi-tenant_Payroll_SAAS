@@ -1,9 +1,9 @@
+// src/pages/Employees.jsx
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Search, Edit2, ShieldCheck, Mail } from 'lucide-react';
 
-// Fixed imports: GET_EMPLOYEES from queries, mutations from separate file
 import { GET_EMPLOYEES } from '../graphql/queries';
 import { CREATE_EMPLOYEE, UPDATE_EMPLOYEE } from '../graphql/mutations';
 
@@ -12,40 +12,32 @@ import Modal from '../components/Modal';
 import Loader from '../components/Loader';
 import { formatGHS } from '../utils/formatCurrency';
 
-/**
- * Employees (Full Restoration)
- * - Restored all original variable/state/handler names.
- * - Restored full logging and error stack tracing.
- * - Restored manual cache update logic with specific .items pathing.
- * - Restored tempId optimistic response for Creation.
- */
-
 const Employees = () => {
-  // State management (RESTORED)
+  // State management
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Pagination (RESTORED)
+  // Pagination
   const [page, setPage] = useState(1);
   const limit = 50;
 
-  // Local UI state (RESTORED)
+  // Local UI state
   const [saving, setSaving] = useState(false);
   const [userError, setUserError] = useState(null);
 
-  // TODO: Replace with real auth context (RESTORED placeholder)
+  // Auth context placeholder
   const companyId = '1'; 
 
-  // Debounced search (RESTORED)
+  // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 350);
     return () => clearTimeout(t);
   }, [searchTerm]);
 
-  // 1. Query (RESTORED variables and fetch policies)
+  // Query execution
   const { loading, error, data, fetchMore, refetch } = useQuery(GET_EMPLOYEES, {
     variables: { companyId, page, limit, search: debouncedSearch },
     fetchPolicy: 'cache-and-network',
@@ -53,11 +45,11 @@ const Employees = () => {
     notifyOnNetworkStatusChange: true,
   });
 
-  // Mutations (RESTORED)
+  // Mutations
   const [createEmployee] = useMutation(CREATE_EMPLOYEE);
   const [updateEmployee] = useMutation(UPDATE_EMPLOYEE);
 
-  // PII Masking Helper (RESTORED)
+  // PII Masking Helper
   const maskPII = useCallback((value, type = 'ssnit') => {
     if (!value) return 'N/A';
     const first = value.slice(0, 1);
@@ -65,13 +57,13 @@ const Employees = () => {
     return `${first}****${last}`;
   }, []);
 
-  // Derived employees list — fixed to navigate the new .items structure (NECESSARY)
+  // Derived employees list tracking the clean backend connection items shape
   const employees = useMemo(() => data?.employees?.items ?? [], [data]);
 
-  // Page info for "Load more" logic (RESTORED)
+  // Page info flags
   const hasNextPage = data?.employees?.pageInfo?.hasNextPage ?? false;
 
-  // Error UI (RESTORED detailed logging)
+  // Error logging monitor
   useEffect(() => {
     if (error) {
       console.error('Employees query error:', error);
@@ -81,14 +73,15 @@ const Employees = () => {
     }
   }, [error]);
 
-  // Handlers (RESTORED)
+  // Edit action state hydrate handlers
   const handleEdit = useCallback((employee) => {
     setFormData({
       name: employee.name ?? '',
       email: employee.email ?? '',
       basicSalary: employee.basicSalary ?? '',
       ssnitNumber: employee.ssnitNumber ?? '',
-      ghanaCardPin: employee.ghanaCardPin ?? '',
+      ghanaCardPIN: employee.ghanaCardPIN ?? '', // FIXED: Updated to uppercase PIN casing
+      position: employee.position ?? 'Staff',   // FIXED: Added position property binding
     });
     setEditingId(employee.id);
     setShowModal(true);
@@ -101,7 +94,7 @@ const Employees = () => {
     setSaving(false);
   }, []);
 
-  // Validation (RESTORED)
+  // Validation boundaries
   const validateForm = useCallback((input) => {
     if (!input.name || !input.email) return 'Name and email are required.';
     if (isNaN(Number(input.basicSalary)) || Number(input.basicSalary) < 0) return 'Basic salary must be a valid positive number.';
@@ -117,7 +110,8 @@ const Employees = () => {
       email: formData.email,
       basicSalary: parseFloat(formData.basicSalary || 0),
       ssnitNumber: formData.ssnitNumber,
-      ghanaCardPin: formData.ghanaCardPin,
+      ghanaCardPIN: formData.ghanaCardPIN, // FIXED: Correct casing matching backend schema definition
+      position: formData.position || 'Staff', // FIXED: Provided property placeholder mapping
     };
 
     const validationError = validateForm(input);
@@ -202,7 +196,7 @@ const Employees = () => {
       }
 
       closeModal();
-      refetch(); // RESTORED reconcile with server
+      refetch();
     } catch (mutationError) {
       console.error('Mutation error:', mutationError);
       setUserError('Failed to save employee. Please try again.');
@@ -211,7 +205,6 @@ const Employees = () => {
     }
   }, [createEmployee, updateEmployee, editingId, formData, validateForm, closeModal, companyId, page, limit, debouncedSearch, refetch]);
 
-  // RESTORED pagination with manual updateQuery logic
   const loadNextPage = useCallback(() => {
     const next = page + 1;
     setPage(next);
@@ -231,12 +224,11 @@ const Employees = () => {
     });
   }, [page, fetchMore, limit, debouncedSearch, companyId]);
 
-  // Initial loading (RESTORED)
   if (loading && !data) return <Loader message="Decrypting employee records..." />;
 
   return (
     <div className="safe-area-inset p-4 md:p-8 space-y-6 pb-24">
-      {/* Header & Search Bar (RESTORED) */}
+      {/* Header Panel */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Staff Directory</h1>
@@ -262,7 +254,7 @@ const Employees = () => {
 
           <button
             onClick={() => {
-              setFormData({});
+              setFormData({ position: 'Staff' }); // Default position key assigned
               setEditingId(null);
               setShowModal(true);
             }}
@@ -275,14 +267,14 @@ const Employees = () => {
         </div>
       </div>
 
-      {/* Error (RESTORED) */}
+      {/* Alert banners */}
       {userError && (
         <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">
           {userError}
         </div>
       )}
 
-      {/* Responsive Table / Card View (RESTORED) */}
+      {/* Grid container lists */}
       <div className="grid grid-cols-1 gap-4">
         <AnimatePresence>
           {employees.length === 0 && !loading ? (
@@ -306,7 +298,14 @@ const Employees = () => {
                         {emp.name ? emp.name.charAt(0) : '?'}
                       </div>
                       <div>
-                        <h2 className="text-lg font-bold text-white group-hover:text-primary transition-colors">{emp.name}</h2>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-lg font-bold text-white group-hover:text-primary transition-colors">{emp.name}</h2>
+                          {emp.position && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400 font-medium">
+                              {emp.position}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
                           <span className="flex items-center gap-1"><Mail size={14} /> {emp.email}</span>
                           <span className="hidden md:flex items-center gap-1 text-slate-500">
@@ -337,7 +336,7 @@ const Employees = () => {
         </AnimatePresence>
       </div>
 
-      {/* Pagination control (RESTORED) */}
+      {/* Infinite loader indicators */}
       {hasNextPage && (
         <div className="flex justify-center mt-4">
           <button
@@ -350,7 +349,7 @@ const Employees = () => {
         </div>
       )}
 
-      {/* Modal (RESTORED) */}
+      {/* Overlay Drawer Modal */}
       <Modal
         isOpen={showModal}
         onClose={closeModal}
@@ -358,8 +357,8 @@ const Employees = () => {
         ariaLabel={editingId ? 'Update staff profile modal' : 'Register new staff modal'}
       >
         <form onSubmit={handleSubmit} className="space-y-4" aria-disabled={saving}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-2 space-y-1">
               <label className="text-xs font-bold text-slate-500 uppercase ml-1">Full Name</label>
               <input
                 type="text"
@@ -371,16 +370,28 @@ const Employees = () => {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email Address</label>
+              <label className="text-xs font-bold text-slate-500 uppercase ml-1">Job Title / Position</label>
               <input
-                type="email"
-                value={formData.email || ''}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                type="text"
+                value={formData.position || ''}
+                onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                 className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+                placeholder="e.g. Engineer"
                 required
-                aria-required="true"
               />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email Address</label>
+            <input
+              type="email"
+              value={formData.email || ''}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+              required
+              aria-required="true"
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -412,8 +423,8 @@ const Employees = () => {
               <label className="text-xs font-bold text-slate-500 uppercase ml-1">Ghana Card PIN</label>
               <input
                 type="text"
-                value={formData.ghanaCardPin || ''}
-                onChange={(e) => setFormData({ ...formData, ghanaCardPin: e.target.value })}
+                value={formData.ghanaCardPIN || ''} // FIXED: Form field syncs seamlessly with correct casing
+                onChange={(e) => setFormData({ ...formData, ghanaCardPIN: e.target.value })}
                 className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
                 placeholder="GHA-000000000-0"
                 aria-label="Ghana Card PIN"

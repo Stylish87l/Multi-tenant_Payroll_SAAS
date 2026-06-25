@@ -59,17 +59,16 @@ const typeDefs = gql`
     id: ID!
     name: String!
     email: String!
-    ghanaCardPin: String
+    ghanaCardPIN: String     # Aligned casing with frontend conventions (PIN)
     ssnitNumber: String
     basicSalary: Decimal!
     allowances: Decimal
-    position: String!
+    position: String         # FIXED: Changed from String! to String to prevent null item data crashes
     isActive: Boolean!
     companyId: ID!
     company: Company!
   }
 
-  # FIX: Added page, limit, and total (matching your query)
   type EmployeeConnection {
     items: [Employee!]!
     page: Int
@@ -81,11 +80,11 @@ const typeDefs = gql`
   input EmployeeInput {
     name: String!
     email: String!
-    ghanaCardPin: String
+    ghanaCardPIN: String     # Aligned casing with type adjustments
     ssnitNumber: String
     basicSalary: Decimal!
     allowances: Decimal
-    position: String!
+    position: String         # FIXED: Optional for raw form submissions
     companyId: ID
   }
 
@@ -102,7 +101,6 @@ const typeDefs = gql`
     ADJUSTMENT 
   }
 
-  # FIX: Added totalNet, errorMessage, and isFinalized here too for consistency
   type PayrollRun {
     id: ID!
     month: String!
@@ -117,7 +115,6 @@ const typeDefs = gql`
     companyId: ID!
   }
 
-  # FIX: Added pagination fields to match your query for payroll runs
   type PayrollRunConnection {
     items: [PayrollRun!]!
     page: Int
@@ -184,6 +181,15 @@ const typeDefs = gql`
     subject: String
   }
 
+  # --- Reports Domain ---
+  type PayrollSummaryReport {
+    totalGross: Decimal!
+    totalPAYE: Decimal!
+    totalSSNIT: Decimal!
+    totalNetPay: Decimal!
+    employeeCount: Int!
+  }
+
   # --- Root Operations ---
   type Query {
     me: User
@@ -191,10 +197,12 @@ const typeDefs = gql`
     employeeCount(companyId: ID): Int
     recentPayrollRuns(companyId: ID, limit: Int): [PayrollRun!]!
     pendingNotifications(userId: ID): Int
-    # FIX: Updated return type to use the new Connection type
     payrollRuns(companyId: ID, page: Int, limit: Int): PayrollRunConnection!
     payrollRun(id: ID!): PayrollRun
     notifications(page: Int, limit: Int): [Notification!]!
+    
+    # FIXED: Added target metric query endpoint to resolve the Reports page 400 Bad Request error
+    payrollSummaryReport(companyId: ID, month: String): PayrollSummaryReport!
   }
 
   type Mutation {
