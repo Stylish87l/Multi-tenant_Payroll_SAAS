@@ -64,13 +64,14 @@ export const register = async (req, res, next) => {
     };
 
     // Generate specific tokens
-    const accessToken = generateToken(payload, process.env.JWT_ACCESS_SECRET, ACCESS_TOKEN_EXPIRY);
-    const refreshToken = generateToken(payload, process.env.JWT_REFRESH_SECRET, REFRESH_TOKEN_EXPIRY);
+    const accessToken = generateToken(payload, process.env.NODE_ENV === 'production' ? process.env.JWT_ACCESS_SECRET : 'fallback_secret', ACCESS_TOKEN_EXPIRY);
+    const refreshToken = generateToken(payload, process.env.NODE_ENV === 'production' ? process.env.JWT_REFRESH_SECRET : 'fallback_secret', REFRESH_TOKEN_EXPIRY);
 
+    // FIXED FOR PRODUCTION CROSS-DOMAIN COOKIES (VERCEL -> RAILWAY)
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', 
-      sameSite: 'lax',
+      secure: true, 
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       path: '/', 
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -121,13 +122,14 @@ export const login = async (req, res, next) => {
     };
 
     // Correctly using separate secrets
-    const accessToken = generateToken(payload, process.env.JWT_ACCESS_SECRET, ACCESS_TOKEN_EXPIRY);
-    const refreshToken = generateToken(payload, process.env.JWT_REFRESH_SECRET, REFRESH_TOKEN_EXPIRY);
+    const accessToken = generateToken(payload, process.env.NODE_ENV === 'production' ? process.env.JWT_ACCESS_SECRET : 'fallback_secret', ACCESS_TOKEN_EXPIRY);
+    const refreshToken = generateToken(payload, process.env.NODE_ENV === 'production' ? process.env.JWT_REFRESH_SECRET : 'fallback_secret', REFRESH_TOKEN_EXPIRY);
 
+    // FIXED FOR PRODUCTION CROSS-DOMAIN COOKIES (VERCEL -> RAILWAY)
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       path: '/', 
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -161,8 +163,8 @@ export const refresh = async (req, res) => {
   }
 
   try {
-    // 1. Verify using the REFRESH secret
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const secret = process.env.NODE_ENV === 'production' ? process.env.JWT_REFRESH_SECRET : 'fallback_secret';
+    const decoded = jwt.verify(refreshToken, secret);
     
     const payload = { 
       userId: decoded.userId, 
@@ -170,8 +172,8 @@ export const refresh = async (req, res) => {
       role: decoded.role 
     };
 
-    // 2. Issue new Access Token using ACCESS secret
-    const newAccessToken = generateToken(payload, process.env.JWT_ACCESS_SECRET, ACCESS_TOKEN_EXPIRY);
+    const accessSecret = process.env.NODE_ENV === 'production' ? process.env.JWT_ACCESS_SECRET : 'fallback_secret';
+    const newAccessToken = generateToken(payload, accessSecret, ACCESS_TOKEN_EXPIRY);
 
     return res.status(200).json({
       token: newAccessToken,
@@ -179,8 +181,11 @@ export const refresh = async (req, res) => {
     });
   } catch (error) {
     logger.error('Token Refresh Error', { message: error.message });
-    // Clear invalid cookie to prevent infinite 401 loops
-    res.clearCookie('refreshToken', { path: '/' });
+    res.clearCookie('refreshToken', { 
+      path: '/',
+      secure: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    });
     return res.status(401).json({ error: 'Invalid or expired refresh token' });
   }
 };
@@ -192,7 +197,8 @@ export const logout = (req, res) => {
   res.clearCookie('refreshToken', {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
+    secure: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   });
   return res.status(200).json({ message: 'Logged out successfully' });
 };
