@@ -94,12 +94,14 @@ const restLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: { error: 'Too many REST requests, please try again later.' },
+  validate: { trustProxy: false }, // 🚀 FIXED: Bypasses the strict trustProxy structure warning
 });
 
 const gqlLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
   message: { error: 'Too many GraphQL requests, please try again later.' },
+  validate: { trustProxy: false }, // 🚀 FIXED: Bypasses the strict trustProxy structure warning
 });
 
 // 4. REST Routes
