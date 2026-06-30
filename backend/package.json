@@ -54,6 +54,7 @@
     "cookie-parser": "^1.4.7",
     "dataloader": "^2.2.3",
     "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "graphql": "^16.11.0",
