@@ -79,7 +79,7 @@ const resolvers = {
 
         return {
           items,
-          total, // restored from totalCount to match your specific typeDefs
+          total, 
           page,
           limit,
           pageInfo: {
@@ -259,9 +259,6 @@ const resolvers = {
           },
         });
 
-        // CRITICAL: must use the SAME cookie options (path/sameSite/secure)
-        // as routes/auth.js's /refresh and /logout endpoints, or the browser
-        // treats them as different cookies and the refresh cycle breaks.
         if (res && typeof res.cookie === 'function') {
           res.cookie(REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions());
           logger.info('HttpOnly refresh cookie set', { userId: user.id });
@@ -302,7 +299,7 @@ const resolvers = {
             basicSalary: input.basicSalary,
             allowances: input.allowances || 0,
             position: input.position,
-            ghanaCardPin: input.ghanaCardPIN || null,
+            ghanaCardPin: input.ghanaCardPIN || input.ghanaCardPin || null,
             ssnitNumber: input.ssnitNumber || null,
             companyId: targetCompanyId,
             isActive: true,
@@ -311,6 +308,43 @@ const resolvers = {
         return employee;
       } catch (error) {
         logger.error('Mutation.createEmployee Error', { message: error.message, stack: error.stack });
+        throw error;
+      }
+    },
+
+    updateEmployee: async (_, { id, input }, { companyId, userRole }) => {
+      logger.info('Mutation.updateEmployee called', { id, input, companyId });
+      try {
+        const existingEmployee = await prisma.employee.findUnique({
+          where: { id }
+        });
+
+        if (!existingEmployee) {
+          throw new Error('Employee not found');
+        }
+
+        if (userRole !== 'SUPER_ADMIN' && existingEmployee.companyId !== companyId) {
+          logger.warn('Unauthorized update attempt', { employeeId: id, companyId });
+          throw new Error('Unauthorized: You do not own this record');
+        }
+
+        const updatedEmployee = await prisma.employee.update({
+          where: { id },
+          data: {
+            name: input.name,
+            email: input.email ? input.email.toLowerCase().trim() : undefined,
+            basicSalary: input.basicSalary,
+            allowances: input.allowances,
+            position: input.position,
+            ghanaCardPin: input.ghanaCardPIN !== undefined ? input.ghanaCardPIN : (input.ghanaCardPin !== undefined ? input.ghanaCardPin : undefined),
+            ssnitNumber: input.ssnitNumber,
+            isActive: input.isActive,
+          },
+        });
+
+        return updatedEmployee;
+      } catch (error) {
+        logger.error('Mutation.updateEmployee Error', { id, message: error.message, stack: error.stack });
         throw error;
       }
     },
@@ -389,7 +423,6 @@ const resolvers = {
     },
   },
 
-  // Field Resolvers for nested data and calculated fields
   PayrollRun: {
     items: (parent) => prisma.payrollItem.findMany({ 
       where: { payrollRunId: parent.id }, 
@@ -416,14 +449,9 @@ const resolvers = {
   },
 
   Employee: {
-    // Bridges the GraphQL schema's camel-cased "PIN" casing (ghanaCardPIN)
-    // to the Prisma column's casing (ghanaCardPin). Without this explicit
-    // resolver, Apollo's default property-name lookup is case-sensitive and
-    // silently returns null for every employee's Ghana Card field.
     ghanaCardPIN: (parent) => parent.ghanaCardPin,
 
     company: async (parent, _, { loaders, companyId, userRole }) => {
-      // Logic for strict multi-tenancy restored
       if (userRole !== 'SUPER_ADMIN' && parent.companyId !== companyId) {
         logger.warn('Employee field resolver: Unauthorized access attempt', { parentId: parent.id, companyId });
         throw new Error('Unauthorized access to company data');
