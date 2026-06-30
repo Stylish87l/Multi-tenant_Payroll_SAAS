@@ -88,6 +88,18 @@ const typeDefs = gql`
     companyId: ID
   }
 
+  # 🟢 NEW INPUT: Allows optional properties during edits
+  input UpdateEmployeeInput {
+    name: String
+    email: String
+    ghanaCardPIN: String
+    ssnitNumber: String
+    basicSalary: Decimal
+    allowances: Decimal
+    position: String
+    isActive: Boolean
+  }
+
   # --- Payroll Domain ---
   enum PayrollStatus { 
     DRAFT
@@ -209,6 +221,10 @@ const typeDefs = gql`
     register(email: String!, password: String!, name: String!, companyName: String!): AuthPayload!
     login(email: String!, password: String!): AuthPayload!
     createEmployee(input: EmployeeInput!): Employee!
+    
+    # 🟢 NEW MUTATION DEFINITION REGISTERED HERE
+    updateEmployee(id: ID!, input: UpdateEmployeeInput!): Employee!
+
     runPayroll(month: String!, companyId: ID!): PayrollRun!
     finalizePayroll(runId: ID!): PayrollRun!
     sendNotification(input: NotificationInput!): Notification!
