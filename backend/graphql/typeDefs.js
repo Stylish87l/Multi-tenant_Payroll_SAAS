@@ -59,14 +59,16 @@ const typeDefs = gql`
     id: ID!
     name: String!
     email: String!
-    ghanaCardPIN: String     # Aligned casing with frontend conventions (PIN)
+    ghanaCardPIN: String     # Kept for compatibility
+    ghanaCardPin: String     # 🟢 ADD THIS line to satisfy the frontend's field request
     ssnitNumber: String
     basicSalary: Decimal!
     allowances: Decimal
-    position: String         # FIXED: Changed from String! to String to prevent null item data crashes
+    position: String         
     isActive: Boolean!
     companyId: ID!
     company: Company!
+    updatedAt: DateTime      # 🟢 ADD THIS line to fix the missing field error
   }
 
   type EmployeeConnection {

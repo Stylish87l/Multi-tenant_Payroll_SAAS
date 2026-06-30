@@ -450,6 +450,7 @@ const resolvers = {
 
   Employee: {
     ghanaCardPIN: (parent) => parent.ghanaCardPin,
+    ghanaCardPin: (parent) => parent.ghanaCardPin,
 
     company: async (parent, _, { loaders, companyId, userRole }) => {
       if (userRole !== 'SUPER_ADMIN' && parent.companyId !== companyId) {
