@@ -11,6 +11,7 @@ import {
   hashToken,
   computeExpiryDate,
 } from '../utils/authTokens.js';
+import { REFRESH_COOKIE_NAME, getRefreshCookieOptions } from '../config/cookies.js';
 
 // Real-time engine
 const pubsub = new PubSub();
@@ -258,15 +259,16 @@ const resolvers = {
           },
         });
 
+        // CRITICAL: must use the SAME cookie options (path/sameSite/secure)
+        // as routes/auth.js's /refresh and /logout endpoints, or the browser
+        // treats them as different cookies and the refresh cycle breaks.
         if (res && typeof res.cookie === 'function') {
-          res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-            path: '/api/auth/refresh',
-            maxAge: computeExpiryDate().getTime() - Date.now(),
-          });
+          res.cookie(REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions());
           logger.info('HttpOnly refresh cookie set', { userId: user.id });
+        } else {
+          logger.warn('Mutation.login: res unavailable in context, refresh cookie NOT set', {
+            userId: user.id,
+          });
         }
 
         return {
@@ -300,7 +302,7 @@ const resolvers = {
             basicSalary: input.basicSalary,
             allowances: input.allowances || 0,
             position: input.position,
-            ghanaCardPin: input.ghanaCardPin || null,
+            ghanaCardPin: input.ghanaCardPIN || null,
             ssnitNumber: input.ssnitNumber || null,
             companyId: targetCompanyId,
             isActive: true,
@@ -414,6 +416,12 @@ const resolvers = {
   },
 
   Employee: {
+    // Bridges the GraphQL schema's camel-cased "PIN" casing (ghanaCardPIN)
+    // to the Prisma column's casing (ghanaCardPin). Without this explicit
+    // resolver, Apollo's default property-name lookup is case-sensitive and
+    // silently returns null for every employee's Ghana Card field.
+    ghanaCardPIN: (parent) => parent.ghanaCardPin,
+
     company: async (parent, _, { loaders, companyId, userRole }) => {
       // Logic for strict multi-tenancy restored
       if (userRole !== 'SUPER_ADMIN' && parent.companyId !== companyId) {

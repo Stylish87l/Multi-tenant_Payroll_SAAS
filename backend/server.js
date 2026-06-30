@@ -1,3 +1,4 @@
+// backend/server.js
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -18,11 +19,19 @@ import jwt from 'jsonwebtoken';
 import prisma from './config/db.js';
 import logger from './config/logger.js';
 import authMiddleware from './middleware/auth.js';
+import authMiddlewareGraphQL from './middleware/authMiddlewareGraphQL.js';
 import { createLoaders } from './graphql/resolvers.js';
 
 // Routes & GraphQL
 import authRouter from './routes/auth.js';
 import payrollRoutes from './routes/payroll.js';
+import employeeRoutes from './routes/employees.js';
+import userRoutes from './routes/users.js'; // FIXED: Path import crash neutralized
+import reportRoutes from './routes/reports.js';
+import payslipRoutes from './routes/payslips.js';
+import tenantRoutes from './routes/tenants.js';
+import tenantBrandingRoutes from './routes/tenantBranding.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 import typeDefs from './graphql/typeDefs.js';
 import resolvers from './graphql/resolvers.js';
 
@@ -32,11 +41,25 @@ const httpServer = http.createServer(app);
 // FIXED: Tell Express to trust the proxy headers from Railway
 app.enable('trust proxy'); 
 
+// --- STARTUP SANITY CHECKS ---
+if (!process.env.NODE_ENV) {
+  logger.warn(
+    '⚠️  NODE_ENV is not set. This MUST be set to "production" in Railway env vars, ' +
+    'or CORS and refresh-cookie behavior may not match the deployed environment.'
+  );
+}
+if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL) {
+  logger.warn(
+    '⚠️  FRONTEND_URL is not set in production. Falling back to the hardcoded ' +
+    'allowedOrigins list only - preview/staging frontends will be rejected by CORS.'
+  );
+}
+
 // 1. Core Middlewares: Cookie parser MUST be before routes
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 
-// Debug incoming cookies (keep for one run to verify iMac detection)
+// Debug incoming cookies (keep for one run to verify cookie detection)
 app.use((req, res, next) => {
   logger.debug('Incoming cookies detected:', req.cookies);
   next();
@@ -50,19 +73,17 @@ app.use(
   })
 );
 
-// FIXED: Added production Vercel deployment link to allowedOrigins
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5173',
   'https://studio.apollographql.com',
   'https://sandbox.embed.apollographql.com',
-  'https://usepaylio.vercel.app', // Your live frontend URL (No trailing slash)
+  'https://usepaylio.vercel.app', // Your live frontend URL
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Check if the system environment has a custom FRONTEND_URL variable defined
     const dynamicFrontend = process.env.FRONTEND_URL;
     
     if (
@@ -77,7 +98,7 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true, // This allows the 'refreshToken' cookie to pass
+  credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
   allowedHeaders: [
     'Content-Type',
@@ -94,20 +115,27 @@ const restLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: { error: 'Too many REST requests, please try again later.' },
-  validate: { trustProxy: false }, // 🚀 FIXED: Bypasses the strict trustProxy structure warning
+  validate: { trustProxy: false },
 });
 
 const gqlLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
   message: { error: 'Too many GraphQL requests, please try again later.' },
-  validate: { trustProxy: false }, // 🚀 FIXED: Bypasses the strict trustProxy structure warning
+  validate: { trustProxy: false },
 });
 
 // 4. REST Routes
 app.use('/api/', restLimiter);
 app.use('/api/auth', authRouter);
 app.use('/api/payroll', authMiddleware, payrollRoutes);
+app.use('/api/employees', employeeRoutes);
+app.use('/api/users', userRoutes); // FIXED: Successfully mounted invitation routes
+app.use('/api/reports', reportRoutes);
+app.use('/api/payslips', payslipRoutes);
+app.use('/api/tenants', tenantRoutes);
+app.use('/api/companies', authMiddleware, tenantBrandingRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 5. GraphQL Setup
 const schema = makeExecutableSchema({ typeDefs, resolvers });
@@ -173,40 +201,15 @@ const apolloServer = new ApolloServer({
       gqlLimiter,
       expressMiddleware(apolloServer, {
         context: async ({ req, res }) => {
-          let authContext = { userId: null, companyId: null, userRole: null };
+          const authContext = authMiddlewareGraphQL(req);
 
-          try {
-            const authHeader = req.headers.authorization || '';
-            if (authHeader.startsWith('Bearer ')) {
-              const token = authHeader.split(' ')[1];
-              const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-
-              authContext = {
-                userId: decoded.userId,
-                companyId: decoded.companyId || req.headers['x-tenant-id'] || null,
-                userRole: decoded.role,
-              };
-            }
-
-            return {
-              ...authContext,
-              prisma,
-              loaders: createLoaders(),
-              req,
-              res, // Pass res to resolvers for cookie management
-            };
-          } catch (error) {
-            logger.error('GraphQL Context Error', { message: error.message });
-            return {
-              userId: null,
-              companyId: null,
-              userRole: null,
-              prisma,
-              loaders: createLoaders(),
-              req,
-              res,
-            };
-          }
+          return {
+            ...authContext,
+            prisma,
+            loaders: createLoaders(),
+            req,
+            res,
+          };
         },
       })
     );

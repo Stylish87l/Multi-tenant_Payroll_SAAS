@@ -18,6 +18,11 @@ export const AuthProvider = ({ children }) => {
   const client = useApolloClient();
   const mountedRef = useRef(true);
   const refreshTimerRef = useRef(null);
+  // Tracks whether we've ever successfully established an authenticated
+  // session in THIS app lifetime. Used to distinguish "never logged in /
+  // cookie not present yet" (expected, silent) from "had a session, refresh
+  // just failed" (real logout).
+  const hasAuthenticatedRef = useRef(false);
 
   const [loginMutation] = useMutation(LOGIN_MUTATION);
 
@@ -42,6 +47,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(async () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    hasAuthenticatedRef.current = false;
     setUser(null); // Immediately update UI state to unauthenticated
     navigate('/login', { replace: true }); // Initiate navigation to login page
 
@@ -58,18 +64,32 @@ export const AuthProvider = ({ children }) => {
 
   // --- 2. CORE AUTH LOGIC ---
 
-  const refreshSession = useCallback(async () => {
+  /**
+   * @param {boolean} isInitialCheck - true only for the very first refresh
+   *   attempt on app mount, before any session has been established. A
+   *   failure here is EXPECTED for a logged-out visitor (no refresh cookie
+   *   exists yet) and must NOT trigger logout()'s navigate/cache-reset
+   *   cycle - that was the cause of "login immediately logs me out": every
+   *   mount called refreshSession() unconditionally, and any transient
+   *   failure (including normal cross-site cookie propagation timing) was
+   *   treated identically to "your session just died".
+   */
+  const refreshSession = useCallback(async (isInitialCheck = false) => {
     try {
       // Use the SHARED promise from Apollo to prevent "Double Refresh" race conditions
       const accessToken = await doRefresh(); 
 
-      if (!accessToken) return null;
+      if (!accessToken) {
+        if (!isInitialCheck) logout();
+        return null;
+      }
 
       // Sync state with what doRefresh saved to localStorage
       const storedUser = JSON.parse(localStorage.getItem('user'));
       const storedCompanyId = localStorage.getItem(COMPANY_KEY);
 
       if (mountedRef.current) {
+        hasAuthenticatedRef.current = true;
         setUser({
           ...storedUser,
           companyId: storedCompanyId || storedUser?.companyId
@@ -78,6 +98,13 @@ export const AuthProvider = ({ children }) => {
       }
       return accessToken;
     } catch (err) {
+      if (isInitialCheck && !hasAuthenticatedRef.current) {
+        // Expected case: no prior session, no refresh cookie yet (or it
+        // hasn't propagated). Stay quietly unauthenticated - do NOT
+        // navigate or reset the Apollo store.
+        console.warn("No existing session found on initial load.");
+        return null;
+      }
       console.error("AuthContext Refresh Error:", err);
       if (mountedRef.current) logout();
       return null;
@@ -97,7 +124,7 @@ export const AuthProvider = ({ children }) => {
 
     if (ms > 0) {
       refreshTimerRef.current = setTimeout(() => {
-        refreshSession().catch(() => {});
+        refreshSession(false).catch(() => {});
       }, ms);
     }
   }, [parseJwt, refreshSession]);
@@ -113,6 +140,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('user', JSON.stringify(userData));
 
       if (mountedRef.current) {
+        hasAuthenticatedRef.current = true;
         setUser({ ...userData, companyId: companyId || userData.companyId });
         scheduleRefresh(accessToken);
       }
@@ -136,16 +164,14 @@ export const AuthProvider = ({ children }) => {
     
     const initAuth = async () => {
       try {
-        const token = localStorage.getItem(TOKEN_KEY);
-        // If a token exists, we try to refresh it immediately to validate session
-        if (token) {
-          await refreshSession();
-        } else {
-          // Attempt a silent refresh even without local token (checks HttpOnly cookie)
-          await refreshSession();
-        }
+        // Attempt a silent refresh on first load (checks the HttpOnly
+        // cookie regardless of whether a local access token is cached -
+        // the cookie is the actual source of truth). isInitialCheck=true
+        // ensures a failure here is treated as "not logged in yet", not
+        // "session expired".
+        await refreshSession(true);
       } catch (e) {
-        console.warn("Initial auth check failed, redirecting to login if necessary.");
+        console.warn("Initial auth check failed - treating as logged out.");
       } finally {
         // ALWAYS set loading to false to unblock the UI
         if (mountedRef.current) setLoading(false); 

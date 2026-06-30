@@ -14,41 +14,41 @@ import { createClient } from 'graphql-ws';
 import { getMainDefinition } from '@apollo/client/utilities';
 
 // --- Environment variables ---
-// FIXED: Updated to read from VITE_GRAPHQL_API_URL to match main.jsx and Vercel configs
 const HTTP_URL = import.meta.env.VITE_GRAPHQL_API_URL; 
 const WS_URL = import.meta.env.VITE_GRAPHQL_WS_URL;
-const REFRESH_URL = import.meta.env.VITE_AUTH_REFRESH_URL;
-
-console.log("Apollo HTTP_URL:", HTTP_URL);
-console.log("Apollo WS_URL:", WS_URL);
-console.log("Apollo REFRESH_URL:", REFRESH_URL);
 
 if (!HTTP_URL) throw new Error('VITE_GRAPHQL_API_URL is not defined');
+
 // --- Refresh singleton to avoid concurrent refreshes ---
 let refreshPromise = null;
 
 /**
- * Shared refresh function - FIXED & ALIGNED WITH BACKEND
+ * Shared refresh function.
+ *
+ * IMPORTANT: This function does NOT clear localStorage on failure anymore.
+ * It used to wipe 'token' / 'companyContext' / 'user' on every single 401,
+ * which fires on EVERY page load for a logged-out visitor (no refresh
+ * cookie yet is the expected, normal case) - that's harmless on its own,
+ * but it also meant any transient failure (cross-site cookie propagation
+ * delay, a network blip right after a real login) wiped a session that
+ * was otherwise fine. Clearing storage is now AuthContext.logout()'s job,
+ * and it only runs when we've decided the user is actually being logged
+ * out, not on every failed refresh attempt.
  */
 export const doRefresh = async () => {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
     try {
-      console.log("🔄 doRefresh: Calling /api/auth/refresh");
-
-const res = await fetch(`${HTTP_URL.replace('/graphql', '')}/api/auth/refresh`, {       
-   method: 'POST',
+      const res = await fetch(`${HTTP_URL.replace('/graphql', '')}/api/auth/refresh`, {
+        method: 'POST',
         credentials: 'include',
-        headers: { 
-          'Content-Type': 'application/json' 
+        headers: {
+          'Content-Type': 'application/json',
         },
       });
 
-      console.log("🔄 doRefresh status:", res.status);
-
       if (res.status === 401) {
-        console.warn("❌ Refresh returned 401 - token expired or invalid");
         throw new Error('EXPIRED');
       }
 
@@ -57,8 +57,6 @@ const res = await fetch(`${HTTP_URL.replace('/graphql', '')}/api/auth/refresh`, 
       }
 
       const json = await res.json();
-      console.log("✅ doRefresh successful", json);
-
       const accessToken = json.accessToken || json.token;
       const { companyId, user } = json;
 
@@ -72,12 +70,8 @@ const res = await fetch(`${HTTP_URL.replace('/graphql', '')}/api/auth/refresh`, 
       if (user) localStorage.setItem('user', JSON.stringify(user));
 
       return accessToken;
-
     } catch (err) {
-      console.error('Token refresh error:', err);
-      localStorage.removeItem('token');
-      localStorage.removeItem('companyContext');
-      localStorage.removeItem('user');
+      // Intentionally NOT clearing localStorage here - see comment above.
       throw err;
     } finally {
       refreshPromise = null;
@@ -134,7 +128,12 @@ if (WS_URL) {
           return new Promise((res) => setTimeout(res, ms));
         },
         connectionParams: () => ({
-          authToken: localStorage.getItem('token'),
+          // FIXED: server.js's WS context reads
+          // ctx.connectionParams?.authorization (or .Authorization), not
+          // .authToken. The previous key name meant every WebSocket
+          // subscription connected fully unauthenticated, silently
+          // bypassing tenant scoping for payrollUpdated/notificationSent.
+          authorization: `Bearer ${localStorage.getItem('token') || ''}`,
           companyId: localStorage.getItem('companyContext'),
         }),
       })
