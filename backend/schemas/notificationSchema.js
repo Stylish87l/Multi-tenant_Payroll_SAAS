@@ -42,11 +42,12 @@ const notificationSchema = z.object({
     return val.getTime() > Date.now() + 5 * 60 * 1000;
   }, { message: 'Expiration must be at least 5 minutes in the future' }),
 })
+.strict() // 🟢 Disallow unknown fields safely while still exposed as a ZodObject instance
 /**
  * Channel-Specific Compliance
  * SMS characters are expensive; enforce 160-char limit for Ghana SMS gateway.
  */
-.refine((data) => !(data.channel === 'SMS' && data.content.body.length > 160), {
+.refine((data) => !(data.channel === 'SMS' && data.content?.body?.length > 160), {
   message: 'SMS content exceeds the 160-character limit for a single segment.',
   path: ['content.body'],
 })
@@ -57,7 +58,6 @@ const notificationSchema = z.object({
 .transform((data) => ({
   ...data,
   sentAt: data.status === 'SENT' ? new Date() : null,
-}))
-.strict(); // Disallow unknown fields
+}));
 
 export default notificationSchema;
