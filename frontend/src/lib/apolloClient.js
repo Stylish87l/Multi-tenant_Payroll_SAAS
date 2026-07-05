@@ -24,16 +24,7 @@ let refreshPromise = null;
 
 /**
  * Shared refresh function.
- *
- * IMPORTANT: This function does NOT clear localStorage on failure anymore.
- * It used to wipe 'token' / 'companyContext' / 'user' on every single 401,
- * which fires on EVERY page load for a logged-out visitor (no refresh
- * cookie yet is the expected, normal case) - that's harmless on its own,
- * but it also meant any transient failure (cross-site cookie propagation
- * delay, a network blip right after a real login) wiped a session that
- * was otherwise fine. Clearing storage is now AuthContext.logout()'s job,
- * and it only runs when we've decided the user is actually being logged
- * out, not on every failed refresh attempt.
+ * Maintains session stability without unprompted storage clearing.
  */
 export const doRefresh = async () => {
   if (refreshPromise) return refreshPromise;
@@ -71,7 +62,6 @@ export const doRefresh = async () => {
 
       return accessToken;
     } catch (err) {
-      // Intentionally NOT clearing localStorage here - see comment above.
       throw err;
     } finally {
       refreshPromise = null;
@@ -87,24 +77,14 @@ const httpLink = createHttpLink({
   credentials: 'include', // CRITICAL: Allows Mutation.login to set the cookie
 });
 
-
-// --- Auth link: injects token and tenant headers ---
+// --- Auth link: injects token ---
 const authLink = setContext((_, { headers }) => {
   const token = localStorage.getItem('token');
-  
-  // FAIL-SAFE: Look in three places for the company ID
-  const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
-  const companyId = 
-    localStorage.getItem('companyContext') || 
-    storedUser.companyId || 
-    storedUser.tenantId || // Cover all naming conventions
-    '';
 
   return {
     headers: {
       ...headers,
       authorization: token ? `Bearer ${token}` : '',
-      'x-tenant-id': companyId,
       'apollo-require-preflight': 'true',
     },
   };
@@ -127,15 +107,14 @@ if (WS_URL) {
           );
           return new Promise((res) => setTimeout(res, ms));
         },
-        connectionParams: () => ({
-          // FIXED: server.js's WS context reads
-          // ctx.connectionParams?.authorization (or .Authorization), not
-          // .authToken. The previous key name meant every WebSocket
-          // subscription connected fully unauthenticated, silently
-          // bypassing tenant scoping for payrollUpdated/notificationSent.
-          authorization: `Bearer ${localStorage.getItem('token') || ''}`,
-          companyId: localStorage.getItem('companyContext'),
-        }),
+        connectionParams: () => {
+          const token = localStorage.getItem('token');
+          return {
+            // FIXED: Avoids passing 'Bearer null' when token is missing
+            authorization: token ? `Bearer ${token}` : '',
+            companyId: localStorage.getItem('companyContext'),
+          };
+        },
       })
     );
   } catch (err) {
@@ -164,30 +143,25 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) 
 
   if (!isAuthError) return;
 
-  // Returning an Observable allows us to "wait" for the refresh before retrying
   return new Observable((observer) => {
-    let subscriber; // 1. Create a reference for the subscriber
+    let subscriber;
 
     (async () => {
       try {
         const newToken = await doRefresh();
         if (!newToken) throw new Error('Refresh failed');
 
-        // RE-FETCH FRESH DATA FOR RETRY
-        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
-        const companyId = localStorage.getItem('companyContext') || storedUser.companyId || '';
-
         const oldHeaders = operation.getContext().headers || {};
         operation.setContext({
           headers: {
             ...oldHeaders,
             authorization: `Bearer ${newToken}`,
-            'x-tenant-id': companyId, // Updated to be redundant
+            // FIXED: Removed misleading 'x-tenant-id' token injection. 
+            // Multi-tenant scoping relies strictly on JWT contents.
             'apollo-require-preflight': 'true',
           },
         });
 
-        // 2. Assign the subscriber
         subscriber = forward(operation).subscribe({
           next: observer.next.bind(observer),
           error: observer.error.bind(observer),
@@ -198,7 +172,6 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) 
       }
     })();
 
-    // 3. CRITICAL: Add the cleanup function to prevent ghost requests
     return () => {
       if (subscriber) {
         subscriber.unsubscribe();

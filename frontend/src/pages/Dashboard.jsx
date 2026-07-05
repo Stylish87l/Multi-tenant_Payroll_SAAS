@@ -40,24 +40,24 @@ const Dashboard = () => {
   const metrics = useMemo(() => [
     {
       label: 'Total Employees',
-      value: data?.employeeCount ?? 0,
+      value: data?.stats ?? 0,
       icon: Users,
       color: 'from-blue-500 to-cyan-400',
     },
     {
       label: 'Active Payroll',
-      value: data?.recentPayrollRuns?.[0]?.month ?? 'Not Run',
+      value: data?.recentRuns?.[0]?.month ?? 'Not Run',
       icon: CreditCard,
       color: 'from-emerald-500 to-teal-400',
     },
     {
       label: 'Pending Tasks',
-      value: data?.pendingNotifications ?? 0,
+      value: data?.notificationsCount ?? 0,
       icon: Bell,
       color: 'from-rose-500 to-orange-400',
     },
   ], [data]);
-
+  
   if (loading) return <Loader message="Syncing organization data..." />;
   if (error) {
     return (

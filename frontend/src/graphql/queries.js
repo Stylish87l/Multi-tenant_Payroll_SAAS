@@ -1,9 +1,6 @@
+// frontend/src/graphql/queries.js
 import { gql } from '@apollo/client';
 
-/**
- * FRAGMENTS
- * Restored: All core fields required by Employees.jsx and Mutation Cache updates.
- */
 export const EMPLOYEE_CORE_FIELDS = gql`
   fragment EmployeeCore on Employee {
     id
@@ -23,10 +20,6 @@ export const EMPLOYEE_FINANCIAL_FIELDS = gql`
   }
 `;
 
-/**
- * GET_PAYROLL_RUNS
- * Restored: Sibling positioning for page, limit, and total.
- */
 export const GET_PAYROLL_RUNS = gql`
   query GetPayrollRuns($companyId: ID, $page: Int = 1, $limit: Int = 50) {
     payrollRuns(companyId: $companyId, page: $page, limit: $limit) {
@@ -51,10 +44,6 @@ export const GET_PAYROLL_RUNS = gql`
   }
 `;
 
-/**
- * GET_EMPLOYEES
- * FIXED: Updated 'ghanaCardPin' to uppercase 'ghanaCardPIN' to match server schema
- */
 export const GET_EMPLOYEES = gql`
   query GetEmployees($companyId: ID, $page: Int = 1, $limit: Int = 50, $search: String) {
     employees(companyId: $companyId, page: $page, limit: $limit, search: $search) {
@@ -62,7 +51,7 @@ export const GET_EMPLOYEES = gql`
         ...EmployeeCore
         ...EmployeeFinancial
         ssnitNumber 
-        ghanaCardPIN
+        ghanaCardPin
       }
       page
       limit
@@ -77,10 +66,6 @@ export const GET_EMPLOYEES = gql`
   ${EMPLOYEE_FINANCIAL_FIELDS}
 `;
 
-/**
- * GET_DASHBOARD_DATA
- * FIXED: Adjusted notification metric parameter signature alignment
- */
 export const GET_DASHBOARD_DATA = gql`
   query GetDashboardData($companyId: ID!) {
     stats: employeeCount(companyId: $companyId)
@@ -95,33 +80,6 @@ export const GET_DASHBOARD_DATA = gql`
   }
 `;
 
-/**
- * GET_REPORTS (GRA & SSNIT)
- * FIXED: Made month optional ($month: String) so Reports.jsx won't crash when mounting without it
- */
-export const GET_REPORTS = gql`
-  query GetReports($companyId: ID!, $month: String) {
-    graSchedules(companyId: $companyId, month: $month) {
-      serialNo
-      tin
-      name
-      assessable
-      paye
-    }
-    ssnitSchedules(companyId: $companyId, month: $month) {
-      ssnitNo
-      name
-      tier1
-      tier2
-      totalContribution
-    }
-  }
-`;
-
-/**
- * GET_ME
- * Restored: Essential auth context fields.
- */
 export const GET_ME = gql`
   query GetMe {
     me {
@@ -135,14 +93,13 @@ export const GET_ME = gql`
   }
 `;
 
-/**
- * GET_PREFERENCES
- * Restored: UI Theme and Notification settings.
- */
 export const GET_PREFERENCES = gql`
   query GetPreferences {
     preferences {
       id
+      smsOptIn
+      emailOptIn
+      twoFactorEnabled
       darkMode
       language
       notificationsEnabled

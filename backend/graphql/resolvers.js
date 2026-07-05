@@ -12,9 +12,21 @@ import {
   computeExpiryDate,
 } from '../utils/authTokens.js';
 import { REFRESH_COOKIE_NAME, getRefreshCookieOptions } from '../config/cookies.js';
+import { calculateSSNIT } from '../utils/ssnitCalculator.js';
+import { calculatePAYE } from '../utils/payeCalculator.js';
 
 // Real-time engine
 const pubsub = new PubSub();
+
+// FIXED: GraphQL mutations had zero role enforcement - any authenticated
+// user (including EMPLOYEE) could call createEmployee/runPayroll/etc
+// directly, even though the equivalent REST routes are RBAC-protected.
+// This mirrors middleware/rbac.js's allow-list check for use inside resolvers.
+const requireRole = (userRole, allowedRoles, action = 'perform this action') => {
+  if (!userRole || !allowedRoles.includes(userRole)) {
+    throw new Error(`Unauthorized: You do not have permission to ${action}`);
+  }
+};
 
 const resolvers = {
   Query: {
@@ -38,10 +50,12 @@ const resolvers = {
     },
 
     employees: async (_, { page = 1, limit = 10, search, companyId: argCompanyId }, { companyId: ctxCompanyId, userRole }) => {
-      console.log('DEBUG: employees resolver context ->', { ctxCompanyId, userRole, argCompanyId });
       logger.info('Query.employees called', { page, limit, ctxCompanyId, userRole });
-      
       try {
+        // FIXED: REST employees.js restricts the entire router to
+        // SUPER_ADMIN/ADMIN/HR - GraphQL had no equivalent check.
+        requireRole(userRole, ['SUPER_ADMIN', 'ADMIN', 'HR'], 'view employee records');
+
         const effectiveCompanyId = userRole === 'SUPER_ADMIN' ? argCompanyId : ctxCompanyId;
 
         if (!effectiveCompanyId && userRole !== 'SUPER_ADMIN') {
@@ -175,12 +189,61 @@ const resolvers = {
           where: { userId },
           skip,
           take: limit,
-          orderBy: { sentAt: 'desc' },
+          orderBy: { createdAt: 'desc' },
         });
         return notifications;
       } catch (error) {
         logger.error('Query.notifications Error', { message: error.message, stack: error.stack });
         throw new Error('Failed to fetch notifications');
+      }
+    },
+
+    // FIXED: declared in typeDefs but had no resolver at all - any call
+    // would throw "Cannot return null for non-nullable field".
+    payrollSummaryReport: async (_, { companyId: argId, month }, { companyId: ctxId, userRole }) => {
+      const targetId = userRole === 'SUPER_ADMIN' ? (argId || ctxId) : ctxId;
+      if (!targetId) throw new Error('Unauthorized: No company context');
+
+      try {
+        const where = {
+          payrollRun: { companyId: targetId, ...(month ? { month } : {}) },
+        };
+
+        const [aggregate, employeeCount] = await Promise.all([
+          prisma.payrollItem.aggregate({
+            where,
+            _sum: { grossSalary: true, payeTax: true, ssnitEmployee: true, netPay: true },
+          }),
+          prisma.payrollItem.count({ where }),
+        ]);
+
+        return {
+          totalGross: aggregate._sum.grossSalary || 0,
+          totalPAYE: aggregate._sum.payeTax || 0,
+          totalSSNIT: aggregate._sum.ssnitEmployee || 0,
+          totalNetPay: aggregate._sum.netPay || 0,
+          employeeCount,
+        };
+      } catch (error) {
+        logger.error('Query.payrollSummaryReport Error', { targetId, month, message: error.message, stack: error.stack });
+        throw new Error('Failed to generate payroll summary report');
+      }
+    },
+
+    // FIXED: backs Settings.jsx, which previously called a query that
+    // didn't exist anywhere in the schema - the Settings page crashed
+    // on load, every time.
+    preferences: async (_, __, { userId }) => {
+      if (!userId) return null;
+      try {
+        let prefs = await prisma.notificationPreference.findUnique({ where: { userId } });
+        if (!prefs) {
+          prefs = await prisma.notificationPreference.create({ data: { userId } });
+        }
+        return prefs;
+      } catch (error) {
+        logger.error('Query.preferences Error', { userId, message: error.message, stack: error.stack });
+        throw new Error('Failed to fetch preferences');
       }
     },
   },
@@ -289,15 +352,23 @@ const resolvers = {
     createEmployee: async (_, { input }, { companyId, userRole }) => {
       logger.info('Mutation.createEmployee called', { input, companyId });
       try {
+        requireRole(userRole, ['SUPER_ADMIN', 'ADMIN', 'HR'], 'create employee records');
+
         const targetCompanyId = userRole === 'SUPER_ADMIN' ? (input.companyId || companyId) : companyId;
         if (!targetCompanyId) throw new Error('Unauthorized: No company context');
 
+        // FIXED: Prisma's Employee model has housingAllowance /
+        // transportAllowance / otherAllowance - there's no generic
+        // `allowances` column. Writing it directly threw "Unknown
+        // argument `allowances`" on every single create. The GraphQL
+        // `allowances` input is mapped into otherAllowance instead;
+        // housing/transport default to 0 and can be adjusted later.
         const employee = await prisma.employee.create({
           data: {
             name: input.name,
             email: input.email.toLowerCase().trim(),
             basicSalary: input.basicSalary,
-            allowances: input.allowances || 0,
+            otherAllowance: input.allowances || 0,
             position: input.position,
             ghanaCardPin: input.ghanaCardPIN || input.ghanaCardPin || null,
             ssnitNumber: input.ssnitNumber || null,
@@ -315,6 +386,8 @@ const resolvers = {
     updateEmployee: async (_, { id, input }, { companyId, userRole }) => {
       logger.info('Mutation.updateEmployee called', { id, input, companyId });
       try {
+        requireRole(userRole, ['SUPER_ADMIN', 'ADMIN', 'HR'], 'update employee records');
+
         const existingEmployee = await prisma.employee.findUnique({
           where: { id }
         });
@@ -328,13 +401,14 @@ const resolvers = {
           throw new Error('Unauthorized: You do not own this record');
         }
 
+        // FIXED: same non-existent `allowances` column issue as create.
         const updatedEmployee = await prisma.employee.update({
           where: { id },
           data: {
             name: input.name,
             email: input.email ? input.email.toLowerCase().trim() : undefined,
             basicSalary: input.basicSalary,
-            allowances: input.allowances,
+            otherAllowance: input.allowances,
             position: input.position,
             ghanaCardPin: input.ghanaCardPIN !== undefined ? input.ghanaCardPIN : (input.ghanaCardPin !== undefined ? input.ghanaCardPin : undefined),
             ssnitNumber: input.ssnitNumber,
@@ -349,18 +423,125 @@ const resolvers = {
       }
     },
 
-    runPayroll: async (_, { month, companyId: argId }, { companyId: ctxId, userRole }) => {
+    // FIXED: this was a stub that only created an empty PayrollRun row -
+    // no PayrollItems, no SSNIT/PAYE calculation, no duplicate-run guard,
+    // no audit trail (required by CLAUDE.md for every payroll run).
+    runPayroll: async (_, { month, companyId: argId }, { companyId: ctxId, userRole, userId }) => {
       logger.info('Mutation.runPayroll called', { month, argId });
-      const targetId = userRole === 'SUPER_ADMIN' ? argId : ctxId;
+      requireRole(userRole, ['SUPER_ADMIN', 'ADMIN', 'HR'], 'run payroll');
+
+      const targetId = userRole === 'SUPER_ADMIN' ? (argId || ctxId) : ctxId;
+      if (!targetId) {
+        throw new Error('Unauthorized: No company context for payroll run');
+      }
+
       try {
-        const payrollRun = await prisma.payrollRun.create({
-          data: {
-            month,
-            status: 'DRAFT',
-            runType: 'REGULAR',
-            companyId: targetId,
+        const existing = await prisma.payrollRun.findFirst({
+          where: { companyId: targetId, month },
+        });
+        if (existing) {
+          throw new Error(`Payroll for ${month} already exists for this company.`);
+        }
+
+        const employees = await prisma.employee.findMany({
+          where: { companyId: targetId, isActive: true },
+          select: {
+            id: true,
+            basicSalary: true,
+            housingAllowance: true,
+            transportAllowance: true,
+            otherAllowance: true,
+            isMarried: true,
+            hasResponsibility: true,
+            childrenCount: true,
+            isDisabled: true,
+            age: true,
+            agedDependentsCount: true,
           },
         });
+
+        if (!employees.length) {
+          throw new Error('No active employees found for this company.');
+        }
+
+        // calculateSSNIT/calculatePAYE are async (they read tenant-specific
+        // TaxConfig from the DB) - resolved sequentially up front so the
+        // whole batch is ready before opening the transaction. Decimal
+        // columns come back as Decimal.js instances, never raw JS numbers,
+        // so every value is explicitly coerced with Number() before math.
+        const computedItems = [];
+        for (const emp of employees) {
+          const basicSalary = Number(emp.basicSalary);
+          const totalAllowances =
+            Number(emp.housingAllowance) + Number(emp.transportAllowance) + Number(emp.otherAllowance);
+          const grossSalary = basicSalary + totalAllowances;
+
+          // eslint-disable-next-line no-await-in-loop
+          const ssnit = await calculateSSNIT(basicSalary, totalAllowances, targetId);
+          const assessableIncome = grossSalary - ssnit.employeeDeduction;
+
+          // eslint-disable-next-line no-await-in-loop
+          const paye = await calculatePAYE(
+            assessableIncome,
+            {
+              isMarried: emp.isMarried,
+              hasResponsibility: emp.hasResponsibility,
+              childrenCount: emp.childrenCount,
+              isDisabled: emp.isDisabled,
+              age: emp.age,
+              agedDependentsCount: emp.agedDependentsCount,
+            },
+            targetId
+          );
+
+          computedItems.push({
+            employeeId: emp.id,
+            grossSalary,
+            taxableIncome: paye.taxableIncome,
+            ssnitEmployee: ssnit.employeeDeduction,
+            ssnitEmployer: ssnit.employerContribution,
+            ssnitTier1: ssnit.remittance.tier1,
+            ssnitTier2: ssnit.remittance.tier2,
+            payeTax: paye.totalTax,
+            netPay: grossSalary - ssnit.employeeDeduction - paye.totalTax,
+          });
+        }
+
+        const payrollRun = await prisma.$transaction(async (tx) => {
+          const run = await tx.payrollRun.create({
+            data: {
+              companyId: targetId,
+              month,
+              status: 'DRAFT',
+              runType: 'REGULAR',
+              processedById: userId || null,
+            },
+          });
+
+          await tx.payrollItem.createMany({
+            data: computedItems.map((item) => ({ ...item, payrollRunId: run.id })),
+          });
+
+          // CLAUDE.md audit-trail rule: "Every sensitive action (salary
+          // change, payroll run) must trigger an AuditLog entry."
+          await tx.auditLog.create({
+            data: {
+              userId: userId || null,
+              action: 'PAYROLL_RUN_CREATED',
+              details: {
+                runId: run.id,
+                companyId: targetId,
+                month,
+                employeeCount: computedItems.length,
+              },
+              resourceId: run.id,
+              resourceType: 'PayrollRun',
+            },
+          });
+
+          return run;
+        });
+
         pubsub.publish('PAYROLL_UPDATED', { payrollUpdated: payrollRun });
         return payrollRun;
       } catch (error) {
@@ -369,13 +550,38 @@ const resolvers = {
       }
     },
 
-    finalizePayroll: async (_, { runId }, { companyId, userRole }) => {
+    finalizePayroll: async (_, { runId }, { companyId, userRole, userId }) => {
       logger.info('Mutation.finalizePayroll called', { runId });
       try {
+        requireRole(userRole, ['SUPER_ADMIN', 'ADMIN'], 'finalize payroll');
+
+        const run = await prisma.payrollRun.findUnique({ where: { id: runId } });
+        if (!run) throw new Error('Payroll run not found');
+
+        // FIXED: no tenant-isolation check existed here at all - any admin
+        // could finalize another company's payroll run by guessing/
+        // enumerating a runId.
+        if (userRole !== 'SUPER_ADMIN' && run.companyId !== companyId) {
+          throw new Error('Unauthorized: Cannot finalize payroll for another company');
+        }
+
         const updated = await prisma.payrollRun.update({
           where: { id: runId },
+          // FIXED: PayrollRun previously had no `processedAt` column -
+          // this write crashed every finalize call. Now backed by schema.
           data: { status: 'FINALIZED', processedAt: new Date() },
         });
+
+        await prisma.auditLog.create({
+          data: {
+            userId: userId || null,
+            action: 'PAYROLL_RUN_FINALIZED',
+            details: { runId: updated.id, companyId: updated.companyId },
+            resourceId: updated.id,
+            resourceType: 'PayrollRun',
+          },
+        });
+
         pubsub.publish('PAYROLL_UPDATED', { payrollUpdated: updated });
         return updated;
       } catch (error) {
@@ -387,6 +593,10 @@ const resolvers = {
     sendNotification: async (_, { input }, { companyId, userRole }) => {
       logger.info('Mutation.sendNotification called', { input });
       try {
+        requireRole(userRole, ['SUPER_ADMIN', 'ADMIN', 'HR'], 'send notifications');
+
+        // FIXED: `companyId` write below previously threw "Unknown argument"
+        // because Notification had no companyId column - now backed by schema.
         const notification = await prisma.notification.create({
           data: {
             userId: input.userId,
@@ -402,6 +612,22 @@ const resolvers = {
       } catch (error) {
         logger.error('Mutation.sendNotification Error', { message: error.message, stack: error.stack });
         throw error;
+      }
+    },
+
+    // FIXED: backs Settings.jsx, which previously called a mutation that
+    // didn't exist anywhere in the schema.
+    updatePreferences: async (_, { input }, { userId }) => {
+      if (!userId) throw new Error('Unauthorized');
+      try {
+        return await prisma.notificationPreference.upsert({
+          where: { userId },
+          update: input,
+          create: { userId, ...input },
+        });
+      } catch (error) {
+        logger.error('Mutation.updatePreferences Error', { userId, message: error.message, stack: error.stack });
+        throw new Error('Failed to update preferences');
       }
     },
   },
@@ -424,25 +650,23 @@ const resolvers = {
   },
 
   PayrollRun: {
-    items: (parent) => prisma.payrollItem.findMany({ 
-      where: { payrollRunId: parent.id }, 
-      include: { employee: true } 
-    }),
-    totalNet: async (parent) => {
-      const aggregate = await prisma.payrollItem.aggregate({
-        where: { payrollRunId: parent.id },
-        _sum: { netPay: true }
-      });
-      return aggregate._sum.netPay || 0;
+    // FIXED: Optimized N+1 lookup using payrollItemsByRunLoader batching
+    items: async (parent, _, { loaders }) => {
+      return loaders.payrollItemsByRunLoader.load(parent.id);
+    },
+    // FIXED: Uses the pre-fetched loader array from memory instead of executing separate SQL count queries per row
+    totalNet: async (parent, _, { loaders }) => {
+      const items = await loaders.payrollItemsByRunLoader.load(parent.id);
+      return items.reduce((sum, item) => sum + (Number(item.netPay) || 0), 0);
     },
     isFinalized: (parent) => parent.status === 'FINALIZED',
-    errorMessage: (parent) => parent.errorMessage || null
   },
 
   PayrollItem: {
     totalNet: (parent) => parent.netPay || 0,
-    isFinalized: async (parent) => {
-      const run = await prisma.payrollRun.findUnique({ where: { id: parent.payrollRunId } });
+    // FIXED: Batched through payrollRunLoader to prevent multiple unique row status roundtrips
+    isFinalized: async (parent, _, { loaders }) => {
+      const run = await loaders.payrollRunLoader.load(parent.payrollRunId);
       return run?.status === 'FINALIZED';
     },
     processedAt: (parent) => parent.processedAt || parent.createdAt
@@ -451,6 +675,15 @@ const resolvers = {
   Employee: {
     ghanaCardPIN: (parent) => parent.ghanaCardPin,
     ghanaCardPin: (parent) => parent.ghanaCardPin,
+
+    // FIXED: `allowances` is not a real column - it's the sum of the
+    // three real allowance columns, computed on read.
+    allowances: (parent) => {
+      const h = Number(parent.housingAllowance || 0);
+      const t = Number(parent.transportAllowance || 0);
+      const o = Number(parent.otherAllowance || 0);
+      return h + t + o;
+    },
 
     company: async (parent, _, { loaders, companyId, userRole }) => {
       if (userRole !== 'SUPER_ADMIN' && parent.companyId !== companyId) {
@@ -466,6 +699,31 @@ export const createLoaders = () => ({
   company: new DataLoader(async (ids) => {
     const companies = await prisma.company.findMany({ where: { id: { in: ids } } });
     return ids.map((id) => companies.find((c) => c.id === id) || null);
+  }),
+  
+  // FIXED: Expanded to handle individual PayrollRun lookups for field loops efficiently
+  payrollRunLoader: new DataLoader(async (runIds) => {
+    const runs = await prisma.payrollRun.findMany({
+      where: { id: { in: [...new Set(runIds)] } },
+    });
+    const runMap = new Map(runs.map((run) => [run.id, run]));
+    return runIds.map((id) => runMap.get(id) || null);
+  }),
+
+  // FIXED: Expanded to collect, select and match items per Run without stacking horizontal hits
+  payrollItemsByRunLoader: new DataLoader(async (runIds) => {
+    const items = await prisma.payrollItem.findMany({
+      where: { payrollRunId: { in: [...new Set(runIds)] } },
+      include: { employee: true },
+    });
+    const itemsMap = new Map();
+    items.forEach((item) => {
+      if (!itemsMap.has(item.payrollRunId)) {
+        itemsMap.set(item.payrollRunId, []);
+      }
+      itemsMap.get(item.payrollRunId).push(item);
+    });
+    return runIds.map((id) => itemsMap.get(id) || []);
   }),
 });
 

@@ -105,7 +105,7 @@ const Payroll = () => {
       return;
     }
     const currentMonth = new Date().toISOString().slice(0, 7);
-    runPayroll({ variables: { month: currentMonth } });
+    runPayroll({ variables: { month: currentMonth, companyId: user?.companyId } });
   }, [runPayroll, user]);
 
   const getStatusStyle = useCallback((status) => {

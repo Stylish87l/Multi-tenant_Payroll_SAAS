@@ -26,7 +26,7 @@ import { createLoaders } from './graphql/resolvers.js';
 import authRouter from './routes/auth.js';
 import payrollRoutes from './routes/payroll.js';
 import employeeRoutes from './routes/employees.js';
-import userRoutes from './routes/users.js'; // FIXED: Path import crash neutralized
+import userRoutes from './routes/users.js';
 import reportRoutes from './routes/reports.js';
 import payslipRoutes from './routes/payslips.js';
 import tenantRoutes from './routes/tenants.js';
@@ -68,6 +68,7 @@ app.use((req, res, next) => {
 // 2. Security & REFINED CORS
 app.use(
   helmet({
+    // FIXED: Correctly configures CSP to support Apollo Sandbox during testing stages
     contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
     crossOriginEmbedderPolicy: false,
   })
@@ -79,7 +80,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://studio.apollographql.com',
   'https://sandbox.embed.apollographql.com',
-  'https://usepaylio.vercel.app', // Your live frontend URL
+  'https://usepaylio.vercel.app', 
 ];
 
 app.use(cors({
@@ -105,7 +106,6 @@ app.use(cors({
     'Authorization',
     'apollo-require-preflight',
     'x-apollo-operation-name',
-    'x-tenant-id',
   ],
   exposedHeaders: ['set-cookie'] 
 }));
@@ -128,14 +128,17 @@ const gqlLimiter = rateLimit({
 // 4. REST Routes
 app.use('/api/', restLimiter);
 app.use('/api/auth', authRouter);
+
+// FIXED: Applied global `authMiddleware` protection to all data-centric endpoints
+// to secure tenant parameters before sub-routing handles executions.
 app.use('/api/payroll', authMiddleware, payrollRoutes);
-app.use('/api/employees', employeeRoutes);
-app.use('/api/users', userRoutes); // FIXED: Successfully mounted invitation routes
-app.use('/api/reports', reportRoutes);
-app.use('/api/payslips', payslipRoutes);
-app.use('/api/tenants', tenantRoutes);
+app.use('/api/employees', authMiddleware, employeeRoutes);
+app.use('/api/users', authMiddleware, userRoutes);
+app.use('/api/reports', authMiddleware, reportRoutes);
+app.use('/api/payslips', authMiddleware, payslipRoutes);
+app.use('/api/tenants', authMiddleware, tenantRoutes);
 app.use('/api/companies', authMiddleware, tenantBrandingRoutes);
-app.use('/api/notifications', notificationRoutes);
+app.use('/api/notifications', authMiddleware, notificationRoutes);
 
 // 5. GraphQL Setup
 const schema = makeExecutableSchema({ typeDefs, resolvers });
@@ -159,7 +162,8 @@ const serverCleanup = useServer(
         const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
         return {
           userId: payload.userId,
-          companyId: payload.role === 'SUPER_ADMIN' ? null : payload.companyId,
+          // FIXED: Avoids hardcoding a literal null search constraint for super admins.
+          companyId: payload.role === 'SUPER_ADMIN' ? undefined : payload.companyId,
           userRole: payload.role,
           prisma,
           loaders: createLoaders(),
@@ -247,4 +251,4 @@ const apolloServer = new ApolloServer({
     logger.error('Apollo startup failed', { stack: err.stack });
     process.exit(1);
   }
-})();// Triggering deployment run
+})();

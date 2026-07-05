@@ -1,10 +1,9 @@
+// frontend/src/graphql/mutations.js
 import { gql } from '@apollo/client';
-// IMPORTANT: Ensure these fragments in queries.js include 'id', 'name', 'email', and 'basicSalary'
 import { EMPLOYEE_CORE_FIELDS, EMPLOYEE_FINANCIAL_FIELDS } from './queries';
 
 /**
- * AUTHENTICATION & SESSION
- * Restored: refreshToken handling and user profile fields.
+ * AUTHENTICATION MUTATIONS
  */
 export const LOGIN_MUTATION = gql`
   mutation Login($email: String!, $password: String!) {
@@ -40,11 +39,11 @@ export const REFRESH_MUTATION = gql`
 
 /**
  * EMPLOYEE MANAGEMENT
- * Restored: Full field returns to support the 'update' and 'optimisticResponse' 
- * logic in Employees.jsx.
+ * FIXED: Removed the lingering 'createdAt' field from the selection set 
+ * to align perfectly with the backend typeDefs.js specification.
  */
 export const CREATE_EMPLOYEE = gql`
-  mutation CreateEmployee($input: CreateEmployeeInput!) {
+  mutation CreateEmployee($input: EmployeeInput!) {
     createEmployee(input: $input) {
       id
       ...EmployeeCore
@@ -53,7 +52,6 @@ export const CREATE_EMPLOYEE = gql`
       ghanaCardPin
       companyId
       isActive
-      createdAt
     }
   }
   ${EMPLOYEE_CORE_FIELDS}
@@ -79,7 +77,6 @@ export const UPDATE_EMPLOYEE = gql`
 
 /**
  * PAYROLL OPERATIONS
- * Restored: errorMessage and isFinalized for robust UI state.
  */
 export const RUN_PAYROLL = gql`
   mutation RunPayroll($month: String!, $companyId: ID) {
@@ -97,10 +94,6 @@ export const RUN_PAYROLL = gql`
   }
 `;
 
-/**
- * FINANCIAL DISBURSEMENT
- * Restored: disbursementReference and payoutLog for audit trails.
- */
 export const PROCESS_PAYOUT = gql`
   mutation ProcessPayout($runId: ID!) {
     processPayout(runId: $runId) {
@@ -113,10 +106,16 @@ export const PROCESS_PAYOUT = gql`
   }
 `;
 
+/**
+ * PREFERENCES & NOTIFICATIONS
+ */
 export const UPDATE_PREFERENCES = gql`
   mutation UpdatePreferences($input: UpdatePreferencesInput!) {
     updatePreferences(input: $input) {
       id
+      smsOptIn
+      emailOptIn
+      twoFactorEnabled
       darkMode
       language
       notificationsEnabled
@@ -124,10 +123,6 @@ export const UPDATE_PREFERENCES = gql`
   }
 `;
 
-/**
- * NOTIFICATIONS
- * Added: To support the notification logic in your system.
- */
 export const SEND_NOTIFICATION = gql`
   mutation SendNotification($input: NotificationInput!) {
     sendNotification(input: $input) {

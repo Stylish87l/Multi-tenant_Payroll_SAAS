@@ -11,6 +11,7 @@ import Card from '../components/Card';
 import Modal from '../components/Modal';
 import Loader from '../components/Loader';
 import { formatGHS } from '../utils/formatCurrency';
+import { useAuth } from '../context/AuthContext';
 
 const Employees = () => {
   // State management
@@ -27,8 +28,9 @@ const Employees = () => {
   const [saving, setSaving] = useState(false);
   const [userError, setUserError] = useState(null);
 
-  // Auth context placeholder
-  const companyId = '1'; 
+  // Authenticated user tenant context
+  const { user } = useAuth();
+  const companyId = user?.companyId;
 
   // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
@@ -43,6 +45,7 @@ const Employees = () => {
     fetchPolicy: 'cache-and-network',
     nextFetchPolicy: 'cache-first',
     notifyOnNetworkStatusChange: true,
+    skip: !companyId && user?.role !== 'SUPER_ADMIN',
   });
 
   // Mutations
@@ -50,20 +53,16 @@ const Employees = () => {
   const [updateEmployee] = useMutation(UPDATE_EMPLOYEE);
 
   // PII Masking Helper
-  const maskPII = useCallback((value, type = 'ssnit') => {
+  const maskPII = useCallback((value) => {
     if (!value) return 'N/A';
     const first = value.slice(0, 1);
     const last = value.slice(-4);
     return `${first}****${last}`;
   }, []);
 
-  // Derived employees list tracking the clean backend connection items shape
   const employees = useMemo(() => data?.employees?.items ?? [], [data]);
-
-  // Page info flags
   const hasNextPage = data?.employees?.pageInfo?.hasNextPage ?? false;
 
-  // Error logging monitor
   useEffect(() => {
     if (error) {
       console.error('Employees query error:', error);
@@ -73,15 +72,15 @@ const Employees = () => {
     }
   }, [error]);
 
-  // Edit action state hydrate handlers
+  // FIXED: Adjusted mapping keys to target 'ghanaCardPin' exactly
   const handleEdit = useCallback((employee) => {
     setFormData({
       name: employee.name ?? '',
       email: employee.email ?? '',
       basicSalary: employee.basicSalary ?? '',
       ssnitNumber: employee.ssnitNumber ?? '',
-      ghanaCardPIN: employee.ghanaCardPIN ?? '', // FIXED: Updated to uppercase PIN casing
-      position: employee.position ?? 'Staff',   // FIXED: Added position property binding
+      ghanaCardPin: employee.ghanaCardPin ?? '',
+      position: employee.position ?? 'Staff',
     });
     setEditingId(employee.id);
     setShowModal(true);
@@ -94,7 +93,6 @@ const Employees = () => {
     setSaving(false);
   }, []);
 
-  // Validation boundaries
   const validateForm = useCallback((input) => {
     if (!input.name || !input.email) return 'Name and email are required.';
     if (isNaN(Number(input.basicSalary)) || Number(input.basicSalary) < 0) return 'Basic salary must be a valid positive number.';
@@ -105,13 +103,14 @@ const Employees = () => {
     e.preventDefault();
     setUserError(null);
 
+    // FIXED: Ensured input mutation structures match the unified backend payload schema
     const input = {
       name: formData.name,
       email: formData.email,
       basicSalary: parseFloat(formData.basicSalary || 0),
       ssnitNumber: formData.ssnitNumber,
-      ghanaCardPIN: formData.ghanaCardPIN, // FIXED: Correct casing matching backend schema definition
-      position: formData.position || 'Staff', // FIXED: Provided property placeholder mapping
+      ghanaCardPin: formData.ghanaCardPin,
+      position: formData.position || 'Staff',
     };
 
     const validationError = validateForm(input);
@@ -130,6 +129,8 @@ const Employees = () => {
             updateEmployee: {
               __typename: 'Employee',
               id: editingId,
+              companyId,
+              isActive: true,
               ...input,
             },
           },
@@ -167,6 +168,8 @@ const Employees = () => {
             createEmployee: {
               __typename: 'Employee',
               id: tempId,
+              companyId,
+              isActive: true,
               ...input,
             },
           },
@@ -228,7 +231,6 @@ const Employees = () => {
 
   return (
     <div className="safe-area-inset p-4 md:p-8 space-y-6 pb-24">
-      {/* Header Panel */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Staff Directory</h1>
@@ -254,7 +256,7 @@ const Employees = () => {
 
           <button
             onClick={() => {
-              setFormData({ position: 'Staff' }); // Default position key assigned
+              setFormData({ position: 'Staff' });
               setEditingId(null);
               setShowModal(true);
             }}
@@ -267,14 +269,12 @@ const Employees = () => {
         </div>
       </div>
 
-      {/* Alert banners */}
       {userError && (
         <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">
           {userError}
         </div>
       )}
 
-      {/* Grid container lists */}
       <div className="grid grid-cols-1 gap-4">
         <AnimatePresence>
           {employees.length === 0 && !loading ? (
@@ -309,7 +309,7 @@ const Employees = () => {
                         <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
                           <span className="flex items-center gap-1"><Mail size={14} /> {emp.email}</span>
                           <span className="hidden md:flex items-center gap-1 text-slate-500">
-                            <ShieldCheck size={14} /> {maskPII(emp.ssnitNumber)}
+                            <ShieldCheck size={14} /> {maskPII(emp.ghanaCardPin)}
                           </span>
                         </div>
                       </div>
@@ -336,7 +336,6 @@ const Employees = () => {
         </AnimatePresence>
       </div>
 
-      {/* Infinite loader indicators */}
       {hasNextPage && (
         <div className="flex justify-center mt-4">
           <button
@@ -349,7 +348,6 @@ const Employees = () => {
         </div>
       )}
 
-      {/* Overlay Drawer Modal */}
       <Modal
         isOpen={showModal}
         onClose={closeModal}
@@ -419,12 +417,13 @@ const Employees = () => {
                 aria-label="SSNIT number"
               />
             </div>
+            {/* FIXED: Mapped binding directly to value={formData.ghanaCardPin} and key assignments */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-500 uppercase ml-1">Ghana Card PIN</label>
               <input
                 type="text"
-                value={formData.ghanaCardPIN || ''} // FIXED: Form field syncs seamlessly with correct casing
-                onChange={(e) => setFormData({ ...formData, ghanaCardPIN: e.target.value })}
+                value={formData.ghanaCardPin || ''}
+                onChange={(e) => setFormData({ ...formData, ghanaCardPin: e.target.value })}
                 className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
                 placeholder="GHA-000000000-0"
                 aria-label="Ghana Card PIN"

@@ -19,6 +19,9 @@ const typeDefs = gql`
     address: String
     themeColor: String
     logoUrl: String
+    footerNote: String
+    payslipTemplate: JSON
+    createdBy: String
     createdAt: DateTime!
   }
 
@@ -59,16 +62,26 @@ const typeDefs = gql`
     id: ID!
     name: String!
     email: String!
-    ghanaCardPIN: String     # Kept for compatibility
-    ghanaCardPin: String     # 🟢 ADD THIS line to satisfy the frontend's field request
+    ghanaCardPIN: String     # Kept fallback for old records
+    ghanaCardPin: String     # New Unified Standard
     ssnitNumber: String
     basicSalary: Decimal!
-    allowances: Decimal
+    allowances: Decimal      
     position: String         
     isActive: Boolean!
     companyId: ID!
     company: Company!
-    updatedAt: DateTime      # 🟢 ADD THIS line to fix the missing field error
+    
+    # --- Ghanaian GRA Tax Relief Parameters ---
+    age: Int
+    isMarried: Boolean
+    hasResponsibility: Boolean
+    childrenCount: Int
+    isDisabled: Boolean
+    agedDependentsCount: Int
+
+    createdAt: DateTime      
+    updatedAt: DateTime
   }
 
   type EmployeeConnection {
@@ -82,24 +95,41 @@ const typeDefs = gql`
   input EmployeeInput {
     name: String!
     email: String!
-    ghanaCardPIN: String     # Aligned casing with type adjustments
+    ghanaCardPIN: String     # Kept for strict backward compatibility
+    ghanaCardPin: String     # Added to accept clean frontend payloads
     ssnitNumber: String
     basicSalary: Decimal!
     allowances: Decimal
-    position: String         # FIXED: Optional for raw form submissions
+    position: String
     companyId: ID
+    
+    # --- Tax Relief Inclusions ---
+    age: Int
+    isMarried: Boolean
+    hasResponsibility: Boolean
+    childrenCount: Int
+    isDisabled: Boolean
+    agedDependentsCount: Int
   }
 
-  # 🟢 NEW INPUT: Allows optional properties during edits
   input UpdateEmployeeInput {
     name: String
     email: String
-    ghanaCardPIN: String
+    ghanaCardPIN: String     # Kept for strict backward compatibility
+    ghanaCardPin: String     # Added to accept clean frontend payloads
     ssnitNumber: String
     basicSalary: Decimal
     allowances: Decimal
     position: String
     isActive: Boolean
+    
+    # --- Tax Relief Inclusions ---
+    age: Int
+    isMarried: Boolean
+    hasResponsibility: Boolean
+    childrenCount: Int
+    isDisabled: Boolean
+    agedDependentsCount: Int
   }
 
   # --- Payroll Domain ---
@@ -185,14 +215,50 @@ const typeDefs = gql`
     sentAt: DateTime
     expiresAt: DateTime
     userId: ID!
+    companyId: ID
   }
 
   input NotificationInput {
     userId: ID!
+    companyId: ID
     type: NotificationType!
     channel: NotificationChannel
     body: String!
     subject: String
+  }
+
+  # --- Preferences Domain ---
+  type Preferences {
+    id: ID!
+    smsOptIn: Boolean!
+    emailOptIn: Boolean!
+    twoFactorEnabled: Boolean!
+    darkMode: Boolean!
+    language: String!
+    notificationsEnabled: Boolean!
+  }
+
+  input UpdatePreferencesInput {
+    smsOptIn: Boolean
+    emailOptIn: Boolean
+    twoFactorEnabled: Boolean
+    darkMode: Boolean
+    language: String
+    notificationsEnabled: Boolean
+  }
+
+  # --- Audit Log Domain ---
+  type AuditLog {
+    id: ID!
+    userId: ID
+    companyId: ID
+    action: String!
+    details: JSON!
+    ipAddress: String
+    createdAt: DateTime!
+    performedBy: String
+    resourceId: String
+    resourceType: String
   }
 
   # --- Reports Domain ---
@@ -214,22 +280,20 @@ const typeDefs = gql`
     payrollRuns(companyId: ID, page: Int, limit: Int): PayrollRunConnection!
     payrollRun(id: ID!): PayrollRun
     notifications(page: Int, limit: Int): [Notification!]!
-    
-    # FIXED: Added target metric query endpoint to resolve the Reports page 400 Bad Request error
+    auditLogs(companyId: ID, page: Int, limit: Int): [AuditLog!]!
     payrollSummaryReport(companyId: ID, month: String): PayrollSummaryReport!
+    preferences: Preferences
   }
 
   type Mutation {
     register(email: String!, password: String!, name: String!, companyName: String!): AuthPayload!
     login(email: String!, password: String!): AuthPayload!
     createEmployee(input: EmployeeInput!): Employee!
-    
-    # 🟢 NEW MUTATION DEFINITION REGISTERED HERE
     updateEmployee(id: ID!, input: UpdateEmployeeInput!): Employee!
-
-    runPayroll(month: String!, companyId: ID!): PayrollRun!
+    runPayroll(month: String!, companyId: ID): PayrollRun!
     finalizePayroll(runId: ID!): PayrollRun!
     sendNotification(input: NotificationInput!): Notification!
+    updatePreferences(input: UpdatePreferencesInput!): Preferences!
   }
 
   type Subscription {
