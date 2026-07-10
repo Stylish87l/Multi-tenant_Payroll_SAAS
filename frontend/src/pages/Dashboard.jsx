@@ -11,14 +11,31 @@ import { useAuth } from "../context/AuthContext";
 const Dashboard = () => {
   const { user } = useAuth();
 
-  // Query: fetch dashboard data scoped to tenant
+  // FIXED (2026-07-10): SUPER_ADMIN's companyId is intentionally null
+  // (global role - see middleware/auth.js). Previously `skip: !user?.companyId`
+  // meant this query NEVER fired for that role, leaving the dashboard stuck
+  // on an empty/loading state forever. Every other role still requires a
+  // resolved companyId before querying, so we never send a request with an
+  // undefined tenant scope mid-auth-flow.
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const canQuery = isSuperAdmin || !!user?.companyId;
+
+  // Query: fetch dashboard data scoped to tenant (or global for SUPER_ADMIN)
   const { loading, error, data } = useQuery(GET_DASHBOARD_DATA, {
-    variables: { companyId: user?.companyId },
+    variables: { companyId: user?.companyId || null },
     fetchPolicy: 'cache-and-network',
-    skip: !user?.companyId, // don’t query until tenant is known
+    skip: !canQuery,
   });
 
-  // Subscription: listen for payroll updates scoped to tenant
+  // Subscription: listen for payroll updates scoped to tenant.
+  // Intentionally still requires a real companyId (not skipped for
+  // SUPER_ADMIN with null) - the resolver's subscribe filter compares
+  // payrollUpdated.companyId === context.companyId, and SUPER_ADMIN's
+  // context.companyId is also null, so a naive "let it through" here
+  // would either never match (safe but useless) or require weakening the
+  // server-side filter (unsafe). Global cross-tenant live updates for
+  // SUPER_ADMIN are out of scope for this fix - the initial query above
+  // already gives them the aggregate figures they need.
   useSubscription(PAYROLL_UPDATED_SUB, {
     variables: { companyId: user?.companyId },
     skip: !user?.companyId,
@@ -82,7 +99,9 @@ const Dashboard = () => {
           <h1 className="text-3xl font-bold text-white tracking-tight">Executive Summary</h1>
           <p className="text-slate-400 text-sm mt-1">
             Real-time monitoring:{" "}
-            <span className="text-white font-medium">{user?.companyName}</span>
+            <span className="text-white font-medium">
+              {isSuperAdmin ? 'All Organizations (Global)' : user?.companyName}
+            </span>
           </p>
         </div>
 

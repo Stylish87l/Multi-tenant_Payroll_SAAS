@@ -8,6 +8,7 @@ import PropTypes from 'prop-types';
 import client from './lib/apolloClient';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { sidebarMenuItems } from './config/sidebarConfig';
 
 // Layout & UI
 import Navbar from './components/Navbar';
@@ -21,6 +22,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Employees = lazy(() => import('./pages/Employees'));
 const Payroll = lazy(() => import('./pages/Payroll'));
 const Reports = lazy(() => import('./pages/Reports'));
+const Branding = lazy(() => import('./pages/Branding'));
 const Settings = lazy(() => import('./pages/Settings'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
@@ -39,7 +41,7 @@ const PageWrapper = ({ children }) => (
 
 PageWrapper.propTypes = { children: PropTypes.node.isRequired };
 
-/* Secure route guard */
+/* Secure route guard: authentication only */
 const PrivateRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
@@ -56,6 +58,47 @@ const PrivateRoute = ({ children }) => {
 };
 
 PrivateRoute.propTypes = { children: PropTypes.node.isRequired };
+
+/**
+ * RBAC route guard (defense-in-depth, NOT the security boundary).
+ *
+ * FIXED (2026-07-10): Previously nothing on the client stopped an
+ * authenticated but under-privileged user (e.g. EMPLOYEE, or HR after the
+ * payroll REST/GraphQL RBAC alignment fix) from navigating straight to
+ * '/employees' or '/payroll' by URL. The backend has always correctly
+ * rejected the underlying GraphQL/REST calls (see requireRole() in
+ * graphql/resolvers.js and rbac() in middleware/rbac.js) - no tenant or
+ * cross-role data was ever actually exposed - but the user just saw a raw
+ * "Unauthorized" GraphQL error inside a half-rendered page instead of a
+ * clean redirect. This guard reads the SAME roles-per-route mapping
+ * already defined in config/sidebarConfig.js (single source of truth - no
+ * separate role list to drift out of sync) and redirects to /dashboard
+ * before the page (and its data-fetching hooks) ever mounts.
+ *
+ * IMPORTANT: this is a UX affordance only. Removing it does not create a
+ * security hole, and adding it does not substitute for server-side checks.
+ * Every mutation/query still enforces its own RBAC independently.
+ */
+const RoleRoute = ({ basePath, children }) => {
+  const { user } = useAuth();
+  const menuItem = sidebarMenuItems.find((item) => item.path === basePath);
+
+  // No matching config entry (or no roles restriction) -> nothing to guard.
+  if (!menuItem || !Array.isArray(menuItem.roles)) {
+    return children;
+  }
+
+  if (!user?.role || !menuItem.roles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+};
+
+RoleRoute.propTypes = {
+  basePath: PropTypes.string.isRequired,
+  children: PropTypes.node.isRequired,
+};
 
 const AuthSidebarWrapper = React.memo(() => {
   const { isAuthenticated, user } = useAuth();
@@ -77,13 +120,17 @@ const AuthNavbarWrapper = React.memo(() => {
  * Previously Dashboard was only registered at '/', so '/dashboard' silently
  * fell through to the catch-all NotFound route below with zero errors logged
  * anywhere - that's the "Lost in the Cloud?" screen from the bug report.
+ *
+ * `basePath` mirrors the exact path used in config/sidebarConfig.js so
+ * RoleRoute can look up the correct roles list for each route.
  */
 const protectedRoutes = [
-  { path: '/dashboard', element: <Dashboard /> },
-  { path: '/employees/*', element: <Employees /> },
-  { path: '/payroll/*', element: <Payroll /> },
-  { path: '/reports/*', element: <Reports /> },
-  { path: '/settings/*', element: <Settings /> },
+  { path: '/dashboard', basePath: '/dashboard', element: <Dashboard /> },
+  { path: '/employees/*', basePath: '/employees', element: <Employees /> },
+  { path: '/payroll/*', basePath: '/payroll', element: <Payroll /> },
+  { path: '/reports/*', basePath: '/reports', element: <Reports /> },
+  { path: '/branding/*', basePath: '/branding', element: <Branding /> },
+  { path: '/settings/*', basePath: '/settings', element: <Settings /> },
 ];
 
 function AppRoutes() {
@@ -105,18 +152,20 @@ function AppRoutes() {
             path={r.path}
             element={
               <PrivateRoute>
-                <PageWrapper>
-                  {/* Per-route error boundary: a crash on THIS page now
-                      shows a localized "Something went wrong" inside the
-                      content area only. The navbar/sidebar stay mounted and
-                      the user can navigate away instead of facing a fully
-                      blank app. */}
-                  <ErrorBoundary>
-                    <Suspense fallback={<Loader />}>
-                      {r.element}
-                    </Suspense>
-                  </ErrorBoundary>
-                </PageWrapper>
+                <RoleRoute basePath={r.basePath}>
+                  <PageWrapper>
+                    {/* Per-route error boundary: a crash on THIS page now
+                        shows a localized "Something went wrong" inside the
+                        content area only. The navbar/sidebar stay mounted and
+                        the user can navigate away instead of facing a fully
+                        blank app. */}
+                    <ErrorBoundary>
+                      <Suspense fallback={<Loader />}>
+                        {r.element}
+                      </Suspense>
+                    </ErrorBoundary>
+                  </PageWrapper>
+                </RoleRoute>
               </PrivateRoute>
             }
           />

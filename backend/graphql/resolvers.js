@@ -870,6 +870,73 @@ const resolvers = {
   },
 };
 
+/**
+     * NEW (2026-07-10): Backs the Branding page's tenant selector for
+     * SUPER_ADMIN. Strictly gated - a non-SUPER_ADMIN caller must never
+     * see the full tenant directory (that alone would leak the existence
+     * and names of other companies on the platform). Returns only Company
+     * scalar fields already declared in typeDefs - no relation traversal
+     * into employees/payrollRuns, so this cannot become an accidental
+     * cross-tenant data leak even if the Company type gains relations later.
+     */
+    companies: async (_, __, { userRole }) => {
+      requireRole(userRole, ['SUPER_ADMIN'], 'view the tenant directory');
+      try {
+        return await prisma.company.findMany({
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            tin: true,
+            address: true,
+            themeColor: true,
+            logoUrl: true,
+            footerNote: true,
+            payslipTemplate: true,
+            createdBy: true,
+            createdAt: true,
+          },
+        });
+      } catch (error) {
+        logger.error('Query.companies Error', { message: error.message, stack: error.stack });
+        throw new Error('Failed to fetch tenant list');
+      }
+    },
+
+
+/**
+     * NEW (2026-07-10): Backs the Branding page's tenant selector for
+     * SUPER_ADMIN. Strictly gated - a non-SUPER_ADMIN caller must never
+     * see the full tenant directory (that alone would leak the existence
+     * and names of other companies on the platform). Returns only Company
+     * scalar fields already declared in typeDefs - no relation traversal
+     * into employees/payrollRuns, so this cannot become an accidental
+     * cross-tenant data leak even if the Company type gains relations later.
+     */
+    companies: async (_, __, { userRole }) => {
+      requireRole(userRole, ['SUPER_ADMIN'], 'view the tenant directory');
+      try {
+        return await prisma.company.findMany({
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            tin: true,
+            address: true,
+            themeColor: true,
+            logoUrl: true,
+            footerNote: true,
+            payslipTemplate: true,
+            createdBy: true,
+            createdAt: true,
+          },
+        });
+      } catch (error) {
+        logger.error('Query.companies Error', { message: error.message, stack: error.stack });
+        throw new Error('Failed to fetch tenant list');
+      }
+    },
+
 export const createLoaders = () => ({
   company: new DataLoader(async (ids) => {
     const companies = await prisma.company.findMany({ where: { id: { in: ids } } });

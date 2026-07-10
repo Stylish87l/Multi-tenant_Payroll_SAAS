@@ -98,9 +98,23 @@ const typeDefs = gql`
     updatedAt: DateTime
   }
 
+  """
+  FIXED (2026-07-10): Previously declared 'totalCount: Int!' which no
+  resolver ever populated (Query.employees returns { items, total, page,
+  limit, pageInfo } - never totalCount), and omitted 'page'/'limit'/'total'
+  entirely even though frontend/src/graphql/queries.js's GET_EMPLOYEES has
+  always requested them. Since GraphQL validates a query's selection set
+  against the schema BEFORE execution, requesting an undeclared field like
+  'total' caused Apollo Server to reject the entire operation with a 400
+  ("Cannot query field") - this is the exact cause of Employees.jsx's
+  "Unable to load employees" and the identical failure mode on Payroll.jsx
+  below. Schema now matches what resolvers.js actually returns.
+  """
   type EmployeeConnection {
     items: [Employee!]!
-    totalCount: Int!
+    page: Int!
+    limit: Int!
+    total: Int!
     pageInfo: PageInfo!
   }
 
@@ -185,9 +199,19 @@ const typeDefs = gql`
     companyId: ID!
   }
 
+  """
+  FIXED (2026-07-10): Same schema/resolver mismatch as EmployeeConnection
+  above - 'totalCount' was declared but never populated, and 'page'/
+  'limit'/'total' were missing even though GET_PAYROLL_RUNS has always
+  queried them and resolvers.js's payrollRuns resolver has always returned
+  them. This was rejecting Payroll.jsx's query with a 400 before it ever
+  reached the RBAC/tenant-scoping logic inside the resolver.
+  """
   type PayrollRunConnection {
     items: [PayrollRun!]!
-    totalCount: Int!
+    page: Int!
+    limit: Int!
+    total: Int!
     pageInfo: PageInfo!
   }
 
@@ -299,8 +323,13 @@ const typeDefs = gql`
     me: User
     
     """
-    Fetches employees using cursor or offset parameters dynamically mapped in backend controllers.
+    SUPER_ADMIN-only: lists every tenant for the branding tenant-picker.
+    Deliberately returns ONLY Company scalar fields (no employees, payroll,
+    or financial data attached) - this is a directory listing, not a data
+    export.
     """
+    companies: [Company!]!
+
     employees(
       companyId: ID
       search: String
@@ -327,6 +356,7 @@ const typeDefs = gql`
     preferences: Preferences
   }
 
+  
   type Mutation {
     register(email: String!, password: String!, name: String!, companyName: String!): AuthPayload!
     login(email: String!, password: String!): AuthPayload!

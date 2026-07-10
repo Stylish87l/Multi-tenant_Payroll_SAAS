@@ -29,6 +29,54 @@ const brandingSchema = z.object({
 }).strict();
 
 /**
+ * NEW (2026-07-10): Fetch Tenant Branding
+ * Needed so the frontend Branding page can load current values into the
+ * edit form. Mirrors the exact same RBAC and tenant-isolation checks as
+ * the PUT route below - a non-SUPER_ADMIN caller can only ever read their
+ * OWN company's branding record, never another tenant's.
+ */
+router.get('/:companyId/branding', authMiddleware, rbac(['SUPER_ADMIN', 'ADMIN']), async (req, res) => {
+  const { companyId } = req.params;
+
+  try {
+    if (req.userRole !== 'SUPER_ADMIN' && req.companyId !== companyId) {
+      logger.warn('Cross-tenant branding read attempt intercepted', {
+        attemptedBy: req.userId,
+        userRole: req.userRole,
+        userCompany: req.companyId,
+        targetCompany: companyId,
+      });
+      return res.status(403).json({ error: 'Access denied: You can only view your own company branding.' });
+    }
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: {
+        id: true,
+        name: true,
+        themeColor: true,
+        logoUrl: true,
+        footerNote: true,
+        payslipTemplate: true,
+      },
+    });
+
+    if (!company) {
+      return res.status(404).json({ error: 'Target company profile not found.' });
+    }
+
+    return res.json({ branding: company });
+  } catch (error) {
+    logger.error('Branding Fetch Failure', {
+      error: error.message,
+      companyId,
+      userId: req.userId,
+    });
+    return res.status(500).json({ error: 'Failed to fetch branding settings.' });
+  }
+});
+
+/**
  * Update Tenant Branding
  * FIX: Included 'SUPER_ADMIN' inside the RBAC list to align with internal multi-tenant bypass checks
  */

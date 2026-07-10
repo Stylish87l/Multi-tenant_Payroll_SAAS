@@ -16,12 +16,20 @@ router.use(authMiddleware);
 
 /**
  * 1. GET ALL PAYROLL RUNS
- * FIXED (2026-07-05): Added ACCOUNTANT role to prevent 403 authorization failures 
- * when accessing the main dashboard tracking list linked in the frontend sidebar config.
+ * SECURITY FIX (2026-07-10): Removed 'HR' role. This endpoint returns
+ * company-wide gross/net/tax totals per run - the exact same financial
+ * data the '/:id' route below already restricts away from HR, and the
+ * exact same data graphql/resolvers.js's PAYROLL_FINANCE_ROLES constant
+ * has always restricted away from HR. Having REST allow HR here while
+ * GraphQL denied it for the equivalent query was a live segregation-of-
+ * duties gap: an HR user blocked in the React app (which calls GraphQL)
+ * could still pull the same data by hitting the REST endpoint directly.
+ * HR manages employee records, not disbursement figures - both entry
+ * points now agree.
  */
 router.get(
   '/', 
-  rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'HR']), 
+  rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), 
   getPayrollRuns
 );
 
