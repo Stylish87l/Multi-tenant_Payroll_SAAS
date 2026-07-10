@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, Edit2, ShieldCheck, Mail } from 'lucide-react';
+import { Plus, Search, Edit2, ShieldCheck, Mail, Landmark, Users as UsersIcon } from 'lucide-react';
 
 import { GET_EMPLOYEES } from '../graphql/queries';
 import { CREATE_EMPLOYEE, UPDATE_EMPLOYEE } from '../graphql/mutations';
@@ -12,6 +12,23 @@ import Modal from '../components/Modal';
 import Loader from '../components/Loader';
 import { formatGHS } from '../utils/formatCurrency';
 import { useAuth } from '../context/AuthContext';
+
+// FIXED (2026-07-05): these are the defaults a brand-new employee record
+// gets on the Prisma side (schema.prisma: age @default(30), isMarried
+// @default(false), childrenCount @default(0), etc). Centralizing them here
+// means "Add Staff" pre-fills the form with the same values the DB would
+// have used anyway - previously the form simply never asked for any of
+// these, silently locking every employee created through the UI into
+// "30-year-old, unmarried, no children, not disabled" for PAYE relief
+// purposes regardless of their actual circumstances.
+const DEFAULT_RELIEF_VALUES = {
+  age: 30,
+  isMarried: false,
+  hasResponsibility: false,
+  childrenCount: 0,
+  isDisabled: false,
+  agedDependentsCount: 0,
+};
 
 const Employees = () => {
   // State management
@@ -72,7 +89,12 @@ const Employees = () => {
     }
   }, [error]);
 
-  // FIXED: Adjusted mapping keys to target 'ghanaCardPin' exactly
+  // FIXED (2026-07-05): now also pulls the relief + banking fields back
+  // into the edit form. Previously "editing" an employee only ever
+  // touched name/email/basicSalary/ssnit/ghanaCard/position - the relief
+  // fields simply weren't part of formData, so submitting an edit could
+  // never change them, and (before the resolver fix) would have silently
+  // reset them regardless of what was already saved.
   const handleEdit = useCallback((employee) => {
     setFormData({
       name: employee.name ?? '',
@@ -81,6 +103,14 @@ const Employees = () => {
       ssnitNumber: employee.ssnitNumber ?? '',
       ghanaCardPin: employee.ghanaCardPin ?? '',
       position: employee.position ?? 'Staff',
+      bankName: employee.bankName ?? '',
+      bankAccount: employee.bankAccount ?? '',
+      age: employee.age ?? DEFAULT_RELIEF_VALUES.age,
+      isMarried: employee.isMarried ?? DEFAULT_RELIEF_VALUES.isMarried,
+      hasResponsibility: employee.hasResponsibility ?? DEFAULT_RELIEF_VALUES.hasResponsibility,
+      childrenCount: employee.childrenCount ?? DEFAULT_RELIEF_VALUES.childrenCount,
+      isDisabled: employee.isDisabled ?? DEFAULT_RELIEF_VALUES.isDisabled,
+      agedDependentsCount: employee.agedDependentsCount ?? DEFAULT_RELIEF_VALUES.agedDependentsCount,
     });
     setEditingId(employee.id);
     setShowModal(true);
@@ -96,6 +126,15 @@ const Employees = () => {
   const validateForm = useCallback((input) => {
     if (!input.name || !input.email) return 'Name and email are required.';
     if (isNaN(Number(input.basicSalary)) || Number(input.basicSalary) < 0) return 'Basic salary must be a valid positive number.';
+    if (input.age !== undefined && (isNaN(Number(input.age)) || Number(input.age) < 18 || Number(input.age) > 70)) {
+      return 'Age must be between 18 and 70.';
+    }
+    if (input.childrenCount !== undefined && (Number(input.childrenCount) < 0 || Number(input.childrenCount) > 3)) {
+      return 'Children count for relief purposes cannot exceed 3 (GRA cap).';
+    }
+    if (input.agedDependentsCount !== undefined && (Number(input.agedDependentsCount) < 0 || Number(input.agedDependentsCount) > 2)) {
+      return 'Aged dependents for relief purposes cannot exceed 2 (GRA cap).';
+    }
     return null;
   }, []);
 
@@ -103,7 +142,11 @@ const Employees = () => {
     e.preventDefault();
     setUserError(null);
 
-    // FIXED: Ensured input mutation structures match the unified backend payload schema
+    // FIXED (2026-07-05): input now carries the full set of GRA
+    // relief fields plus banking details through to createEmployee/
+    // updateEmployee - these are the exact fields typeDefs.js's
+    // EmployeeInput/UpdateEmployeeInput already declared, but which the
+    // form never collected and the resolvers never persisted.
     const input = {
       name: formData.name,
       email: formData.email,
@@ -111,6 +154,14 @@ const Employees = () => {
       ssnitNumber: formData.ssnitNumber,
       ghanaCardPin: formData.ghanaCardPin,
       position: formData.position || 'Staff',
+      bankName: formData.bankName || undefined,
+      bankAccount: formData.bankAccount || undefined,
+      age: formData.age !== undefined && formData.age !== '' ? Number(formData.age) : DEFAULT_RELIEF_VALUES.age,
+      isMarried: !!formData.isMarried,
+      hasResponsibility: !!formData.hasResponsibility,
+      childrenCount: formData.childrenCount !== undefined && formData.childrenCount !== '' ? Number(formData.childrenCount) : DEFAULT_RELIEF_VALUES.childrenCount,
+      isDisabled: !!formData.isDisabled,
+      agedDependentsCount: formData.agedDependentsCount !== undefined && formData.agedDependentsCount !== '' ? Number(formData.agedDependentsCount) : DEFAULT_RELIEF_VALUES.agedDependentsCount,
     };
 
     const validationError = validateForm(input);
@@ -256,7 +307,7 @@ const Employees = () => {
 
           <button
             onClick={() => {
-              setFormData({ position: 'Staff' });
+              setFormData({ position: 'Staff', ...DEFAULT_RELIEF_VALUES });
               setEditingId(null);
               setShowModal(true);
             }}
@@ -353,8 +404,10 @@ const Employees = () => {
         onClose={closeModal}
         title={editingId ? 'Update Staff Profile' : 'Register New Staff'}
         ariaLabel={editingId ? 'Update staff profile modal' : 'Register new staff modal'}
+        size="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-4" aria-disabled={saving}>
+        <form onSubmit={handleSubmit} className="space-y-6" aria-disabled={saving}>
+          {/* --- Identity --- */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2 space-y-1">
               <label className="text-xs font-bold text-slate-500 uppercase ml-1">Full Name</label>
@@ -417,7 +470,6 @@ const Employees = () => {
                 aria-label="SSNIT number"
               />
             </div>
-            {/* FIXED: Mapped binding directly to value={formData.ghanaCardPin} and key assignments */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-500 uppercase ml-1">Ghana Card PIN</label>
               <input
@@ -431,9 +483,109 @@ const Employees = () => {
             </div>
           </div>
 
+          {/* --- Banking --- */}
+          <div className="space-y-3 border-t border-white/5 pt-5">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Landmark size={16} />
+              <h3 className="text-xs font-bold uppercase tracking-widest">Banking Details</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Bank Name</label>
+                <input
+                  type="text"
+                  value={formData.bankName || ''}
+                  onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
+                  className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+                  placeholder="e.g. GCB Bank"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Account Number</label>
+                <input
+                  type="text"
+                  value={formData.bankAccount || ''}
+                  onChange={(e) => setFormData({ ...formData, bankAccount: e.target.value })}
+                  className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+                  placeholder="5-20 digits"
+                  inputMode="numeric"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* --- GRA Tax Relief --- */}
+          <div className="space-y-3 border-t border-white/5 pt-5">
+            <div className="flex items-center gap-2 text-slate-400">
+              <UsersIcon size={16} />
+              <h3 className="text-xs font-bold uppercase tracking-widest">GRA Tax Relief Details</h3>
+            </div>
+            <p className="text-xs text-slate-500 -mt-2">
+              These directly affect PAYE relief calculated on every payroll run - please confirm with the employee rather than leaving defaults if any of these don't apply.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Age</label>
+                <input
+                  type="number"
+                  value={formData.age ?? DEFAULT_RELIEF_VALUES.age}
+                  onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                  className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+                  min="18"
+                  max="70"
+                />
+                <p className="text-[10px] text-slate-600 ml-1">60+ qualifies for old-age relief</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Children (relief, max 3)</label>
+                <input
+                  type="number"
+                  value={formData.childrenCount ?? DEFAULT_RELIEF_VALUES.childrenCount}
+                  onChange={(e) => setFormData({ ...formData, childrenCount: e.target.value })}
+                  className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+                  min="0"
+                  max="3"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Aged Dependents (max 2)</label>
+                <input
+                  type="number"
+                  value={formData.agedDependentsCount ?? DEFAULT_RELIEF_VALUES.agedDependentsCount}
+                  onChange={(e) => setFormData({ ...formData, agedDependentsCount: e.target.value })}
+                  className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+                  min="0"
+                  max="2"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+              {[
+                { key: 'isMarried', label: 'Married' },
+                { key: 'hasResponsibility', label: 'Responsible for a dependent spouse' },
+                { key: 'isDisabled', label: 'Registered disability' },
+              ].map((toggle) => (
+                <label
+                  key={toggle.key}
+                  className="flex items-center gap-3 bg-slate-950 border border-white/10 rounded-xl p-3 cursor-pointer hover:border-primary/40 transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!formData[toggle.key]}
+                    onChange={(e) => setFormData({ ...formData, [toggle.key]: e.target.checked })}
+                    className="h-4 w-4 rounded border-white/20 bg-slate-900 text-primary focus:ring-primary/50"
+                  />
+                  <span className="text-sm text-slate-300">{toggle.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           <button
             type="submit"
-            className="w-full mt-4 py-4 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-60"
+            className="w-full mt-2 py-4 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-60"
             disabled={saving}
             aria-disabled={saving}
           >

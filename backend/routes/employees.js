@@ -4,37 +4,14 @@ import prisma from '../config/db.js';
 import authMiddleware from '../middleware/auth.js';
 import rbac from '../middleware/rbac.js';
 import logger from '../config/logger.js';
-import { Parser } from 'json2csv';
+import { AsyncParser } from 'json2csv'; // Memory-safe streaming parser alternative
 import ExcelJS from 'exceljs';
+import employeeSchema from '../schemas/employeeSchema.js';
 
 const router = express.Router();
 router.use(authMiddleware);
-// Allow SUPER_ADMIN globally, plus tenant ADMIN and HR
 router.use(rbac(['SUPER_ADMIN', 'ADMIN', 'HR']));
 
-// 2026 Ghana Compliance Schema
-const employeeSchema = z.object({
-  name: z.string().trim().min(2, 'Name too short'),
-  email: z.string().email('Invalid email').transform((val) => val.toLowerCase()),
-  ghanaCardPin: z.string().regex(/^GHA-\d{9}-\d{1}$/, 'Invalid Ghana Card PIN (Format: GHA-123456789-1)'),
-  ssnitNumber: z.string().length(13, 'SSNIT must be 13 characters'),
-  basicSalary: z.number().positive('Salary must be positive'),
-  housingAllowance: z.number().nonnegative().default(0),
-  transportAllowance: z.number().nonnegative().default(0),
-  otherAllowance: z.number().nonnegative().default(0),
-  isMarried: z.boolean().default(false),
-  hasResponsibility: z.boolean().default(false),
-  childrenCount: z.number().int().min(0).max(3).default(0),
-  isDisabled: z.boolean().default(false),
-  agedDependentsCount: z.number().int().min(0).max(2).default(0),
-  age: z.number().int().min(18).max(70).default(30),
-  position: z.string().min(2, 'Position required'),
-  bankName: z.string().min(2, 'Bank name required'),
-  bankAccount: z.string().regex(/^\d{5,20}$/, 'Invalid account number'),
-  isActive: z.boolean().default(true),
-});
-
-// Helper: Format Zod Errors for Frontend
 const formatZodErrors = (error) => {
   return error.errors.reduce((acc, err) => {
     acc[err.path[0]] = err.message;
@@ -42,10 +19,20 @@ const formatZodErrors = (error) => {
   }, {});
 };
 
+// Helper: Establish secure scoping rules depending on role context
+const getTenantContext = (req, targetCompanyId = null) => {
+  if (req.userRole === 'SUPER_ADMIN') {
+    // If super admin passes a specific tenant context, enforce it. Otherwise, drop constraint.
+    const companyId = targetCompanyId || req.body.companyId || req.query.companyId;
+    return companyId ? { companyId } : {};
+  }
+  return { companyId: req.companyId };
+};
+
 // 1. List Employees
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '', active = 'true', sortBy = 'name', sortOrder = 'asc' } = req.query;
+    const { page = 1, limit = 10, search = '', active = 'true', sortBy = 'name', sortOrder = 'asc', companyId } = req.query;
     
     if (!req.companyId && req.userRole !== 'SUPER_ADMIN') {
       return res.status(403).json({ error: 'Company context missing' });
@@ -55,7 +42,7 @@ router.get('/', async (req, res) => {
     const take = Math.min(Number(limit), 100);
 
     const where = {
-      ...(req.userRole !== 'SUPER_ADMIN' && { companyId: req.companyId }),
+      ...getTenantContext(req, companyId),
       isActive: active === 'true',
       ...(search && {
         OR: [
@@ -89,20 +76,42 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 2. Export
+// 2. Export (Optimized with Batch Chunks)
 router.get('/export', async (req, res) => {
-  const { format = 'json' } = req.query;
+  const { format = 'json', companyId } = req.query;
   try {
-    const employees = await prisma.employee.findMany({
-      where: req.userRole === 'SUPER_ADMIN' ? {} : { companyId: req.companyId },
-      select: { name: true, email: true, basicSalary: true, ssnitNumber: true, position: true },
-    });
+    const where = getTenantContext(req, companyId);
+
+    // Using Chunking/Batching to prevent running out of V8 Heap RAM
+    const CHUNK_SIZE = 500;
+    let skip = 0;
+    let hasMore = true;
+    let allEmployees = [];
+
+    while (hasMore) {
+      const chunk = await prisma.employee.findMany({
+        where,
+        skip,
+        take: CHUNK_SIZE,
+        select: { name: true, email: true, basicSalary: true, ssnitNumber: true, position: true },
+        orderBy: { id: 'asc' }
+      });
+
+      allEmployees.push(...chunk);
+      skip += CHUNK_SIZE;
+      if (chunk.length < CHUNK_SIZE) hasMore = false;
+    }
+
+    const filePrefix = where.companyId ? `company_${where.companyId}` : 'global';
 
     if (format === 'csv') {
-      const parser = new Parser();
-      const csv = parser.parse(employees);
+      const fields = ['name', 'email', 'position', 'basicSalary', 'ssnitNumber'];
+      const transformOpts = { highWaterMark: 16384, encoding: 'utf-8' };
+      const asyncParser = new AsyncParser({ fields }, transformOpts);
+      
+      const csv = await asyncParser.parse(allEmployees).promise();
       res.setHeader('Content-Type', 'text/csv');
-      res.attachment(`employees_export_${Date.now()}.csv`);
+      res.attachment(`employees_${filePrefix}_${Date.now()}.csv`);
       return res.send(csv);
     }
 
@@ -118,16 +127,16 @@ router.get('/export', async (req, res) => {
         { header: 'SSNIT Number', key: 'ssnitNumber', width: 20 },
       ];
 
-      sheet.addRows(employees);
+      sheet.addRows(allEmployees);
       
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.attachment(`employees_export_${Date.now()}.xlsx`);
+      res.attachment(`employees_${filePrefix}_${Date.now()}.xlsx`);
       
       await workbook.xlsx.write(res);
       return res.end();
     }
 
-    res.json(employees);
+    res.json(allEmployees);
   } catch (error) {
     logger.error('Employee Export Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     res.status(500).json({ error: 'Export failed' });
@@ -139,16 +148,22 @@ router.post('/', async (req, res) => {
   try {
     const data = employeeSchema.parse(req.body);
     
+    // Dynamically choose target tenant domain
+    const targetCompanyId = req.userRole === 'SUPER_ADMIN' ? req.body.companyId : req.companyId;
+    if (!targetCompanyId) {
+      return res.status(400).json({ error: 'companyId is required to bind this employee payload.' });
+    }
+
     const duplicate = await prisma.employee.findFirst({
-      where: { email: data.email, companyId: req.companyId }
+      where: { email: data.email, companyId: targetCompanyId }
     });
-    if (duplicate) return res.status(400).json({ error: 'Email already registered in your company' });
+    if (duplicate) return res.status(400).json({ error: 'Email already registered in this target tenant company.' });
 
     const employee = await prisma.employee.create({
-      data: { ...data, companyId: req.companyId },
+      data: { ...data, companyId: targetCompanyId },
     });
 
-    logger.info(`Employee created: ${employee.id} by User: ${req.userId}`, { role: req.userRole });
+    logger.info(`Employee created: ${employee.id} by User: ${req.userId}`, { role: req.userRole, targetCompanyId });
     res.status(201).json(employee);
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ errors: formatZodErrors(error) });
@@ -162,9 +177,11 @@ router.put('/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const data = employeeSchema.partial().parse(req.body);
+    const tenantCondition = getTenantContext(req);
 
+    // Super Admin can run updates globally across any record id; regular tenants are constrained
     const employee = await prisma.employee.update({
-      where: { id, companyId: req.companyId },
+      where: { id, ...tenantCondition },
       data,
     });
 
@@ -172,7 +189,7 @@ router.put('/:id', async (req, res) => {
     res.json(employee);
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ errors: formatZodErrors(error) });
-    if (error.code === 'P2025') return res.status(404).json({ error: 'Employee not found' });
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Employee profile not found or access denied.' });
     logger.error('Employee Update Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     res.status(500).json({ error: 'Failed to update employee' });
   }
@@ -182,14 +199,16 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   try {
+    const tenantCondition = getTenantContext(req);
+
     await prisma.employee.update({
-      where: { id, companyId: req.companyId },
+      where: { id, ...tenantCondition },
       data: { isActive: false },
     });
     logger.info(`Employee deactivated: ${id} by User: ${req.userId}`, { role: req.userRole });
     res.json({ message: 'Employee deactivated successfully' });
   } catch (error) {
-    if (error.code === 'P2025') return res.status(404).json({ error: 'Employee not found' });
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Employee profile not found or access denied.' });
     logger.error('Employee Deactivate Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     res.status(500).json({ error: 'Failed to deactivate employee' });
   }

@@ -38,37 +38,25 @@ import resolvers from './graphql/resolvers.js';
 const app = express();
 const httpServer = http.createServer(app);
 
-// FIXED: Tell Express to trust the proxy headers from Railway
+// CRITICAL: Express proxy configurations MUST precede rate-limit bindings
+// to properly resolve incoming client IP addresses on platforms like Railway.
 app.enable('trust proxy'); 
 
 // --- STARTUP SANITY CHECKS ---
 if (!process.env.NODE_ENV) {
-  logger.warn(
-    '⚠️  NODE_ENV is not set. This MUST be set to "production" in Railway env vars, ' +
-    'or CORS and refresh-cookie behavior may not match the deployed environment.'
-  );
+  logger.warn('⚠️  NODE_ENV is not set. Defaulting to development behavior.');
 }
 if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL) {
-  logger.warn(
-    '⚠️  FRONTEND_URL is not set in production. Falling back to the hardcoded ' +
-    'allowedOrigins list only - preview/staging frontends will be rejected by CORS.'
-  );
+  logger.warn('⚠️  FRONTEND_URL is missing in production.');
 }
 
-// 1. Core Middlewares: Cookie parser MUST be before routes
+// 1. Base Processing Middlewares
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 
-// Debug incoming cookies (keep for one run to verify cookie detection)
-app.use((req, res, next) => {
-  logger.debug('Incoming cookies detected:', req.cookies);
-  next();
-});
-
-// 2. Security & REFINED CORS
+// 2. Security Configuration & Refined CORS Rules
 app.use(
   helmet({
-    // FIXED: Correctly configures CSP to support Apollo Sandbox during testing stages
     contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
     crossOriginEmbedderPolicy: false,
   })
@@ -86,7 +74,6 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, callback) => {
     const dynamicFrontend = process.env.FRONTEND_URL;
-    
     if (
       !origin || 
       allowedOrigins.includes(origin) || 
@@ -101,36 +88,39 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'apollo-require-preflight',
-    'x-apollo-operation-name',
-  ],
-  exposedHeaders: ['set-cookie'] 
+  allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight', 'x-apollo-operation-name'],
+  // 🟢 FIXED: Re-added to allow client engines to process cookie handoffs successfully cross-port
+  exposedHeaders: ['set-cookie'],
 }));
 
 // 3. Rate Limiters
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: { error: 'Too many authentication requests, please try again later.' },
+  validate: false,
+  keyGenerator: (req) => `${req.ip}:${req.path}`,
+});
+
 const restLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: { error: 'Too many REST requests, please try again later.' },
+  message: { error: 'Too many requests, please try again later.' },
   validate: false,
 });
 
 const gqlLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
-  message: { error: 'Too many GraphQL requests, please try again later.' },
+  message: { error: 'Too many GraphQL engine requests, please try again later.' },
   validate: false,
 });
 
-// 4. REST Routes
+// 4. Router Integrations
+app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/', restLimiter);
-app.use('/api/auth', authRouter);
 
-// FIXED: Applied global `authMiddleware` protection to all data-centric endpoints
-// to secure tenant parameters before sub-routing handles executions.
+// Multi-tenant operational path routing
 app.use('/api/payroll', authMiddleware, payrollRoutes);
 app.use('/api/employees', authMiddleware, employeeRoutes);
 app.use('/api/users', authMiddleware, userRoutes);
@@ -156,21 +146,23 @@ const serverCleanup = useServer(
       const raw = typeof authHeader === 'string' ? authHeader.trim() : '';
       const token = raw.startsWith('Bearer ') ? raw.split(' ')[1] : raw || null;
       
-      if (!token) return { userId: null, companyId: null, userRole: null, prisma, loaders: createLoaders() };
+      const baseContext = { userId: null, companyId: null, userRole: null, isSuperAdmin: false, prisma, loaders: createLoaders() };
+      if (!token) return baseContext;
 
       try {
         const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+        const isSuper = payload.role === 'SUPER_ADMIN';
         return {
           userId: payload.userId,
-          // FIXED: Avoids hardcoding a literal null search constraint for super admins.
-          companyId: payload.role === 'SUPER_ADMIN' ? undefined : payload.companyId,
+          companyId: isSuper ? null : payload.companyId,
           userRole: payload.role,
+          isSuperAdmin: isSuper,
           prisma,
           loaders: createLoaders(),
         };
       } catch (err) {
-        logger.error('Subscription Auth Error', { message: err.message });
-        return { userId: null, companyId: null, userRole: null, prisma, loaders: createLoaders() };
+        logger.error('Subscription Auth Extraction Error', { message: err.message });
+        return baseContext;
       }
     },
   },
@@ -205,7 +197,17 @@ const apolloServer = new ApolloServer({
       gqlLimiter,
       expressMiddleware(apolloServer, {
         context: async ({ req, res }) => {
-          const authContext = authMiddlewareGraphQL(req);
+          let authContext = { userId: null, companyId: null, userRole: null, isSuperAdmin: false };
+          
+          try {
+            authContext = authMiddlewareGraphQL(req);
+            if (authContext.userRole === 'SUPER_ADMIN') {
+              authContext.companyId = null;
+              authContext.isSuperAdmin = true;
+            }
+          } catch (err) {
+            logger.error('GraphQL middleware isolation error:', { message: err.message });
+          }
 
           return {
             ...authContext,
@@ -223,18 +225,18 @@ const apolloServer = new ApolloServer({
         await prisma.$queryRaw`SELECT 1`;
         res.json({ status: 'UP', database: 'connected', graphql: 'ready' });
       } catch (e) {
-        logger.error('Health check failed', { message: e.message });
+        logger.error('Health system connection dropped', { message: e.message });
         res.status(503).json({ status: 'DOWN', database: 'error' });
       }
     });
 
     const shutdown = async (signal) => {
-      logger.info(`${signal} received. Shutting down gracefully...`);
+      logger.info(`${signal} context received. Graceful shutdown active...`);
       await apolloServer.stop();
       await prisma.$disconnect();
       if (wsServer) wsServer.close();
       httpServer.close(() => {
-        logger.info('Process terminated.');
+        logger.info('Process complete.');
         process.exit(0);
       });
     };
@@ -244,11 +246,10 @@ const apolloServer = new ApolloServer({
 
     const PORT = process.env.PORT || 5000;
     httpServer.listen(PORT, () => {
-      logger.info(`🚀 Server running on http://localhost:${PORT}`);
-      logger.info(`📡 GraphQL endpoint: http://localhost:${PORT}/graphql`);
+      logger.info(`🚀 Stack live at http://localhost:${PORT}/graphql`);
     });
   } catch (err) {
-    logger.error('Apollo startup failed', { stack: err.stack });
+    logger.error('Apollo Engine crash during startup sequence:', { stack: err.stack });
     process.exit(1);
   }
 })();

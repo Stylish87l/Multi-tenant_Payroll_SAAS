@@ -14,6 +14,7 @@ import {
 import { REFRESH_COOKIE_NAME, getRefreshCookieOptions } from '../config/cookies.js';
 import { calculateSSNIT } from '../utils/ssnitCalculator.js';
 import { calculatePAYE } from '../utils/payeCalculator.js';
+import notificationSchema from '../schemas/notificationSchema.js';
 
 // Real-time engine
 const pubsub = new PubSub();
@@ -27,6 +28,14 @@ const requireRole = (userRole, allowedRoles, action = 'perform this action') => 
     throw new Error(`Unauthorized: You do not have permission to ${action}`);
   }
 };
+
+// Roles permitted to see payroll FINANCIAL data (gross/net/tax figures).
+// Mirrors frontend/src/config/sidebarConfig.js's "Payroll" and "Reports"
+// nav entries exactly, so REST, GraphQL, and the UI's own navigation guard
+// all agree on who can see money. HR is intentionally excluded here (HR
+// manages employee records, not disbursement figures) - same
+// segregation-of-duties reasoning applied to routes/payroll.js.
+const PAYROLL_FINANCE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'];
 
 const resolvers = {
   Query: {
@@ -108,15 +117,57 @@ const resolvers = {
       }
     },
 
+    // FIXED (2026-07-05, RBAC): for a non-SUPER_ADMIN caller with no
+    // ctxId in context, `where: { companyId: undefined }` is NOT a filter
+    // to Prisma - it's the same as omitting the where clause entirely,
+    // which would have counted employees across EVERY tenant in the
+    // system. Explicitly guarded, matching the pattern used everywhere
+    // else in this file. Left open to all authenticated roles (unlike
+    // the full `employees` list) since a bare headcount carries none of
+    // the salary/PII sensitivity of the full record set, and Dashboard.jsx
+    // surfaces this stat to every role per sidebarConfig.js.
     employeeCount: async (_, { companyId: argId }, { companyId: ctxId, userRole }) => {
       const targetId = userRole === 'SUPER_ADMIN' ? argId : ctxId;
+
+      if (!targetId && userRole !== 'SUPER_ADMIN') {
+        logger.warn('Query.employeeCount unauthorized: no company context', { userRole });
+        throw new Error('Unauthorized: No company context');
+      }
+
+      // SUPER_ADMIN with no explicit target still gets an explicit global
+      // count rather than an accidental one - {} where clause is intentional
+      // and logged, not a silent fallthrough.
+      if (!targetId && userRole === 'SUPER_ADMIN') {
+        logger.info('Query.employeeCount: SUPER_ADMIN global count requested');
+        return prisma.employee.count();
+      }
+
       return prisma.employee.count({ where: { companyId: targetId } });
     },
 
+    // FIXED (2026-07-05, RBAC): this is called unconditionally by
+    // Dashboard.jsx, which every role (including EMPLOYEE) can view per
+    // sidebarConfig.js. The underlying data (month/status/totalNet) is
+    // company-wide payroll financial data that EMPLOYEE/HR must not see.
+    // Since the schema field is `[PayrollRun!]!` (non-nullable list),
+    // THROWING here would null out the ENTIRE GraphQL response
+    // (stats + notificationsCount included), breaking the whole dashboard
+    // for those roles. Returning an empty array instead keeps the page
+    // functional while leaking zero financial data - the safest resolution
+    // available without also changing the schema/frontend query shape.
     recentPayrollRuns: async (_, { companyId: argId, limit = 5 }, { companyId: ctxId, userRole }) => {
+      if (!PAYROLL_FINANCE_ROLES.includes(userRole)) {
+        logger.info('Query.recentPayrollRuns: scoped to empty result for restricted role', { userRole });
+        return [];
+      }
+
       const targetId = userRole === 'SUPER_ADMIN' ? argId : ctxId;
+      if (!targetId && userRole !== 'SUPER_ADMIN') {
+        throw new Error('Unauthorized: No company context');
+      }
+
       return prisma.payrollRun.findMany({
-        where: { companyId: targetId },
+        where: targetId ? { companyId: targetId } : {},
         take: limit,
         orderBy: { createdAt: 'desc' },
       });
@@ -128,9 +179,18 @@ const resolvers = {
       });
     },
 
+    // FIXED (2026-07-05, RBAC): previously had NO role check at all -
+    // any authenticated EMPLOYEE could query full company-wide payroll
+    // run history (gross/net/tax totals) directly via GraphQL even though
+    // routes/payroll.js's equivalent REST endpoint has always required
+    // SUPER_ADMIN/ADMIN/ACCOUNTANT. This page is also not in EMPLOYEE's/HR's
+    // sidebar nav, so throwing here (rather than returning an empty page,
+    // as recentPayrollRuns does for the dashboard) is safe and correct.
     payrollRuns: async (_, { page = 1, limit = 10, companyId: argId }, { companyId: ctxId, userRole }) => {
       logger.info('Query.payrollRuns called', { page, limit, ctxId, userRole });
       try {
+        requireRole(userRole, PAYROLL_FINANCE_ROLES, 'view payroll runs');
+
         const targetId = userRole === 'SUPER_ADMIN' ? argId : ctxId;
         if (!targetId && userRole !== 'SUPER_ADMIN') {
           throw new Error('Unauthorized: No company context');
@@ -161,14 +221,22 @@ const resolvers = {
         };
       } catch (error) {
         logger.error('Query.payrollRuns Error', { message: error.message, stack: error.stack });
+        if (error.message?.startsWith('Unauthorized')) throw error;
         if (process.env.NODE_ENV === 'development') throw error;
         throw new Error('Failed to fetch payroll runs');
       }
     },
 
+    // FIXED (2026-07-05, RBAC): same gap as payrollRuns above - no role
+    // check meant any EMPLOYEE could fetch a single run's full item list
+    // (every colleague's gross/net/tax breakdown) by guessing/enumerating
+    // a run id, in addition to the tenant-isolation check that already
+    // existed here.
     payrollRun: async (_, { id }, { companyId, userRole }) => {
       logger.info('Query.payrollRun called', { id, companyId, userRole });
       try {
+        requireRole(userRole, PAYROLL_FINANCE_ROLES, 'view payroll run details');
+
         const run = await prisma.payrollRun.findFirst({
           where: userRole === 'SUPER_ADMIN' ? { id } : { id, companyId },
           include: { items: { include: { employee: true } } }
@@ -198,9 +266,13 @@ const resolvers = {
       }
     },
 
-    // FIXED: declared in typeDefs but had no resolver at all - any call
-    // would throw "Cannot return null for non-nullable field".
+    // FIXED (2026-07-05, RBAC): declared in typeDefs but had no resolver at
+    // all previously ("Cannot return null for non-nullable field") - now
+    // implemented AND gated to the same finance roles as payrollRuns, since
+    // this aggregates company-wide gross/PAYE/SSNIT/net totals.
     payrollSummaryReport: async (_, { companyId: argId, month }, { companyId: ctxId, userRole }) => {
+      requireRole(userRole, PAYROLL_FINANCE_ROLES, 'view payroll summary reports');
+
       const targetId = userRole === 'SUPER_ADMIN' ? (argId || ctxId) : ctxId;
       if (!targetId) throw new Error('Unauthorized: No company context');
 
@@ -226,6 +298,7 @@ const resolvers = {
         };
       } catch (error) {
         logger.error('Query.payrollSummaryReport Error', { targetId, month, message: error.message, stack: error.stack });
+        if (error.message?.startsWith('Unauthorized')) throw error;
         throw new Error('Failed to generate payroll summary report');
       }
     },
@@ -363,6 +436,19 @@ const resolvers = {
         // argument `allowances`" on every single create. The GraphQL
         // `allowances` input is mapped into otherAllowance instead;
         // housing/transport default to 0 and can be adjusted later.
+        //
+        // FIXED (2026-07-05): typeDefs.js's EmployeeInput has always
+        // declared age/isMarried/hasResponsibility/childrenCount/
+        // isDisabled/agedDependentsCount (and now bankName/bankAccount),
+        // but this resolver silently dropped every one of them on the
+        // floor - a client could send perfectly valid, schema-accepted
+        // input and have it accepted with a 200/employee object back,
+        // while the actual GRA tax-relief fields never reached the DB.
+        // Every payroll run for that employee then computed PAYE relief
+        // using Prisma's column defaults (age 30, unmarried, 0 children,
+        // not disabled) regardless of what was submitted - understating
+        // relief and overstating tax for anyone who wasn't actually a
+        // 30-year-old single filer with no dependents.
         const employee = await prisma.employee.create({
           data: {
             name: input.name,
@@ -374,6 +460,14 @@ const resolvers = {
             ssnitNumber: input.ssnitNumber || null,
             companyId: targetCompanyId,
             isActive: true,
+            bankName: input.bankName ?? undefined,
+            bankAccount: input.bankAccount ?? undefined,
+            age: input.age ?? undefined,
+            isMarried: input.isMarried ?? undefined,
+            hasResponsibility: input.hasResponsibility ?? undefined,
+            childrenCount: input.childrenCount ?? undefined,
+            isDisabled: input.isDisabled ?? undefined,
+            agedDependentsCount: input.agedDependentsCount ?? undefined,
           },
         });
         return employee;
@@ -402,6 +496,17 @@ const resolvers = {
         }
 
         // FIXED: same non-existent `allowances` column issue as create.
+        //
+        // FIXED (2026-07-05): same silent-drop bug as createEmployee above -
+        // updating an employee's marital/children/disability/age/banking
+        // details via GraphQL previously appeared to succeed but never
+        // touched those columns, so an admin "correcting" an employee's
+        // relief info through the UI had zero effect on the next payroll
+        // run. Every field below is intentionally `undefined` (not `null`)
+        // when absent from input, so Prisma's partial-update semantics
+        // correctly leave unspecified fields untouched rather than wiping
+        // them - this matters especially for boolean fields where `false`
+        // is a legitimate explicit value that must NOT be coalesced away.
         const updatedEmployee = await prisma.employee.update({
           where: { id },
           data: {
@@ -413,6 +518,14 @@ const resolvers = {
             ghanaCardPin: input.ghanaCardPIN !== undefined ? input.ghanaCardPIN : (input.ghanaCardPin !== undefined ? input.ghanaCardPin : undefined),
             ssnitNumber: input.ssnitNumber,
             isActive: input.isActive,
+            bankName: input.bankName,
+            bankAccount: input.bankAccount,
+            age: input.age,
+            isMarried: input.isMarried,
+            hasResponsibility: input.hasResponsibility,
+            childrenCount: input.childrenCount,
+            isDisabled: input.isDisabled,
+            agedDependentsCount: input.agedDependentsCount,
           },
         });
 
@@ -426,6 +539,19 @@ const resolvers = {
     // FIXED: this was a stub that only created an empty PayrollRun row -
     // no PayrollItems, no SSNIT/PAYE calculation, no duplicate-run guard,
     // no audit trail (required by CLAUDE.md for every payroll run).
+    //
+    // FIXED (2026-07-05, data integrity): backend/schemas/payrollSchema.js
+    // (used by the REST /api/payroll/run path in payrollController.js)
+    // transforms the incoming "YYYY-MM" month string to "YYYY-MM-01"
+    // before it's ever written to the DB. This resolver previously stored
+    // whatever the client sent verbatim - and frontend/src/pages/Payroll.jsx
+    // sends new Date().toISOString().slice(0,7), i.e. plain "YYYY-MM". Since
+    // PayrollRun has @@unique([companyId, month]), running payroll for the
+    // same calendar month through REST vs GraphQL produced two DIFFERENT
+    // string values ("2026-07-01" vs "2026-07") that Postgres' unique
+    // constraint could never catch as duplicates - silently allowing two
+    // payroll runs (and two sets of PayrollItems) for one company-month.
+    // Normalizing here makes both entry points agree on one canonical format.
     runPayroll: async (_, { month, companyId: argId }, { companyId: ctxId, userRole, userId }) => {
       logger.info('Mutation.runPayroll called', { month, argId });
       requireRole(userRole, ['SUPER_ADMIN', 'ADMIN', 'HR'], 'run payroll');
@@ -435,12 +561,21 @@ const resolvers = {
         throw new Error('Unauthorized: No company context for payroll run');
       }
 
+      // Normalize "YYYY-MM" -> "YYYY-MM-01" to match payrollSchema.js's
+      // REST-side transform exactly, so the @@unique([companyId, month])
+      // constraint can actually do its job regardless of entry point.
+      const normalizedMonth = /^\d{4}-\d{2}$/.test(month) ? `${month}-01` : month;
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedMonth)) {
+        throw new Error('Invalid month format. Expected YYYY-MM or YYYY-MM-DD.');
+      }
+
       try {
         const existing = await prisma.payrollRun.findFirst({
-          where: { companyId: targetId, month },
+          where: { companyId: targetId, month: normalizedMonth },
         });
         if (existing) {
-          throw new Error(`Payroll for ${month} already exists for this company.`);
+          throw new Error(`Payroll for ${normalizedMonth} already exists for this company.`);
         }
 
         const employees = await prisma.employee.findMany({
@@ -481,6 +616,9 @@ const resolvers = {
           const assessableIncome = grossSalary - ssnit.employeeDeduction;
 
           // eslint-disable-next-line no-await-in-loop
+          // FIXED (2026-07-05): pass basicSalary through so the GRA bonus
+          // threshold (see utils/payeCalculator.js) is computed against
+          // annual basic salary rather than assessable income.
           const paye = await calculatePAYE(
             assessableIncome,
             {
@@ -491,7 +629,10 @@ const resolvers = {
               age: emp.age,
               agedDependentsCount: emp.agedDependentsCount,
             },
-            targetId
+            targetId,
+            0,
+            0,
+            basicSalary
           );
 
           computedItems.push({
@@ -511,7 +652,7 @@ const resolvers = {
           const run = await tx.payrollRun.create({
             data: {
               companyId: targetId,
-              month,
+              month: normalizedMonth,
               status: 'DRAFT',
               runType: 'REGULAR',
               processedById: userId || null,
@@ -527,11 +668,12 @@ const resolvers = {
           await tx.auditLog.create({
             data: {
               userId: userId || null,
+              companyId: targetId,
               action: 'PAYROLL_RUN_CREATED',
               details: {
                 runId: run.id,
                 companyId: targetId,
-                month,
+                month: normalizedMonth,
                 employeeCount: computedItems.length,
               },
               resourceId: run.id,
@@ -575,6 +717,7 @@ const resolvers = {
         await prisma.auditLog.create({
           data: {
             userId: userId || null,
+            companyId: updated.companyId,
             action: 'PAYROLL_RUN_FINALIZED',
             details: { runId: updated.id, companyId: updated.companyId },
             resourceId: updated.id,
@@ -590,26 +733,50 @@ const resolvers = {
       }
     },
 
+    // FIXED (2026-07-05, validation parity): previously wrote directly to
+    // prisma.notification.create() with ZERO validation, completely
+    // bypassing schemas/notificationSchema.js - meaning the SMS 160-char
+    // gateway limit, the "expiresAt must be >= 5 minutes in the future"
+    // rule, and the userId UUID check all silently did not apply when a
+    // notification was sent via GraphQL instead of the REST
+    // notificationController.js path. Now both entry points share the
+    // exact same Zod schema, so validation can't drift between them again.
     sendNotification: async (_, { input }, { companyId, userRole }) => {
       logger.info('Mutation.sendNotification called', { input });
       try {
         requireRole(userRole, ['SUPER_ADMIN', 'ADMIN', 'HR'], 'send notifications');
 
-        // FIXED: `companyId` write below previously threw "Unknown argument"
-        // because Notification had no companyId column - now backed by schema.
+        const validated = await notificationSchema.parseAsync({
+          userId: input.userId,
+          type: input.type,
+          channel: input.channel || 'EMAIL',
+          content: {
+            body: input.body,
+            subject: input.subject || undefined,
+          },
+        });
+
         const notification = await prisma.notification.create({
           data: {
-            userId: input.userId,
-            type: input.type,
-            channel: input.channel || 'EMAIL',
-            content: { body: input.body, subject: input.subject || null },
-            companyId: companyId,
-            status: 'PENDING',
+            userId: validated.userId,
+            type: validated.type,
+            channel: validated.channel,
+            status: validated.status,
+            content: validated.content,
+            expiresAt: validated.expiresAt,
+            sentAt: validated.sentAt,
+            companyId: input.companyId || companyId,
           },
         });
         pubsub.publish('NOTIFICATION_SENT', { notificationSent: notification });
         return notification;
       } catch (error) {
+        // Surface Zod validation issues with useful detail instead of a
+        // generic 500, matching middleware/errorHandler.js's REST behavior.
+        if (error?.issues) {
+          logger.warn('Mutation.sendNotification validation failed', { issues: error.issues });
+          throw new Error(error.issues.map((i) => i.message).join('; '));
+        }
         logger.error('Mutation.sendNotification Error', { message: error.message, stack: error.stack });
         throw error;
       }
@@ -641,9 +808,17 @@ const resolvers = {
       resolve: (payload) => payload.notificationSent,
     },
     payrollUpdated: {
+      // FIXED (2026-07-05, RBAC): a payroll run's financial data was
+      // pushed to EVERY subscriber who merely matched on companyId, with
+      // no role check - meaning an EMPLOYEE subscribed to this channel
+      // (e.g. by inspecting the WS payload/dev tools) would receive live
+      // gross/net/tax updates the moment any payroll run changed, the same
+      // data the payrollRuns/payrollRun queries now correctly restrict.
       subscribe: withFilter(
         () => pubsub.asyncIterator(['PAYROLL_UPDATED']),
-        (payload, variables, context) => payload.payrollUpdated.companyId === context.companyId
+        (payload, variables, context) =>
+          payload.payrollUpdated.companyId === context.companyId &&
+          PAYROLL_FINANCE_ROLES.includes(context.userRole)
       ),
       resolve: (payload) => payload.payrollUpdated,
     },

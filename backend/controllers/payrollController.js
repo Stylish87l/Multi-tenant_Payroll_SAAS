@@ -7,9 +7,6 @@ export const runPayroll = async (req, res) => {
   try {
     const { month } = req.body;
 
-    // FIXED: companyId: null for SUPER_ADMIN violated the schema
-    // (PayrollRun.companyId is non-nullable) and threw on every
-    // SUPER_ADMIN run. SUPER_ADMIN must now explicitly target a tenant.
     const targetCompanyId = req.userRole === 'SUPER_ADMIN' ? req.body.companyId : req.companyId;
     if (!targetCompanyId) {
       return res.status(400).json({ error: 'companyId is required for SUPER_ADMIN payroll runs.' });
@@ -47,27 +44,16 @@ export const runPayroll = async (req, res) => {
       return res.status(400).json({ error: 'No active employees found for this company.' });
     }
 
-    // FIXED (Decimal correctness): basicSalary/housingAllowance/etc are
-    // Prisma Decimal (decimal.js) columns, not JS numbers - the native `+`
-    // operator does string concatenation on them (Decimal.valueOf()
-    // returns a string), silently corrupting every gross salary. Every
-    // value is now explicitly coerced with Number() before arithmetic.
-    //
-    // FIXED (missing await): calculateSSNIT/calculatePAYE are both async.
-    // Calling them without await assigned unresolved Promises to
-    // ssnit/payeTax, corrupting every downstream field with NaN/undefined.
-    const items = [];
-    for (const emp of employees) {
+    // OPTIMIZED: Process calculations concurrently using Promise.all to prevent loop blocking
+    const itemPromises = employees.map(async (emp) => {
       const basicSalary = Number(emp.basicSalary);
       const totalAllowances =
         Number(emp.housingAllowance) + Number(emp.transportAllowance) + Number(emp.otherAllowance);
       const grossSalary = basicSalary + totalAllowances;
 
-      // eslint-disable-next-line no-await-in-loop
       const ssnit = await calculateSSNIT(basicSalary, totalAllowances, targetCompanyId);
       const assessableIncome = grossSalary - ssnit.employeeDeduction;
 
-      // eslint-disable-next-line no-await-in-loop
       const paye = await calculatePAYE(
         assessableIncome,
         {
@@ -78,10 +64,13 @@ export const runPayroll = async (req, res) => {
           age: emp.age,
           agedDependentsCount: emp.agedDependentsCount,
         },
-        targetCompanyId
+        targetCompanyId,
+        0,
+        0,
+        basicSalary
       );
 
-      items.push({
+      return {
         employeeId: emp.id,
         grossSalary,
         taxableIncome: paye.taxableIncome,
@@ -91,8 +80,10 @@ export const runPayroll = async (req, res) => {
         ssnitTier2: ssnit.remittance.tier2,
         payeTax: paye.totalTax,
         netPay: grossSalary - ssnit.employeeDeduction - paye.totalTax,
-      });
-    }
+      };
+    });
+
+    const items = await Promise.all(itemPromises);
 
     const result = await prisma.$transaction(async (tx) => {
       const payrollRun = await tx.payrollRun.create({
@@ -101,9 +92,6 @@ export const runPayroll = async (req, res) => {
           month,
           status: 'DRAFT',
           runType: 'REGULAR',
-          // FIXED: PayrollRun has no `createdBy` field - only
-          // `processedById`. The old code threw "Unknown argument
-          // `createdBy`" on every single run.
           processedById: req.userId || null,
         },
       });
@@ -112,10 +100,10 @@ export const runPayroll = async (req, res) => {
         data: items.map((item) => ({ ...item, payrollRunId: payrollRun.id })),
       });
 
-      // CLAUDE.md audit-trail rule compliance
       await tx.auditLog.create({
         data: {
           userId: req.userId || null,
+          companyId: targetCompanyId,
           action: 'PAYROLL_RUN_CREATED',
           details: { 
             runId: payrollRun.id, 
@@ -163,7 +151,6 @@ export const getPayrollDetails = async (req, res) => {
       where: { id },
       include: {
         items: {
-          // FIXED: Employee model has `name`, not `firstName`/`lastName`
           include: { employee: { select: { name: true } } }
         }
       }
@@ -173,7 +160,6 @@ export const getPayrollDetails = async (req, res) => {
       return res.status(404).json({ error: 'Payroll run not found.' });
     }
 
-    // Tenant isolation security check
     if (req.userRole !== 'SUPER_ADMIN' && run.companyId !== req.companyId) {
       logger.warn('Unauthorized multi-tenant payroll access attempt prevented', {
         userId: req.userId,

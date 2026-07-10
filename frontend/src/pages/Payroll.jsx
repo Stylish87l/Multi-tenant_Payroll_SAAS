@@ -33,6 +33,7 @@ const Payroll = () => {
         id: 'temp-id-' + Date.now(),
         month: new Date().toISOString().slice(0, 7),
         status: 'PROCESSING',
+        runType: 'REGULAR', // ✨ FIXED: Missing configuration scalar that caused Apollo code 13
         totalNet: 0,
         processedAt: new Date().toISOString(),
       },

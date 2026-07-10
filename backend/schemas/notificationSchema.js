@@ -17,7 +17,8 @@ const toDate = (arg) => {
   return undefined;
 };
 
-const notificationSchema = z.object({
+// Base Object Definition allowing pure metadata inspection via .shape in other modules
+export const baseNotificationObject = z.object({
   userId: z.string().uuid('Invalid user ID'),
 
   type: z.enum(['INVITE', 'PAYSLIP', 'ALERT', 'APPROVAL'], {
@@ -42,22 +43,27 @@ const notificationSchema = z.object({
     return val.getTime() > Date.now() + 5 * 60 * 1000;
   }, { message: 'Expiration must be at least 5 minutes in the future' }),
 })
-.strict() // 🟢 Disallow unknown fields safely while still exposed as a ZodObject instance
+.strict(); // Disallow unknown fields safely while still exposed as a ZodObject instance
+
 /**
- * Channel-Specific Compliance
+ * Validation Refinement & Type Transformation Chain
+ * 
+ * Channel-Specific Compliance:
  * SMS characters are expensive; enforce 160-char limit for Ghana SMS gateway.
+ *
+ * FIXED (2026-07-05): `path` for a Zod object-level `.refine()` must be an
+ * array of individual key segments to walk into the nested shape, not a
+ * dot-joined string. `path: ['content', 'body']` allows the UI error parser 
+ * to nest errors correctly under content -> body.
  */
-.refine((data) => !(data.channel === 'SMS' && data.content?.body?.length > 160), {
-  message: 'SMS content exceeds the 160-character limit for a single segment.',
-  path: ['content.body'],
-})
-/**
- * Normalization
- * Automatically timestamps the "sentAt" field if status is created as SENT.
- */
-.transform((data) => ({
-  ...data,
-  sentAt: data.status === 'SENT' ? new Date() : null,
-}));
+const notificationSchema = baseNotificationObject
+  .refine((data) => !(data.channel === 'SMS' && data.content?.body?.length > 160), {
+    message: 'SMS content exceeds the 160-character limit for a single segment.',
+    path: ['content', 'body'],
+  })
+  .transform((data) => ({
+    ...data,
+    sentAt: data.status === 'SENT' ? new Date() : null,
+  }));
 
 export default notificationSchema;

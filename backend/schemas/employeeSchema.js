@@ -13,7 +13,11 @@ const toNumber = (val) => {
   return isNaN(num) ? undefined : num;
 };
 
-const employeeSchema = z.object({
+// FIXED (2026-07-06): Appended .strict() directly to the base z.object definition block.
+// Zod methods like .refine() and .transform() wrap the object inside a 'ZodEffects' instance, 
+// which strips out core configuration properties. Executing .strict() first avoids the 
+// internal compiler crash: "TypeError: z.object(...).refine(...).transform(...).strict is not a function".
+export const baseEmployeeObject = z.object({
   // Identity
   name: z.string().min(2, 'Name must be at least 2 characters').trim(),
   email: z.string().email('Invalid email format').transform((val) => val.toLowerCase().trim()),
@@ -52,16 +56,19 @@ const employeeSchema = z.object({
 
   isActive: z.boolean().default(true),
 })
-// Guard: Prevent misuse of disabled flag with zero/negative salary
-.refine((data) => !(data.isDisabled && data.basicSalary <= 0), {
-  message: 'Disabled status cannot be assigned to records without active income.',
-  path: ['isDisabled'],
-})
-// Normalization: Ensure Ghana Card is always uppercase before saving to DB
-.transform((data) => ({
-  ...data,
-  ghanaCardPin: data.ghanaCardPin.toUpperCase(),
-}))
-.strict(); // Disallow unknown fields
+.strict(); // 🟢 Executed directly on the raw ZodObject layer before applying refinements
+
+// Apply operational evaluations and data normalizations onto the locked schema instance
+const employeeSchema = baseEmployeeObject
+  // Guard: Prevent misuse of disabled flag with zero/negative salary
+  .refine((data) => !(data.isDisabled && data.basicSalary <= 0), {
+    message: 'Disabled status cannot be assigned to records without active income.',
+    path: ['isDisabled'],
+  })
+  // Normalization: Ensure Ghana Card is always uppercase before saving to DB
+  .transform((data) => ({
+    ...data,
+    ghanaCardPin: data.ghanaCardPin.toUpperCase(),
+  }));
 
 export default employeeSchema;

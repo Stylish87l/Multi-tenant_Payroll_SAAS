@@ -228,12 +228,12 @@ model Invite {
 
 model TaxConfig {
   id        String   @id @default(uuid())
-  companyId String
+  companyId String?                     // now optional
   year      Int
   type      String
   config    Json
   createdAt DateTime @default(now())
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull) // Cascade doesn't make sense on a nullable FK
 
   @@index([companyId, type, year])
   @@map("tax_configs")

@@ -1,6 +1,11 @@
 import { gql } from 'graphql-tag';
 
 const typeDefs = gql`
+  # --- Custom High-Precision Architecture Scalars ---
+  """
+  The 'Decimal' scalar handles arbitrary-precision arithmetic values, 
+  passed as string formats or floating-point literals to prevent JS IEEE 754 rounding errors.
+  """
   scalar Decimal
   scalar JSON
   scalar DateTime
@@ -8,6 +13,8 @@ const typeDefs = gql`
   # --- Shared Types ---
   type PageInfo {
     hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
     endCursor: String
   }
 
@@ -62,8 +69,11 @@ const typeDefs = gql`
     id: ID!
     name: String!
     email: String!
-    ghanaCardPIN: String     # Kept fallback for old records
-    ghanaCardPin: String     # New Unified Standard
+    """
+    Deprecated: Legacy casing variant. Use 'ghanaCardPin' instead.
+    """
+    ghanaCardPIN: String @deprecated(reason: "Unified standard migrated to camelCase 'ghanaCardPin'.")
+    ghanaCardPin: String
     ssnitNumber: String
     basicSalary: Decimal!
     allowances: Decimal      
@@ -71,6 +81,10 @@ const typeDefs = gql`
     isActive: Boolean!
     companyId: ID!
     company: Company!
+
+    # --- Banking Data ---
+    bankName: String
+    bankAccount: String
     
     # --- Ghanaian GRA Tax Relief Parameters ---
     age: Int
@@ -86,22 +100,30 @@ const typeDefs = gql`
 
   type EmployeeConnection {
     items: [Employee!]!
-    page: Int
-    limit: Int
-    total: Int
+    totalCount: Int!
     pageInfo: PageInfo!
   }
 
   input EmployeeInput {
     name: String!
     email: String!
-    ghanaCardPIN: String     # Kept for strict backward compatibility
-    ghanaCardPin: String     # Added to accept clean frontend payloads
+    """
+    Legacy client override property.
+    """
+    ghanaCardPIN: String
+    """
+    Preferred clean camelCase standard payload key.
+    """
+    ghanaCardPin: String
     ssnitNumber: String
     basicSalary: Decimal!
     allowances: Decimal
     position: String
     companyId: ID
+
+    # --- Banking ---
+    bankName: String
+    bankAccount: String
     
     # --- Tax Relief Inclusions ---
     age: Int
@@ -115,13 +137,17 @@ const typeDefs = gql`
   input UpdateEmployeeInput {
     name: String
     email: String
-    ghanaCardPIN: String     # Kept for strict backward compatibility
-    ghanaCardPin: String     # Added to accept clean frontend payloads
+    ghanaCardPIN: String
+    ghanaCardPin: String
     ssnitNumber: String
     basicSalary: Decimal
     allowances: Decimal
     position: String
     isActive: Boolean
+
+    # --- Banking ---
+    bankName: String
+    bankAccount: String
     
     # --- Tax Relief Inclusions ---
     age: Int
@@ -161,9 +187,7 @@ const typeDefs = gql`
 
   type PayrollRunConnection {
     items: [PayrollRun!]!
-    page: Int
-    limit: Int
-    total: Int
+    totalCount: Int!
     pageInfo: PageInfo!
   }
 
@@ -176,7 +200,7 @@ const typeDefs = gql`
     payeTax: Decimal!
     ssnitEmployee: Decimal!
     netPay: Decimal!
-    totalNet: Decimal      
+    totalNet: Decimal         
     processedAt: DateTime  
     errorMessage: String   
     isFinalized: Boolean  
@@ -273,11 +297,29 @@ const typeDefs = gql`
   # --- Root Operations ---
   type Query {
     me: User
-    employees(companyId: ID, search: String, page: Int, limit: Int): EmployeeConnection! 
+    
+    """
+    Fetches employees using cursor or offset parameters dynamically mapped in backend controllers.
+    """
+    employees(
+      companyId: ID
+      search: String
+      page: Int
+      limit: Int
+      after: String
+    ): EmployeeConnection! 
+
     employeeCount(companyId: ID): Int
     recentPayrollRuns(companyId: ID, limit: Int): [PayrollRun!]!
     pendingNotifications(userId: ID): Int
-    payrollRuns(companyId: ID, page: Int, limit: Int): PayrollRunConnection!
+    
+    payrollRuns(
+      companyId: ID
+      page: Int
+      limit: Int
+      after: String
+    ): PayrollRunConnection!
+    
     payrollRun(id: ID!): PayrollRun
     notifications(page: Int, limit: Int): [Notification!]!
     auditLogs(companyId: ID, page: Int, limit: Int): [AuditLog!]!

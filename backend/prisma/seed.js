@@ -23,11 +23,11 @@ async function main() {
     },
   });
 
-  // 2. Create an Admin User (Renamed to Richie Stylish)
+  // 2. Create an Admin User
   const hashedPassword = await bcrypt.hash('Admin@2026', 12);
-  const admin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: 'admin@moderntech.com' },
-    update: { name: 'Richie Stylish' }, // Ensuring the name stays consistent
+    update: { name: 'Richie Stylish' },
     create: {
       email: 'admin@moderntech.com',
       password: hashedPassword,
@@ -81,6 +81,49 @@ async function main() {
     });
   }
 
+  // 4. Seed 2026 Global Tax Configurations (Fixes the runPayroll Fallback)
+  console.log('📊 Seeding global tax configurations for 2026...');
+
+  // Global SSNIT Config
+  await prisma.taxConfig.upsert({
+    where: { id: 'global-ssnit-2026' },
+    update: {},
+    create: {
+      id: 'global-ssnit-2026',
+      companyId: null, // Global default tenant-less fallback
+      year: 2026,
+      type: 'SSNIT',
+      config: {
+        employeeRate: 0.055,  // 5.5% Employee tier 1
+        employerRate: 0.13,   // 13% Employer tier 1 & 2
+        totalRate: 0.185,
+      },
+    },
+  });
+
+  // Global GRA PAYE Tax Bands (Ghana Income Tax Amendment)
+  await prisma.taxConfig.upsert({
+    where: { id: 'global-paye-2026' },
+    update: {},
+    create: {
+      id: 'global-paye-2026',
+      companyId: null, // Global default tenant-less fallback
+      year: 2026,
+      type: 'PAYE',
+      config: {
+        bands: [
+          { upTo: 490, rate: 0.0 },
+          { upTo: 110, rate: 0.05 },
+          { upTo: 130, rate: 0.10 },
+          { upTo: 3166.67, rate: 0.175 },
+          { upTo: 16103.33, rate: 0.25 },
+          { upTo: 30000.00, rate: 0.30 },
+          { upTo: null, rate: 0.35 }, // Exceeding amount taxed at 35%
+        ],
+      },
+    },
+  });
+
   console.log('✅ Seeding completed successfully.');
 }
 
@@ -91,5 +134,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-    await pool.end(); // Cleanly close the pg pool
+    await pool.end();
   });

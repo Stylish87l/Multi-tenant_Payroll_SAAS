@@ -1,4 +1,5 @@
 import express from 'express';
+import { z } from 'zod';
 import prisma from '../config/db.js';
 import authMiddleware from '../middleware/auth.js';
 import rbac from '../middleware/rbac.js';
@@ -6,50 +7,95 @@ import logger from '../config/logger.js';
 
 const router = express.Router();
 
+const brandingSchema = z.object({
+  themeColor: z
+    .string()
+    .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, 'themeColor must be a valid hex color, e.g. #4B6EF5')
+    .optional()
+    .nullable(),
+
+  logoUrl: z
+    .string()
+    .url('logoUrl must be a valid URL')
+    .refine((val) => val.startsWith('https://'), {
+      message: 'logoUrl must use https:// - insecure or non-http(s) URLs (including file:// or data: schemes) are not permitted',
+    })
+    .optional()
+    .nullable(),
+
+  footerNote: z.string().max(300, 'footerNote must be 300 characters or fewer').optional().nullable(),
+
+  payslipTemplate: z.record(z.any()).optional().nullable(),
+}).strict();
+
 /**
  * Update Tenant Branding
- * Allows updating theme color, logo, and payslip template per tenant.
+ * FIX: Included 'SUPER_ADMIN' inside the RBAC list to align with internal multi-tenant bypass checks
  */
-router.put('/:companyId/branding', authMiddleware, rbac(['ADMIN']), async (req, res) => {
+router.put('/:companyId/branding', authMiddleware, rbac(['SUPER_ADMIN', 'ADMIN']), async (req, res) => {
   const { companyId } = req.params;
-  const { themeColor, logoUrl, payslipTemplate } = req.body;
 
   try {
-    // 1. Double-check ownership (Managed by RBAC, but added here for critical safety)
+    // 1. Secure Multi-Tenant Context Enforcer
     if (req.userRole !== 'SUPER_ADMIN' && req.companyId !== companyId) {
+      logger.warn('Cross-tenant branding modification attempt intercepted', {
+        attemptedBy: req.userId,
+        userRole: req.userRole,
+        userCompany: req.companyId,
+        targetCompany: companyId
+      });
       return res.status(403).json({ error: 'Access denied: You can only update your own company branding.' });
     }
 
-    // 2. Perform Update
+    // 2. Validate Payload Shape
+    const parsed = brandingSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const errors = parsed.error.issues.reduce((acc, issue) => {
+        acc[issue.path.join('.') || '_global'] = issue.message;
+        return acc;
+      }, {});
+      logger.warn('Branding Update Validation Failed', { companyId, errors, userId: req.userId });
+      return res.status(400).json({ errors });
+    }
+
+    const { themeColor, logoUrl, footerNote, payslipTemplate } = parsed.data;
+
+    // 3. Isolated Update Execution
     const company = await prisma.company.update({
       where: { id: companyId },
       data: {
-        themeColor,
-        logoUrl,
-        // Ensure template is treated as a valid JSON object
-        payslipTemplate: payslipTemplate ? JSON.parse(JSON.stringify(payslipTemplate)) : undefined,
+        ...(themeColor !== undefined && { themeColor }),
+        ...(logoUrl !== undefined && { logoUrl }),
+        ...(footerNote !== undefined && { footerNote }),
+        ...(payslipTemplate !== undefined && { payslipTemplate }),
       },
     });
 
-    logger.info(`Branding Updated`, { companyId, updatedBy: req.userId });
+    logger.info(`Branding Updated for company ${companyId}`, { updatedBy: req.userId, role: req.userRole });
 
-    res.json({
+    return res.json({
       message: 'Branding updated successfully',
       branding: {
         themeColor: company.themeColor,
         logoUrl: company.logoUrl,
+        footerNote: company.footerNote,
         payslipTemplate: company.payslipTemplate
       }
     });
 
   } catch (error) {
+    // Gracefully handle situations where a bad companyId string doesn't match database records
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Target company profile not found.' });
+    }
+
     logger.error('Branding Update Failure', { 
       error: error.message, 
       companyId, 
       userId: req.userId 
     });
     
-    res.status(500).json({ error: 'Failed to update branding settings.' });
+    return res.status(500).json({ error: 'Failed to update branding settings.' });
   }
 });
 

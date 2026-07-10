@@ -2,23 +2,23 @@ import prisma from '../config/db.js';
 import logger from '../config/logger.js';
 import { trace } from '@opentelemetry/api';
 
-// Default 2026 GRA Monthly Tax Bands
+// FIXED: Adjusted limits to represent actual bracket WIDTHS rather than cumulative thresholds
 const DEFAULT_BANDS = [
   { limit: 490, rate: 0.00 },
   { limit: 110, rate: 0.05 },
   { limit: 130, rate: 0.10 },
-  { limit: 3167, rate: 0.175 },
-  { limit: 16000, rate: 0.25 },
-  { limit: 30520, rate: 0.30 },
-  { limit: null, rate: 0.35 }, // null represents 'over'
+  { limit: 3170, rate: 0.175 },  // Width for 730 to 3,900
+  { limit: 12100, rate: 0.25 },  // Width for 3,900 to 16,000
+  { limit: 14520, rate: 0.30 },  // Width for 16,000 to 30,520
+  { limit: null, rate: 0.35 },   // Exceeding 30,520
 ];
 
 const DEFAULT_RELIEFS = {
-  marriage: 1200,       // Annual
-  child: 600,           // Annual (Max 3)
-  oldAge: 1500,         // Annual (60+)
-  agedDependent: 1000,  // Annual (Max 2)
-  disabilityRate: 0.25  // 25% of Assessable Income
+  marriage: 1200,
+  child: 600,
+  oldAge: 1500,
+  agedDependent: 1000,
+  disabilityRate: 0.25
 };
 
 /**
@@ -29,12 +29,13 @@ export const calculatePAYE = async (
   employeeData = {},
   companyId = null,
   bonus = 0,
-  ytdBonus = 0
+  ytdBonus = 0,
+  basicSalary = null
 ) => {
   const tracer = trace.getTracer('payroll-service');
   return await tracer.startActiveSpan('calculatePAYE', async (span) => {
     try {
-      // 1. Fetch Tax Configuration (Tenant-specific overrides prioritized)
+      // 1. Fetch Tax Configuration
       let bands = DEFAULT_BANDS;
       let reliefs = DEFAULT_RELIEFS;
 
@@ -63,7 +64,6 @@ export const calculatePAYE = async (
 
       let monthlyRelief = annualRelief / 12;
 
-      // Disability Relief: 25% of Assessable Income
       if (employeeData.isDisabled) {
         monthlyRelief += assessableIncome * reliefs.disabilityRate;
       }
@@ -72,16 +72,24 @@ export const calculatePAYE = async (
       let bonusTax = 0;
       let excessBonusToTaxable = 0;
       if (bonus > 0) {
-        const annualBasicEstimate = assessableIncome * 12;
+        if (basicSalary == null) {
+          logger.warn(
+            'calculatePAYE: bonus provided without basicSalary - bonus threshold ' +
+            'is falling back to assessableIncome, which may not match GRA rules.',
+            { companyId }
+          );
+        }
+        const monthlyBasicForBonusCalc = basicSalary != null ? Number(basicSalary) : assessableIncome;
+        const annualBasicEstimate = monthlyBasicForBonusCalc * 12;
         const bonusThreshold = annualBasicEstimate * 0.15;
 
         if (ytdBonus + bonus <= bonusThreshold) {
-          bonusTax = bonus * 0.05; // Final tax on qualifying bonus
+          bonusTax = bonus * 0.05;
         } else {
           const qualifyingPart = Math.max(0, bonusThreshold - ytdBonus);
           const excessPart = bonus - qualifyingPart;
           bonusTax = qualifyingPart * 0.05;
-          excessBonusToTaxable = excessPart; // Excess added to normal income
+          excessBonusToTaxable = excessPart;
         }
       }
 
@@ -98,17 +106,15 @@ export const calculatePAYE = async (
         let taxableInThisBand;
         if (band.limit === null) {
           taxableInThisBand = remainingToTax;
+          remainingToTax = 0n;
         } else {
           const bandLimitPesewas = BigInt(Math.round(band.limit * 100));
           taxableInThisBand = remainingToTax > bandLimitPesewas ? bandLimitPesewas : remainingToTax;
+          remainingToTax -= taxableInThisBand; // FIXED: Subtract what was actually taxed, not the absolute limit
         }
 
         const rateScaled = BigInt(Math.round(band.rate * 1000));
         totalPayePesewas += (taxableInThisBand * rateScaled) / 1000n;
-
-        if (band.limit !== null) {
-          remainingToTax -= BigInt(Math.round(band.limit * 100));
-        }
       }
 
       const monthlyPAYE = Number(totalPayePesewas) / 100;

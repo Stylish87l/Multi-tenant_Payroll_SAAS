@@ -20,6 +20,27 @@ export const EMPLOYEE_FINANCIAL_FIELDS = gql`
   }
 `;
 
+// FIXED (2026-07-05): added so the Employees.jsx edit form can actually
+// prefill an employee's GRA tax-relief attributes and banking details.
+// Previously these were never fetched by the list/edit query at all, so
+// every "edit" silently reset them to their Prisma column defaults the
+// moment updateEmployee ran (since resolvers.js's update previously wrote
+// `undefined` for anything not in formData, and formData never had these
+// keys to begin with).
+export const EMPLOYEE_RELIEF_FIELDS = gql`
+  fragment EmployeeRelief on Employee {
+    id
+    age
+    isMarried
+    hasResponsibility
+    childrenCount
+    isDisabled
+    agedDependentsCount
+    bankName
+    bankAccount
+  }
+`;
+
 export const GET_PAYROLL_RUNS = gql`
   query GetPayrollRuns($companyId: ID, $page: Int = 1, $limit: Int = 50) {
     payrollRuns(companyId: $companyId, page: $page, limit: $limit) {
@@ -50,6 +71,7 @@ export const GET_EMPLOYEES = gql`
       items {
         ...EmployeeCore
         ...EmployeeFinancial
+        ...EmployeeRelief
         ssnitNumber 
         ghanaCardPin
       }
@@ -64,6 +86,7 @@ export const GET_EMPLOYEES = gql`
   }
   ${EMPLOYEE_CORE_FIELDS}
   ${EMPLOYEE_FINANCIAL_FIELDS}
+  ${EMPLOYEE_RELIEF_FIELDS}
 `;
 
 export const GET_DASHBOARD_DATA = gql`

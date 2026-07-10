@@ -1,5 +1,4 @@
 import express from 'express';
-// Add getPayrollRuns and getPayrollDetails to your controller imports
 import { 
   runPayroll, 
   getPayrollRuns, 
@@ -12,27 +11,42 @@ import rbac from '../middleware/rbac.js';
 
 const router = express.Router();
 
-// 1. GET all payroll runs (This fixes the 404 on the main Payroll tab)
+// Apply authMiddleware globally across all payroll vectors to keep code DRY
+router.use(authMiddleware);
+
+/**
+ * 1. GET ALL PAYROLL RUNS
+ * FIXED (2026-07-05): Added ACCOUNTANT role to prevent 403 authorization failures 
+ * when accessing the main dashboard tracking list linked in the frontend sidebar config.
+ */
 router.get(
   '/', 
-  authMiddleware, 
-  rbac(['ADMIN', 'HR', 'SUPER_ADMIN']), 
+  rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'HR']), 
   getPayrollRuns
 );
 
-// 2. GET specific run details
+/**
+ * 2. GET SPECIFIC RUN DETAILS
+ * SECURITY FIX (2026-07-06): Removed 'HR' role from granular details visibility.
+ * HR handles employee records and contract variables; viewing complete, calculated 
+ * net disbursement sheets, bank breakdowns, and tax tallies violates data privacy 
+ * and standard segregation of financial duties.
+ */
 router.get(
   '/:id', 
-  authMiddleware, 
-  rbac(['ADMIN', 'HR', 'SUPER_ADMIN']), 
+  rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), 
   getPayrollDetails
 );
 
-// 3. POST to run a new payroll
+/**
+ * 3. POST TO RUN A NEW PAYROLL
+ * SECURITY FIX (2026-07-06): Re-aligned targeting vectors. Running a financial 
+ * calculation engine is strictly the domain of an ACCOUNTANT (creator/initiator) 
+ * or an ADMIN (system override), never HR.
+ */
 router.post(
   '/run', 
-  authMiddleware, 
-  rbac(['ADMIN', 'HR']), 
+  rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), 
   validate({ body: payrollSchema }), 
   runPayroll
 );

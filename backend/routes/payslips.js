@@ -40,8 +40,8 @@ const generatePayslipPDF = (doc, item) => {
   // Employee Details
   doc.fontSize(10).text(`Employee: ${employee.name}`, 50);
   doc.text(`Position: ${employee.position}`, 50);
-  doc.text(`Ghana Card: ${employee.ghanaCardPin}`, 50);
-  doc.text(`SSNIT No: ${employee.ssnitNumber}`, 50);
+  doc.text(`Ghana Card: ${employee.ghanaCardPin || 'N/A'}`, 50);
+  doc.text(`SSNIT No: ${employee.ssnitNumber || 'N/A'}`, 50);
   doc.moveDown();
 
   const drawLine = () => doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
@@ -90,41 +90,56 @@ const generatePayslipPDF = (doc, item) => {
 };
 
 // --- ROUTE 1: SINGLE PAYSLIP DOWNLOAD ---
-router.get('/item/:itemId/pdf', async (req, res) => {
-  const { itemId } = req.params;
-  try {
-    const item = await prisma.payrollItem.findFirst({
-      where: req.userRole === 'SUPER_ADMIN' 
-        ? { id: itemId } 
-        : { id: itemId, payrollRun: { companyId: req.companyId } },
-      select: {
-        grossSalary: true, ssnitEmployee: true, payeTax: true, netPay: true,
-        employee: { select: { name: true, position: true, ghanaCardPin: true, ssnitNumber: true, basicSalary: true } },
-        payrollRun: { select: { month: true, company: { select: { id: true, name: true, address: true, logoUrl: true, themeColor: true, footerNote: true } } } }
+router.get(
+  '/item/:itemId/pdf',
+  rbac(['SUPER_ADMIN', 'ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE']),
+  async (req, res) => {
+    const { itemId } = req.params;
+    try {
+      const where = {
+        id: itemId,
+        payrollRun: req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {},
+      };
+
+      // Strict isolation: Employees can ONLY download their own payslip.
+      if (req.userRole === 'EMPLOYEE') {
+        where.employee = { userId: req.userId };
       }
-    });
 
-    if (!item) return res.status(404).json({ error: 'Payslip not found' });
+      const item = await prisma.payrollItem.findFirst({
+        where,
+        select: {
+          grossSalary: true, ssnitEmployee: true, payeTax: true, netPay: true,
+          employee: { select: { name: true, position: true, ghanaCardPin: true, ssnitNumber: true, basicSalary: true, userId: true } },
+          payrollRun: { select: { month: true, companyId: true, company: { select: { id: true, name: true, address: true, logoUrl: true, themeColor: true, footerNote: true } } } }
+        }
+      });
 
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
-    const filename = `payslip_${item.employee.name.replace(/\s+/g, '_').slice(0,50)}.pdf`;
+      if (!item) {
+        logger.warn('Payslip PDF access denied or not found', { itemId, userId: req.userId, role: req.userRole });
+        return res.status(404).json({ error: 'Payslip not found or access denied' });
+      }
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const filename = `payslip_${item.employee.name.replace(/\s+/g, '_').slice(0,50)}.pdf`;
 
-    doc.pipe(res);
-    generatePayslipPDF(doc, item);
-    doc.end();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
 
-    logger.info(`Payslip generated for ItemID ${itemId} by User ${req.userId}`, { role: req.userRole });
-  } catch (error) {
-    logger.error('Single Payslip Error', { itemId, role: req.userRole, stack: error.stack });
-    res.status(500).json({ error: 'Failed to generate PDF' });
+      doc.pipe(res);
+      generatePayslipPDF(doc, item);
+      doc.end();
+
+      logger.info(`Payslip generated for ItemID ${itemId} by User ${req.userId}`, { role: req.userRole });
+    } catch (error) {
+      logger.error('Single Payslip Error', { itemId, role: req.userRole, stack: error.stack });
+      res.status(500).json({ error: 'Failed to generate PDF' });
+    }
   }
-});
+);
 
 // --- ROUTE 2: BULK PAYSLIPS (ZIP) ---
-router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'HR']), async (req, res) => {
+router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'HR', 'ACCOUNTANT']), async (req, res) => {
   const { runId } = req.params;
   try {
     const items = await prisma.payrollItem.findMany({
@@ -134,11 +149,22 @@ router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'HR']), async (req,
       select: {
         grossSalary: true, ssnitEmployee: true, payeTax: true, netPay: true,
         employee: { select: { name: true, position: true, ghanaCardPin: true, ssnitNumber: true, basicSalary: true } },
-        payrollRun: { select: { month: true, company: { select: { id: true, name: true, address: true, logoUrl: true, themeColor: true, footerNote: true } } } }
+        payrollRun: { select: { month: true, companyId: true, company: { select: { id: true, name: true, address: true, logoUrl: true, themeColor: true, footerNote: true } } } }
       }
     });
 
-    if (!items.length) return res.status(404).json({ error: 'No records' });
+    if (!items.length) return res.status(404).json({ error: 'No records found for this payroll run' });
+
+    // Defense-in-depth tenant check
+    if (req.userRole !== 'SUPER_ADMIN') {
+      const leaked = items.find((i) => i.payrollRun.companyId !== req.companyId);
+      if (leaked) {
+        logger.error('CRITICAL: Cross-tenant payslip leak prevented in bulk export', {
+          runId, userId: req.userId, expectedCompany: req.companyId, foundCompany: leaked.payrollRun.companyId,
+        });
+        return res.status(403).json({ error: 'Access denied: Tenant mismatch' });
+      }
+    }
 
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename=bulk_payslips_${runId}.zip`);
@@ -146,25 +172,33 @@ router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'HR']), async (req,
     const archive = archiver('zip', { zlib: { level: 5 } });
     archive.pipe(res);
 
+    // FIXED (2026-07-06): Replaced fire-and-forget sync PDF loop with an asynchronous 
+    // sequential promise pipeline. This blocks the stream loop until each binary payload is 
+    // fully written to the zip disk, avoiding V8 heap allocation limits on big runs.
     for (const item of items) {
-      const doc = new PDFDocument({ margin: 50, size: 'A4' });
-      const chunks = [];
-      doc.on('data', chunk => chunks.push(chunk));
-      doc.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        const safeName = item.employee.name.replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0,50);
-        archive.append(buffer, { name: `payslip_${safeName}.pdf` });
-      });
+      await new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ margin: 50, size: 'A4' });
+        const chunks = [];
 
-      generatePayslipPDF(doc, item);
-      doc.end();
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+          const safeName = item.employee.name.replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0,50);
+          archive.append(buffer, { name: `payslip_${safeName}.pdf` });
+          resolve();
+        });
+        doc.on('error', (err) => reject(err));
+
+        generatePayslipPDF(doc, item);
+        doc.end();
+      });
     }
 
     await archive.finalize();
     logger.info(`Bulk payslips generated for RunID ${runId} by User ${req.userId}`, { role: req.userRole });
   } catch (error) {
     logger.error('Bulk Payslips Error', { runId, role: req.userRole, stack: error.stack });
-    if (!res.headersSent) res.status(500).json({ error: 'Failed to generate zip' });
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to generate zip archive' });
   }
 });
 
