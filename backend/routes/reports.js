@@ -21,7 +21,6 @@ router.get('/payslip/:itemId', rbac(['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE']), 
       payrollRun: req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {}
     };
 
-    // Strict isolation: Employees can ONLY see their own payslips
     if (req.userRole === 'EMPLOYEE') {
       where.employee = { userId: req.userId };
     }
@@ -85,7 +84,13 @@ router.get('/gra-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, re
       payeTax: item.payeTax.toFixed(2),
     }));
 
-    const totalTax = items.reduce((sum, item) => sum + item.payeTax, 0);
+    // FIXED (2026-07-10): `sum + item.payeTax` where item.payeTax is a
+    // Prisma Decimal instance. decimal.js's valueOf()/toJSON() deliberately
+    // return a STRING (to prevent exactly this kind of silent bug) - so
+    // `0 + Decimal` does NOT add, it string-concatenates every payeTax
+    // value together into one garbage string. Wrapping in Number() forces
+    // correct numeric coercion, matching CLAUDE.md's Decimal-safety rule.
+    const totalTax = items.reduce((sum, item) => sum + Number(item.payeTax), 0);
 
     if (format === 'excel') {
       const workbook = new ExcelJS.Workbook();
@@ -138,6 +143,11 @@ router.get('/ssnit-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, 
 
     if (!items.length) return res.status(404).json({ error: 'No records found' });
 
+    // FIXED (2026-07-10): same Decimal `+` bug as the GRA route above, but
+    // worse here - `item.ssnitEmployee + item.ssnitEmployer` string-concats
+    // into e.g. "12.3456.78", and calling `.toFixed(2)` on that STRING
+    // throws `TypeError: ...toFixed is not a function`, crashing this
+    // entire route (both JSON and CSV format) for every request.
     const ssnitData = items.map((item, i) => ({
       serialNo: i + 1,
       ssnitNumber: item.employee.ssnitNumber,
@@ -145,7 +155,7 @@ router.get('/ssnit-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, 
       grossSalary: item.grossSalary.toFixed(2),
       employeeContribution: item.ssnitEmployee.toFixed(2),
       employerContribution: item.ssnitEmployer.toFixed(2),
-      total: (item.ssnitEmployee + item.ssnitEmployer).toFixed(2),
+      total: (Number(item.ssnitEmployee) + Number(item.ssnitEmployer)).toFixed(2),
     }));
 
     if (format === 'csv') {

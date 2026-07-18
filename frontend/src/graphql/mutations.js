@@ -4,6 +4,16 @@ import { EMPLOYEE_CORE_FIELDS, EMPLOYEE_FINANCIAL_FIELDS, EMPLOYEE_RELIEF_FIELDS
 
 /**
  * AUTHENTICATION MUTATIONS
+ *
+ * NOTE (2026-07-10): There is intentionally NO GraphQL refresh mutation.
+ * controllers/authController.js documents why: refresh/rotation lives
+ * exclusively in routes/auth.js (POST /api/auth/refresh) + config/cookies.js
+ * as the single source of truth for httpOnly cookie options. A prior
+ * GraphQL-based refresh flow signed tokens without the `tokenId` claim
+ * routes/auth.js requires for DB lookup, silently breaking every session's
+ * ability to refresh. frontend/src/lib/apolloClient.js's doRefresh() calls
+ * the REST endpoint directly and is the only supported client entry point -
+ * do not reintroduce a GraphQL refresh mutation here.
  */
 export const LOGIN_MUTATION = gql`
   mutation Login($email: String!, $password: String!) {
@@ -23,28 +33,8 @@ export const LOGIN_MUTATION = gql`
   }
 `;
 
-export const REFRESH_MUTATION = gql`
-  mutation Refresh($refreshToken: String!) {
-    refresh(refreshToken: $refreshToken) {
-      accessToken
-      refreshToken
-      user {
-        id
-        role
-        companyId
-      }
-    }
-  }
-`;
-
 /**
  * EMPLOYEE MANAGEMENT
- * FIXED (2026-07-05): now also selects ...EmployeeRelief so the mutation
- * response (used directly as the optimistic/cache-written record in
- * Employees.jsx) includes the tax-relief and banking fields the resolver
- * now actually persists - without this, the cache write after a create/
- * update would silently overwrite those fields back to `undefined` in
- * the Apollo cache even though the DB write succeeded correctly.
  */
 export const CREATE_EMPLOYEE = gql`
   mutation CreateEmployee($input: EmployeeInput!) {
@@ -102,22 +92,68 @@ export const RUN_PAYROLL = gql`
   }
 `;
 
-export const PROCESS_PAYOUT = gql`
-  mutation ProcessPayout($runId: ID!) {
-    processPayout(runId: $runId) {
+export const FINALIZE_PAYROLL = gql`
+  mutation FinalizePayroll($runId: ID!) {
+    finalizePayroll(runId: $runId) {
       id
       status
-      disbursementReference
-      payoutLog
+      isFinalized
+      processedAt
+    }
+  }
+`;
+
+/**
+ * PAYOUTS (NEW, 2026-07-10)
+ * FIXED: previously declared `processPayout(runId: ID!)` and requested
+ * fields (disbursementReference, payoutLog) that exist nowhere in the
+ * schema or the Prisma model - this mutation could never have worked.
+ * A payout is per PayrollItem, not per PayrollRun (a run has many
+ * employees, each disbursed independently) - see
+ * backend/graphql/typeDefs.js's Mutation.processPayout signature.
+ */
+export const PROCESS_PAYOUT = gql`
+  mutation ProcessPayout($payrollItemId: ID!, $provider: PaymentProvider) {
+    processPayout(payrollItemId: $payrollItemId, provider: $provider) {
+      id
+      paymentStatus
+      paymentRef
+      netPay
       updatedAt
+      employee {
+        id
+        name
+      }
+    }
+  }
+`;
+
+/**
+ * Bulk disbursement for every pending/failed item on a finalized run.
+ * Use this for the "Pay All" action on the Payroll page; use PROCESS_PAYOUT
+ * for a single employee's retry/manual disbursement.
+ */
+export const PROCESS_RUN_PAYOUTS = gql`
+  mutation ProcessRunPayouts($runId: ID!, $provider: PaymentProvider) {
+    processRunPayouts(runId: $runId, provider: $provider) {
+      id
+      status
+      isFinalized
+      items {
+        id
+        paymentStatus
+        paymentRef
+        employee {
+          id
+          name
+        }
+      }
     }
   }
 `;
 
 /**
  * PREFERENCES & NOTIFICATIONS
- * FIXED (2026-07-06): Re-aligned payload selections with the fixed backend 
- * updatePreferences resolver to ensure instant Apollo Cache updates for settings pages.
  */
 export const UPDATE_PREFERENCES = gql`
   mutation UpdatePreferences($input: UpdatePreferencesInput!) {
@@ -133,12 +169,8 @@ export const UPDATE_PREFERENCES = gql`
   }
 `;
 
-/**
- * FIXED (2026-07-06): Expanded returned fields to fully synchronize with your 
- * backend Prisma creation payload, preventing missing state elements in tracking views.
- */
 export const SEND_NOTIFICATION = gql`
-  mutation SendNotification($input: SendNotificationInput!) {
+  mutation SendNotification($input: NotificationInput!) {
     sendNotification(input: $input) {
       id
       userId

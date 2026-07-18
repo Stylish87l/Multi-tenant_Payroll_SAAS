@@ -8,15 +8,27 @@ export default defineConfig(({ mode }) => {
   // Load env file for the current mode ('' prefix keeps raw keys)
   const env = loadEnv(mode, process.cwd(), '');
 
-  // Minimal runtime validation of critical env keys
-  const API_URL = env.VITE_API_URL;
+  // FIXED (2026-07-10): This previously read `env.VITE_API_URL`, but
+  // frontend/src/main.jsx (REQUIRED_ENV) and frontend/src/lib/apolloClient.js
+  // both read `import.meta.env.VITE_GRAPHQL_API_URL` - a DIFFERENT key.
+  // Depending on which single variable an operator happened to set, this
+  // caused one of two failure modes: (a) set VITE_GRAPHQL_API_URL only ->
+  // `vite build`/`vite dev` throws here before anything runs, or (b) set
+  // VITE_API_URL only -> the build succeeds but the deployed app boots
+  // straight into main.jsx's "System Configuration Error" screen, because
+  // VITE_GRAPHQL_API_URL is undefined at runtime. Both env/build-time and
+  // app/runtime code must agree on one name - standardized on
+  // VITE_GRAPHQL_API_URL since that's what the actual app code (and its
+  // own "FIXED: Aligned with the exact production environment key naming
+  // conventions" comment) already commits to.
+  const API_URL = env.VITE_GRAPHQL_API_URL;
   const HTTP_URL = env.VITE_GRAPHQL_HTTP_URL || API_URL;
   const WS_URL = env.VITE_GRAPHQL_WS_URL || (API_URL ? API_URL.replace(/^http/, 'ws') : undefined);
   const REFRESH_URL = env.VITE_AUTH_REFRESH_URL || '/api/auth/refresh';
 
   if (!API_URL) {
     // Fail fast with a clear message so CI/devs notice missing config
-    throw new Error('VITE_API_URL is required. Set it in your .env or CI environment.');
+    throw new Error('VITE_GRAPHQL_API_URL is required. Set it in your .env or CI environment.');
   }
 
   return {
@@ -53,7 +65,6 @@ export default defineConfig(({ mode }) => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           runtimeCaching: [
             {
-              // Use a function matcher to target GraphQL endpoint(s)
               urlPattern: ({ url }) => url.pathname.startsWith('/graphql') || url.pathname.startsWith('/api/graphql'),
               handler: 'NetworkFirst',
               options: {
@@ -63,7 +74,6 @@ export default defineConfig(({ mode }) => {
               },
             },
             {
-              // Static assets: fast cache-first strategy
               urlPattern: ({ request }) => request.destination === 'image' || request.destination === 'script' || request.destination === 'style',
               handler: 'CacheFirst',
               options: {
@@ -85,9 +95,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: Number(env.VITE_DEV_PORT || 3000),
       strictPort: true,
-      // If you need HTTPS locally, set VITE_DEV_HTTPS=true and provide certs
       https: env.VITE_DEV_HTTPS === 'true' ? {
-        // Vite will read these paths; keep certs out of repo in production
         key: env.VITE_DEV_HTTPS_KEY || undefined,
         cert: env.VITE_DEV_HTTPS_CERT || undefined,
       } : false,
@@ -95,22 +103,18 @@ export default defineConfig(({ mode }) => {
         '/graphql': {
           target: HTTP_URL || 'http://localhost:5000',
           changeOrigin: true,
-          secure: false, // allow self-signed in dev when secure=false
+          secure: false,
           ws: true,
-          // Optional: rewrite if your backend mounts GraphQL at a different path
-          // rewrite: (path) => path.replace(/^\/graphql/, '/graphql'),
-          },
-    '/api': {                                      // ← ADD THIS
-      target: 'http://localhost:5000',
-      changeOrigin: true,
-      secure: false,
-      credentials: true,                           // Important for cookies
-    }
-  },
-  // ===================================================
-
-  fs: { allow: [path.resolve(__dirname, '..')] },
-},
+        },
+        '/api': {
+          target: 'http://localhost:5000',
+          changeOrigin: true,
+          secure: false,
+          credentials: true,
+        }
+      },
+      fs: { allow: [path.resolve(__dirname, '..')] },
+    },
 
     preview: {
       port: Number(env.VITE_PREVIEW_PORT || 4173),
@@ -118,7 +122,6 @@ export default defineConfig(({ mode }) => {
     },
 
     optimizeDeps: {
-      // Pre-bundle heavy libs to improve cold-start dev performance
       include: ['react', 'react-dom', 'react-router-dom', '@apollo/client', 'graphql'],
       esbuildOptions: {
         target: 'es2020',
@@ -148,11 +151,9 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-      // Limit the size of large chunks to catch regressions early
       chunkSizeWarningLimit: 1200,
     },
 
-    // Expose env to client via import.meta.env as usual; keep secrets server-side
     envPrefix: ['VITE_', 'PUBLIC_'],
   };
 });

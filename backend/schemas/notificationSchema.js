@@ -21,7 +21,18 @@ const toDate = (arg) => {
 export const baseNotificationObject = z.object({
   userId: z.string().uuid('Invalid user ID'),
 
-  type: z.enum(['INVITE', 'PAYSLIP', 'ALERT', 'APPROVAL'], {
+  // FIXED (2026-07-10): Prisma's NotificationType enum (schema.prisma) and
+  // typeDefs.js's GraphQL NotificationType enum have included SYSTEM and
+  // REMINDER since migration 20260214142756_init_payroll_tables - this Zod
+  // enum was never updated to match. Since this exact schema backs BOTH
+  // the REST notificationController.js path AND Mutation.sendNotification
+  // (that consolidation was itself a prior fix, specifically to prevent
+  // validation from drifting between entry points), a caller sending a
+  // perfectly legal SYSTEM/REMINDER notification via either path was
+  // rejected with "Unsupported notification category" - a false negative
+  // caused by the validator lagging behind the DB/GraphQL contract it's
+  // supposed to enforce.
+  type: z.enum(['INVITE', 'PAYSLIP', 'ALERT', 'APPROVAL', 'SYSTEM', 'REMINDER'], {
     errorMap: () => ({ message: 'Unsupported notification category' }),
   }),
 
@@ -45,17 +56,6 @@ export const baseNotificationObject = z.object({
 })
 .strict(); // Disallow unknown fields safely while still exposed as a ZodObject instance
 
-/**
- * Validation Refinement & Type Transformation Chain
- * 
- * Channel-Specific Compliance:
- * SMS characters are expensive; enforce 160-char limit for Ghana SMS gateway.
- *
- * FIXED (2026-07-05): `path` for a Zod object-level `.refine()` must be an
- * array of individual key segments to walk into the nested shape, not a
- * dot-joined string. `path: ['content', 'body']` allows the UI error parser 
- * to nest errors correctly under content -> body.
- */
 const notificationSchema = baseNotificationObject
   .refine((data) => !(data.channel === 'SMS' && data.content?.body?.length > 160), {
     message: 'SMS content exceeds the 160-character limit for a single segment.',

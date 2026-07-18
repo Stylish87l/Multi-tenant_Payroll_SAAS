@@ -46,6 +46,18 @@ const typeDefs = gql`
     ACTIVE
     SUSPENDED 
   }
+# --- Payment Domain (NEW) ---
+  enum PaymentStatus {
+    PENDING
+    SENT
+    PAID
+    FAILED
+  }
+
+  enum PaymentProvider {
+    HUBTEL
+    PAYSTACK
+  }
 
   type User {
     id: ID!
@@ -223,11 +235,15 @@ const typeDefs = gql`
     taxableIncome: Decimal!
     payeTax: Decimal!
     ssnitEmployee: Decimal!
+    ssnitEmployer: Decimal!
     netPay: Decimal!
-    totalNet: Decimal         
-    processedAt: DateTime  
-    errorMessage: String   
-    isFinalized: Boolean  
+    totalNet: Decimal
+    paymentStatus: PaymentStatus!
+    paymentRef: String
+    processedAt: DateTime
+    errorMessage: String
+    isFinalized: Boolean
+    updatedAt: DateTime
     employee: Employee!
   }
     
@@ -356,7 +372,7 @@ const typeDefs = gql`
     preferences: Preferences
   }
 
-  
+
   type Mutation {
     register(email: String!, password: String!, name: String!, companyName: String!): AuthPayload!
     login(email: String!, password: String!): AuthPayload!
@@ -366,6 +382,22 @@ const typeDefs = gql`
     finalizePayroll(runId: ID!): PayrollRun!
     sendNotification(input: NotificationInput!): Notification!
     updatePreferences(input: UpdatePreferencesInput!): Preferences!
+    
+    """
+    Processes disbursement for a single payroll item. Requires the parent
+    PayrollRun to be FINALIZED first - payouts must never fire against a
+    DRAFT run that hasn't been reviewed. Idempotent: calling this twice on
+    an already SENT/PAID item is rejected by paymentServices.js's guard.
+    """
+    processPayout(payrollItemId: ID!, provider: PaymentProvider): PayrollItem!
+
+    """
+    Bulk-disburses every PENDING or previously-FAILED item on a finalized
+    run. Partial failure is expected and non-fatal - the mutation reports
+    the run's post-attempt state; check each item's paymentStatus to see
+    which succeeded.
+    """
+    processRunPayouts(runId: ID!, provider: PaymentProvider): PayrollRun!
   }
 
   type Subscription {

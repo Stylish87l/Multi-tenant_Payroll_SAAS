@@ -20,7 +20,13 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
         },
       });
 
-      if (!item || item.paymentStatus === 'SUCCESS' || item.paymentStatus === 'SENT') {
+      // FIXED (2026-07-10): was comparing against 'SUCCESS', which is not
+      // and never was a valid PaymentStatus enum value - PAID is the real
+      // terminal-success state (see schema.prisma). This guard previously
+      // could never actually trigger on a completed payout, meaning a
+      // second call against an already-PAID item would silently attempt
+      // to re-process it instead of being rejected here.
+      if (!item || item.paymentStatus === 'PAID' || item.paymentStatus === 'SENT') {
         throw new Error(`Invalid Payout State: Item ${payrollItemId} already processed or missing.`);
       }
 
@@ -34,6 +40,20 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
         });
       }
 
+      // FIXED (2026-07-10): item.netPay is a Prisma Decimal instance, not a
+      // native number. decimal.js's valueOf()/toJSON() deliberately return
+      // a STRING - so `item.netPay * 100` triggers JS's numeric coercion
+      // path (Decimal has no [Symbol.toPrimitive] override for `*`), which
+      // actually *does* coerce via valueOf() to a number correctly for `*`
+      // specifically... but relying on that implicit behavior is exactly
+      // the landmine CLAUDE.md's "Decimal arithmetic is a silent failure
+      // mode" rule exists to prevent - `+` and comparison operators on the
+      // same object silently do the WRONG thing (string concat / lexicographic
+      // compare) with no error thrown, so every Decimal touchpoint must be
+      // explicitly Number()-converted for consistency and safety, not left
+      // to operator-specific implicit coercion that happens to work today.
+      const netPayNumber = Number(item.netPay);
+
       let gatewayResult;
 
       // 3. Execution with Provider-Specific Logic
@@ -44,8 +64,10 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
           gatewayResult = { status: 'SENT', reference: idempotencyKey }; 
         } else if (provider === 'paystack') {
           // Paystack uses kobo (GHS * 100)
-          const amountInKobo = Math.round(item.netPay * 100);
+          const amountInKobo = Math.round(netPayNumber * 100);
           gatewayResult = { status: 'SENT', reference: idempotencyKey, amount: amountInKobo };
+        } else {
+          throw new Error(`Unsupported payment provider: ${provider}`);
         }
       }, { retries: 3, onFailedAttempt: error => {
         logger.warn(`Payout attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`, { itemId: payrollItemId });
@@ -61,8 +83,13 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       });
 
       // Fraud Detection ML Hook: Flag unusual amounts (> 100k GHS)
-      if (item.netPay > 100000) {
-        logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: item.netPay });
+      // FIXED (2026-07-10): was `item.netPay > 100000` - a Decimal compared
+      // with `>` against a number DOES coerce correctly via valueOf(), so
+      // this one happened to work, but is fixed for consistency with the
+      // explicit-conversion rule above and to avoid relying on
+      // operator-specific Decimal coercion quirks anywhere in this file.
+      if (netPayNumber > 100000) {
+        logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPayNumber });
       }
 
       span.setAttributes({
@@ -101,10 +128,15 @@ export const handlePaymentWebhook = async (payload, signature) => {
   const { reference, status, failureReason } = payload;
 
   try {
+    // FIXED (2026-07-10): was writing 'SUCCESS', which - like the guard
+    // above - is not a valid PaymentStatus value. This updateMany would
+    // have thrown a Prisma enum validation error on every successful
+    // webhook delivery, meaning a payout could be confirmed by the
+    // provider but the DB write recording that confirmation always failed.
     const updated = await prisma.payrollItem.updateMany({
       where: { paymentRef: reference },
       data: { 
-        paymentStatus: status === 'success' ? 'SUCCESS' : 'FAILED',
+        paymentStatus: status === 'success' ? 'PAID' : 'FAILED',
         // Optionally store failureReason in metadata for audit/debugging
       }
     });
