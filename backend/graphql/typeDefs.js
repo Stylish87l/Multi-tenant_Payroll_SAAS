@@ -46,7 +46,7 @@ const typeDefs = gql`
     ACTIVE
     SUSPENDED 
   }
-# --- Payment Domain (NEW) ---
+# --- Payment Domain ---
   enum PaymentStatus {
     PENDING
     SENT
@@ -88,7 +88,27 @@ const typeDefs = gql`
     ghanaCardPin: String
     ssnitNumber: String
     basicSalary: Decimal!
-    allowances: Decimal      
+
+    """
+    NEW: individual allowance components, matching the Prisma columns
+    directly. Previously only the computed total ('allowances' below) was
+    exposed, and no client (REST or GraphQL) ever wrote to housing/
+    transport/other allowance at all - every employee created through the
+    app silently got GHS 0 for all three regardless of reality. Prefer
+    these three fields for read AND write; 'allowances' remains as a
+    read-only computed total for convenience/backward compatibility.
+    """
+    housingAllowance: Decimal
+    transportAllowance: Decimal
+    otherAllowance: Decimal
+
+    """
+    Deprecated: read-only computed sum of housingAllowance +
+    transportAllowance + otherAllowance. Kept for backward compatibility
+    with existing queries; new code should read/write the three individual
+    fields above instead.
+    """
+    allowances: Decimal @deprecated(reason: "Use housingAllowance/transportAllowance/otherAllowance instead.")
     position: String         
     isActive: Boolean!
     companyId: ID!
@@ -110,18 +130,6 @@ const typeDefs = gql`
     updatedAt: DateTime
   }
 
-  """
-  FIXED (2026-07-10): Previously declared 'totalCount: Int!' which no
-  resolver ever populated (Query.employees returns { items, total, page,
-  limit, pageInfo } - never totalCount), and omitted 'page'/'limit'/'total'
-  entirely even though frontend/src/graphql/queries.js's GET_EMPLOYEES has
-  always requested them. Since GraphQL validates a query's selection set
-  against the schema BEFORE execution, requesting an undeclared field like
-  'total' caused Apollo Server to reject the entire operation with a 400
-  ("Cannot query field") - this is the exact cause of Employees.jsx's
-  "Unable to load employees" and the identical failure mode on Payroll.jsx
-  below. Schema now matches what resolvers.js actually returns.
-  """
   type EmployeeConnection {
     items: [Employee!]!
     page: Int!
@@ -143,7 +151,18 @@ const typeDefs = gql`
     ghanaCardPin: String
     ssnitNumber: String
     basicSalary: Decimal!
-    allowances: Decimal
+
+    """
+    NEW: write directly to the individual allowance columns. 'allowances'
+    below is still accepted for backward compatibility (mapped entirely to
+    otherAllowance if the three specific fields are omitted), but new
+    clients should prefer these.
+    """
+    housingAllowance: Decimal
+    transportAllowance: Decimal
+    otherAllowance: Decimal
+    allowances: Decimal @deprecated(reason: "Use housingAllowance/transportAllowance/otherAllowance instead.")
+
     position: String
     companyId: ID
 
@@ -167,7 +186,12 @@ const typeDefs = gql`
     ghanaCardPin: String
     ssnitNumber: String
     basicSalary: Decimal
-    allowances: Decimal
+
+    housingAllowance: Decimal
+    transportAllowance: Decimal
+    otherAllowance: Decimal
+    allowances: Decimal @deprecated(reason: "Use housingAllowance/transportAllowance/otherAllowance instead.")
+
     position: String
     isActive: Boolean
 
@@ -211,14 +235,6 @@ const typeDefs = gql`
     companyId: ID!
   }
 
-  """
-  FIXED (2026-07-10): Same schema/resolver mismatch as EmployeeConnection
-  above - 'totalCount' was declared but never populated, and 'page'/
-  'limit'/'total' were missing even though GET_PAYROLL_RUNS has always
-  queried them and resolvers.js's payrollRuns resolver has always returned
-  them. This was rejecting Payroll.jsx's query with a 400 before it ever
-  reached the RBAC/tenant-scoping logic inside the resolver.
-  """
   type PayrollRunConnection {
     items: [PayrollRun!]!
     page: Int!

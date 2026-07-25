@@ -13,7 +13,7 @@ import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHt
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { useServer } from 'graphql-ws/use/ws';
 import depthLimit from 'graphql-depth-limit';
-import jwt from 'jsonwebtoken'; 
+import jwt from 'jsonwebtoken';
 
 // Configurations & Middleware
 import prisma from './config/db.js';
@@ -32,6 +32,7 @@ import payslipRoutes from './routes/payslips.js';
 import tenantRoutes from './routes/tenants.js';
 import tenantBrandingRoutes from './routes/tenantBranding.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import webhookRoutes from './routes/webhooks.js';
 import typeDefs from './graphql/typeDefs.js';
 import resolvers from './graphql/resolvers.js';
 
@@ -40,7 +41,7 @@ const httpServer = http.createServer(app);
 
 // CRITICAL: Express proxy configurations MUST precede rate-limit bindings
 // to properly resolve incoming client IP addresses on platforms like Railway.
-app.enable('trust proxy'); 
+app.enable('trust proxy');
 
 // --- STARTUP SANITY CHECKS ---
 if (!process.env.NODE_ENV) {
@@ -52,7 +53,22 @@ if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL) {
 
 // 1. Base Processing Middlewares
 app.use(cookieParser());
-app.use(express.json({ limit: '1mb' }));
+
+// NEW: capture the raw request body alongside Express's normal JSON
+// parsing. routes/webhooks.js needs the exact bytes the provider signed
+// (Paystack's HMAC-SHA512 signature is computed over the raw body -
+// JSON.stringify(req.body) is not guaranteed to byte-for-byte match what
+// was actually sent, e.g. key ordering or whitespace differences would
+// silently break every signature check). This adds negligible overhead
+// (one Buffer copy) and changes no behavior for any other route.
+app.use(
+  express.json({
+    limit: '1mb',
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 
 // 2. Security Configuration & Refined CORS Rules
 app.use(
@@ -68,15 +84,15 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://studio.apollographql.com',
   'https://sandbox.embed.apollographql.com',
-  'https://usepaylio.vercel.app', 
+  'https://usepaylio.vercel.app',
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
     const dynamicFrontend = process.env.FRONTEND_URL;
     if (
-      !origin || 
-      allowedOrigins.includes(origin) || 
+      !origin ||
+      allowedOrigins.includes(origin) ||
       origin === dynamicFrontend ||
       process.env.NODE_ENV !== 'production'
     ) {
@@ -89,7 +105,6 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight', 'x-apollo-operation-name'],
-  // 🟢 FIXED: Re-added to allow client engines to process cookie handoffs successfully cross-port
   exposedHeaders: ['set-cookie'],
 }));
 
@@ -116,7 +131,26 @@ const gqlLimiter = rateLimit({
   validate: false,
 });
 
+// NEW: dedicated, more generous limiter for provider webhooks - these are
+// server-to-server calls that can legitimately burst (e.g. a bulk payroll
+// run triggering dozens of near-simultaneous transfer.success events), and
+// they must never be rejected due to req.ip collisions behind a shared
+// provider egress IP the way authLimiter's per-IP+path key could.
+const webhookLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 600,
+  message: { error: 'Too many webhook requests.' },
+  validate: false,
+});
+
 // 4. Router Integrations
+
+// NEW: webhook routes are intentionally mounted BEFORE authMiddleware and
+// use their own signature-based verification (see routes/webhooks.js) -
+// payment providers cannot supply a Paylio JWT, so authMiddleware would
+// reject 100% of legitimate provider callbacks.
+app.use('/api/webhooks', webhookLimiter, webhookRoutes);
+
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/', restLimiter);
 
@@ -145,7 +179,7 @@ const serverCleanup = useServer(
       const authHeader = ctx.connectionParams?.authorization || ctx.connectionParams?.Authorization || '';
       const raw = typeof authHeader === 'string' ? authHeader.trim() : '';
       const token = raw.startsWith('Bearer ') ? raw.split(' ')[1] : raw || null;
-      
+
       const baseContext = { userId: null, companyId: null, userRole: null, isSuperAdmin: false, prisma, loaders: createLoaders() };
       if (!token) return baseContext;
 
@@ -172,7 +206,7 @@ const serverCleanup = useServer(
 const apolloServer = new ApolloServer({
   schema,
   validationRules: [depthLimit(7)],
-  csrfPrevention: true, 
+  csrfPrevention: true,
   cache: 'bounded',
   plugins: [
     ApolloServerPluginDrainHttpServer({ httpServer }),
@@ -198,7 +232,7 @@ const apolloServer = new ApolloServer({
       expressMiddleware(apolloServer, {
         context: async ({ req, res }) => {
           let authContext = { userId: null, companyId: null, userRole: null, isSuperAdmin: false };
-          
+
           try {
             authContext = authMiddlewareGraphQL(req);
             if (authContext.userRole === 'SUPER_ADMIN') {

@@ -6,11 +6,16 @@ import rbac from '../middleware/rbac.js';
 import logger from '../config/logger.js';
 import { AsyncParser } from 'json2csv'; // Memory-safe streaming parser alternative
 import ExcelJS from 'exceljs';
-import employeeSchema from '../schemas/employeeSchema.js';
+import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employeeSchema.js';
 
 const router = express.Router();
 router.use(authMiddleware);
 router.use(rbac(['SUPER_ADMIN', 'ADMIN', 'HR']));
+
+// Hard ceiling on list/export page size, independent of what the client
+// requests - mirrors the cap added to the equivalent GraphQL resolvers so
+// REST and GraphQL agree on the maximum a single request can return.
+const MAX_PAGE_SIZE = 100;
 
 const formatZodErrors = (error) => {
   return error.errors.reduce((acc, err) => {
@@ -33,13 +38,13 @@ const getTenantContext = (req, targetCompanyId = null) => {
 router.get('/', async (req, res) => {
   try {
     const { page = 1, limit = 10, search = '', active = 'true', sortBy = 'name', sortOrder = 'asc', companyId } = req.query;
-    
+
     if (!req.companyId && req.userRole !== 'SUPER_ADMIN') {
       return res.status(403).json({ error: 'Company context missing' });
     }
 
     const skip = (Math.max(1, Number(page)) - 1) * Number(limit);
-    const take = Math.min(Number(limit), 100);
+    const take = Math.min(Number(limit) || 10, MAX_PAGE_SIZE);
 
     const where = {
       ...getTenantContext(req, companyId),
@@ -54,8 +59,8 @@ router.get('/', async (req, res) => {
     };
 
     const validSortFields = ['name', 'email', 'basicSalary', 'createdAt'];
-    const orderBy = validSortFields.includes(sortBy) 
-      ? { [sortBy]: sortOrder === 'desc' ? 'desc' : 'asc' } 
+    const orderBy = validSortFields.includes(sortBy)
+      ? { [sortBy]: sortOrder === 'desc' ? 'desc' : 'asc' }
       : { name: 'asc' };
 
     const [employees, total] = await Promise.all([
@@ -64,7 +69,17 @@ router.get('/', async (req, res) => {
         orderBy,
         skip,
         take,
-        select: { id: true, name: true, email: true, basicSalary: true, position: true, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          basicSalary: true,
+          housingAllowance: true,
+          transportAllowance: true,
+          otherAllowance: true,
+          position: true,
+          isActive: true,
+        },
       }),
       prisma.employee.count({ where }),
     ]);
@@ -108,7 +123,7 @@ router.get('/export', async (req, res) => {
       const fields = ['name', 'email', 'position', 'basicSalary', 'ssnitNumber'];
       const transformOpts = { highWaterMark: 16384, encoding: 'utf-8' };
       const asyncParser = new AsyncParser({ fields }, transformOpts);
-      
+
       const csv = await asyncParser.parse(allEmployees).promise();
       res.setHeader('Content-Type', 'text/csv');
       res.attachment(`employees_${filePrefix}_${Date.now()}.csv`);
@@ -118,7 +133,7 @@ router.get('/export', async (req, res) => {
     if (format === 'excel') {
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('Employees');
-      
+
       sheet.columns = [
         { header: 'Full Name', key: 'name', width: 25 },
         { header: 'Email Address', key: 'email', width: 25 },
@@ -128,10 +143,10 @@ router.get('/export', async (req, res) => {
       ];
 
       sheet.addRows(allEmployees);
-      
+
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.attachment(`employees_${filePrefix}_${Date.now()}.xlsx`);
-      
+
       await workbook.xlsx.write(res);
       return res.end();
     }
@@ -147,7 +162,12 @@ router.get('/export', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const data = employeeSchema.parse(req.body);
-    
+
+    const businessRuleError = validateEmployeeBusinessRules(data);
+    if (businessRuleError) {
+      return res.status(400).json({ errors: { isDisabled: businessRuleError } });
+    }
+
     // Dynamically choose target tenant domain
     const targetCompanyId = req.userRole === 'SUPER_ADMIN' ? req.body.companyId : req.companyId;
     if (!targetCompanyId) {
@@ -159,8 +179,27 @@ router.post('/', async (req, res) => {
     });
     if (duplicate) return res.status(400).json({ error: 'Email already registered in this target tenant company.' });
 
-    const employee = await prisma.employee.create({
-      data: { ...data, companyId: targetCompanyId },
+    const employee = await prisma.$transaction(async (tx) => {
+      const created = await tx.employee.create({
+        data: { ...data, companyId: targetCompanyId },
+      });
+
+      // CLAUDE.md rule: every sensitive payroll action (salary change)
+      // must trigger an AuditLog entry. Creating an employee record sets
+      // their initial salary/relief profile, which directly drives every
+      // future PAYE/SSNIT calculation - it belongs in the audit trail.
+      await tx.auditLog.create({
+        data: {
+          userId: req.userId || null,
+          companyId: targetCompanyId,
+          action: 'EMPLOYEE_CREATED',
+          details: { employeeId: created.id, basicSalary: String(created.basicSalary) },
+          resourceId: created.id,
+          resourceType: 'Employee',
+        },
+      });
+
+      return created;
     });
 
     logger.info(`Employee created: ${employee.id} by User: ${req.userId}`, { role: req.userRole, targetCompanyId });
@@ -179,10 +218,46 @@ router.put('/:id', async (req, res) => {
     const data = employeeSchema.partial().parse(req.body);
     const tenantCondition = getTenantContext(req);
 
-    // Super Admin can run updates globally across any record id; regular tenants are constrained
-    const employee = await prisma.employee.update({
-      where: { id, ...tenantCondition },
-      data,
+    const existing = await prisma.employee.findFirst({ where: { id, ...tenantCondition } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Employee profile not found or access denied.' });
+    }
+
+    const businessRuleError = validateEmployeeBusinessRules(data, existing);
+    if (businessRuleError) {
+      return res.status(400).json({ errors: { isDisabled: businessRuleError } });
+    }
+
+    const salaryChanged =
+      data.basicSalary !== undefined && Number(data.basicSalary) !== Number(existing.basicSalary);
+
+    const employee = await prisma.$transaction(async (tx) => {
+      const updated = await tx.employee.update({
+        where: { id, ...tenantCondition },
+        data,
+      });
+
+      // CLAUDE.md rule: salary changes must be audited. Also record any
+      // update as a general trail entry so HR edits (relief flags, bank
+      // details) are traceable even when salary itself didn't change.
+      await tx.auditLog.create({
+        data: {
+          userId: req.userId || null,
+          companyId: existing.companyId,
+          action: salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
+          details: {
+            employeeId: id,
+            changedFields: Object.keys(data),
+            ...(salaryChanged
+              ? { previousSalary: String(existing.basicSalary), newSalary: String(data.basicSalary) }
+              : {}),
+          },
+          resourceId: id,
+          resourceType: 'Employee',
+        },
+      });
+
+      return updated;
     });
 
     logger.info(`Employee updated: ${id} by User: ${req.userId}`, { role: req.userRole });
