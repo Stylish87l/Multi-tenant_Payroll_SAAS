@@ -1,29 +1,33 @@
 import { createLogger, format, transports } from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
+import { redact, isSensitiveKey, REDACTED } from '../utils/redact.js';
 
 const { combine, timestamp, errors, json, colorize, printf, simple } = format;
 
-// Custom console format for local development
-const consoleFormat = printf(({ level, message, timestamp, stack, role }) => {
-  return `${timestamp} [${level}]${role ? ` [${role}]` : ''}: ${stack || message}`;
+/**
+ * Last line of defence: scrub secrets/PII from EVERY log record's metadata,
+ * whoever the caller is. (Previously resolvers logged full employee inputs -
+ * bank accounts, Ghana Card PINs - straight into combined-*.log.)
+ */
+const redactFormat = format((info) => {
+  for (const key of Object.keys(info)) {
+    if (key === 'level' || key === 'message') continue;
+    info[key] = isSensitiveKey(key) ? REDACTED : redact(info[key]);
+  }
+  return info;
 });
 
+const consoleFormat = printf(({ level, message, timestamp: ts, stack, role }) =>
+  `${ts} [${level}]${role ? ` [${role}]` : ''}: ${stack || message}`
+);
+
+const isProd = process.env.NODE_ENV === 'production';
+
 const logger = createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-  format: combine(
-    timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-    errors({ stack: true }),
-    json()
-  ),
+  level: isProd ? 'info' : 'debug',
+  format: combine(timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), errors({ stack: true }), redactFormat(), json()),
   transports: [
-    // Console: Readable and colored for development
-    new transports.Console({
-      format: combine(
-        colorize(),
-        process.env.NODE_ENV === 'production' ? simple() : consoleFormat
-      ),
-    }),
-    // Combined Logs: Rotates daily, kept for 14 days
+    new transports.Console({ format: combine(colorize(), isProd ? simple() : consoleFormat) }),
     new DailyRotateFile({
       filename: 'logs/combined-%DATE%.log',
       datePattern: 'YYYY-MM-DD',
@@ -31,7 +35,6 @@ const logger = createLogger({
       maxSize: '20m',
       maxFiles: '14d',
     }),
-    // Error Logs: Separate file for critical issues, kept for 30 days
     new DailyRotateFile({
       filename: 'logs/error-%DATE%.log',
       datePattern: 'YYYY-MM-DD',
@@ -43,15 +46,15 @@ const logger = createLogger({
   ],
 });
 
-// Handle global process errors
 process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled Rejection at Promise', { reason });
+  logger.error('Unhandled Rejection at Promise', { reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : reason });
 });
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught Exception thrown', { message: err.message, stack: err.stack });
-  // Optional: Graceful exit after logging critical crash
-  // process.exit(1);
+  // Process state is undefined after an uncaught exception: exit and let the
+  // platform restart us. The delay lets the file transports flush.
+  setTimeout(() => process.exit(1), 1000);
 });
 
 export default logger;

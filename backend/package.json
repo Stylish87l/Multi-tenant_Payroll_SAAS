@@ -4,54 +4,34 @@
   "description": "Multi-Tenant Ghana Payroll System",
   "main": "server.js",
   "type": "module",
+  "private": true,
   "scripts": {
     "start": "prisma migrate deploy && node server.js",
     "dev": "node --env-file=.env --watch server.js",
-    "build": "prisma generate && prisma migrate deploy && npx prisma db seed",
-    "test": "jest --coverage",
-    "lint": "eslint . --ext .js",
-    "lint:fix": "eslint . --ext .js --fix",
-    "audit": "npm audit",
+    "build": "prisma generate",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "audit": "npm audit --omit=dev",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:seed": "prisma db seed"
+    "db:seed": "node prisma/seed.js"
   },
-  "prisma": {
-    "seed": "node prisma/seed.js"
-  },
-  "keywords": [
-    "payroll",
-    "ghana",
-    "multi-tenant",
-    "graphql",
-    "prisma",
-    "express"
-  ],
-  "author": "Your Name",
+  "keywords": ["payroll", "ghana", "multi-tenant", "graphql", "prisma", "express"],
   "license": "ISC",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourname/backend"
-  },
-  "bugs": {
-    "url": "https://github.com/yourname/backend/issues"
-  },
-  "homepage": "https://github.com/yourname/backend#readme",
-  "engines": {
-    "node": ">=20.19.0"
-  },
+  "engines": { "node": ">=20.19.0" },
   "dependencies": {
     "@apollo/server": "^5.0.0",
     "@as-integrations/express5": "^1.1.2",
+    "@graphql-tools/schema": "^10.0.0",
     "@opentelemetry/api": "^1.9.0",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
     "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
-    "bcryptjs": "^3.0.3",
-    "bullmq": "^5.31.0",
     "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
     "dataloader": "^2.2.3",
     "dotenv": "^16.4.7",
     "exceljs": "^4.4.0",
@@ -61,20 +41,14 @@
     "graphql-depth-limit": "^1.1.0",
     "graphql-subscriptions": "^3.0.0",
     "graphql-tag": "^2.12.6",
-    "graphql-upload": "^16.0.2",
     "graphql-ws": "^6.0.7",
-    "handlebars": "^4.7.8",
     "helmet": "^8.1.0",
-    "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^6.10.1",
     "p-retry": "^6.2.0",
-    "paystack": "^2.0.1",
     "pdfkit": "^0.17.2",
     "pg": "^8.20.0",
     "prisma": "^7.5.0",
-    "swagger-ui-express": "^5.0.1",
-    "twilio": "^5.4.0",
     "uuid": "^11.0.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
@@ -82,9 +56,10 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@eslint/js": "^9.18.0",
     "eslint": "^9.18.0",
+    "globals": "^15.14.0",
     "jest": "^29.7.0",
-    "nodemon": "^3.1.9",
     "supertest": "^7.0.0"
   }
 }

@@ -1,223 +1,181 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useMutation, useApolloClient } from '@apollo/client';
 import { useNavigate } from 'react-router-dom';
 import { LOGIN_MUTATION } from '../graphql/mutations';
-// --- IMPORT THE SHARED REFRESH LOGIC FROM APOLLO ---
-import { doRefresh } from '../lib/apolloClient'; 
+import { doRefresh, doLogout, TOKEN_KEY, USER_KEY } from '../lib/apolloClient';
 
 const AuthContext = createContext(null);
 
-const TOKEN_KEY = 'token';
-const COMPANY_KEY = 'companyContext';
+// SUPER_ADMIN's selected tenant. The JWT carries no tenant for SUPER_ADMIN, so queries pass this as `companyId`.
+const TENANT_KEY = 'tenantOverride';
+
+const readJson = (key) => {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+};
+
+/** Layers the SUPER_ADMIN tenant selection (if any) over the stored user. */
+const withTenant = (base) => {
+  if (!base) return null;
+  if (base.role !== 'SUPER_ADMIN') return base;
+  const tenant = readJson(TENANT_KEY);
+  return tenant?.id ? { ...base, companyId: tenant.id, companyName: tenant.name } : base;
+};
+
+const normalizeUser = (u) => (u ? { ...u, companyName: u.companyName ?? u.company?.name ?? null } : null);
+
+const parseJwt = (token) => {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(window.atob(base64));
+  } catch {
+    return null;
+  }
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // initial session check ONLY
   const navigate = useNavigate();
   const client = useApolloClient();
   const mountedRef = useRef(true);
   const refreshTimerRef = useRef(null);
-  // Tracks whether we've ever successfully established an authenticated
-  // session in THIS app lifetime. Used to distinguish "never logged in /
-  // cookie not present yet" (expected, silent) from "had a session, refresh
-  // just failed" (real logout).
   const hasAuthenticatedRef = useRef(false);
+  const refreshSessionRef = useRef(null);
 
   const [loginMutation] = useMutation(LOGIN_MUTATION);
 
-  // --- 1. UTILS ---
-  
-  const parseJwt = useCallback((token) => {
-    if (!token) return null;
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      return JSON.parse(window.atob(base64));
-    } catch (e) { 
-      return null; 
-    }
-  }, []);
-
   const clearAuthStorage = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(COMPANY_KEY);
-    localStorage.removeItem('user'); 
+    [TOKEN_KEY, USER_KEY, TENANT_KEY, 'companyContext'].forEach((k) => localStorage.removeItem(k));
   }, []);
 
   const logout = useCallback(async () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     hasAuthenticatedRef.current = false;
-    setUser(null); // Immediately update UI state to unauthenticated
-    navigate('/login', { replace: true }); // Initiate navigation to login page
+    setUser(null);
+    navigate('/login', { replace: true });
 
-    // Add a small delay to ensure React has a chance to unmount protected components
-    await new Promise(resolve => setTimeout(resolve, 50)); 
-
-    clearAuthStorage(); // Clear tokens from localStorage after navigation
+    await doLogout(); // revoke the refresh token server-side BEFORE dropping local state
+    clearAuthStorage();
     try {
-      await client.resetStore(); // Reset Apollo cache after tokens are cleared and navigation has begun
+      await client.resetStore();
     } catch (e) {
-      console.warn("Store reset failed", e);
+      console.warn('Store reset failed', e);
     }
   }, [client, navigate, clearAuthStorage]);
-
-  // --- 2. CORE AUTH LOGIC ---
-
-  /**
-   * @param {boolean} isInitialCheck - true only for the very first refresh
-   *   attempt on app mount, before any session has been established. A
-   *   failure here is EXPECTED for a logged-out visitor (no refresh cookie
-   *   exists yet) and must NOT trigger logout()'s navigate/cache-reset
-   *   cycle - that was the cause of "login immediately logs me out": every
-   *   mount called refreshSession() unconditionally, and any transient
-   *   failure (including normal cross-site cookie propagation timing) was
-   *   treated identically to "your session just died".
-   */
-  const refreshSession = useCallback(async (isInitialCheck = false) => {
-    try {
-      // Use the SHARED promise from Apollo to prevent "Double Refresh" race conditions
-      const accessToken = await doRefresh(); 
-
-      if (!accessToken) {
-        if (!isInitialCheck) logout();
-        return null;
-      }
-
-      // Sync state with what doRefresh saved to localStorage
-      const storedUser = JSON.parse(localStorage.getItem('user'));
-      const storedCompanyId = localStorage.getItem(COMPANY_KEY);
-
-      if (mountedRef.current) {
-        hasAuthenticatedRef.current = true;
-        setUser({
-          ...storedUser,
-          companyId: storedCompanyId || storedUser?.companyId
-        });
-        scheduleRefresh(accessToken);
-      }
-      return accessToken;
-    } catch (err) {
-      if (isInitialCheck && !hasAuthenticatedRef.current) {
-        // Expected case: no prior session, no refresh cookie yet (or it
-        // hasn't propagated). Stay quietly unauthenticated - do NOT
-        // navigate or reset the Apollo store.
-        console.warn("No existing session found on initial load.");
-        return null;
-      }
-      console.error("AuthContext Refresh Error:", err);
-      if (mountedRef.current) logout();
-      return null;
-    }
-  }, [logout]);
 
   const scheduleRefresh = useCallback((token) => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     const payload = parseJwt(token);
     if (!payload?.exp) return;
 
-    const timeUntilExpiry = (payload.exp * 1000) - Date.now();
-    
-    // SMART TIMER: Refresh 1 minute before expiry, OR at the halfway point of the token's life.
-    // This guarantees we never get a 0ms delay.
+    const timeUntilExpiry = payload.exp * 1000 - Date.now();
+    // Refresh 1 minute before expiry, or at half-life for short tokens (never a 0ms loop).
     const ms = Math.max(timeUntilExpiry - 60000, timeUntilExpiry * 0.5);
-
     if (ms > 0) {
       refreshTimerRef.current = setTimeout(() => {
-        refreshSession(false).catch(() => {});
+        refreshSessionRef.current?.(false).catch(() => {});
       }, ms);
     }
-  }, [parseJwt, refreshSession]);
+  }, []);
 
-  const login = useCallback(async (variables) => {
-    setLoading(true);
+  /**
+   * @param {boolean} isInitialCheck first attempt on mount. Failure is EXPECTED for a logged-out visitor
+   *   and must not trigger logout()'s navigate/cache-reset cycle.
+   */
+  const refreshSession = useCallback(async (isInitialCheck = false) => {
     try {
-      const { data } = await loginMutation({ variables });
-      const { accessToken, user: userData, companyId } = data.login;
-
-      localStorage.setItem(TOKEN_KEY, accessToken);
-      if (companyId) localStorage.setItem(COMPANY_KEY, companyId);
-      localStorage.setItem('user', JSON.stringify(userData));
-
+      const accessToken = await doRefresh();
       if (mountedRef.current) {
         hasAuthenticatedRef.current = true;
-        setUser({ ...userData, companyId: companyId || userData.companyId });
+        setUser(withTenant(normalizeUser(readJson(USER_KEY))));
         scheduleRefresh(accessToken);
       }
+      return accessToken;
+    } catch (err) {
+      if (isInitialCheck && !hasAuthenticatedRef.current) {
+        console.warn('No existing session found on initial load.');
+        return null;
+      }
+      console.error('AuthContext Refresh Error:', err);
+      if (mountedRef.current) logout();
+      return null;
+    }
+  }, [logout, scheduleRefresh]);
+
+  refreshSessionRef.current = refreshSession;
+
+  /**
+   * FIXED: login() used to call setLoading(true), and since this provider renders
+   * `{!loading && children}`, the ENTIRE app - including the Login page - unmounted mid-request.
+   * Login's local error state was lost, so a wrong password showed no error at all. Login owns its own spinner.
+   */
+  const login = useCallback(async (variables) => {
+    try {
+      const { data } = await loginMutation({ variables });
+      const { accessToken, user: rawUser, companyId } = data.login;
+      const userData = normalizeUser({ ...rawUser, companyId: rawUser.companyId ?? companyId });
+
+      localStorage.removeItem(TENANT_KEY);
+      localStorage.setItem(TOKEN_KEY, accessToken);
+      localStorage.setItem(USER_KEY, JSON.stringify(userData));
+
+      hasAuthenticatedRef.current = true;
+      setUser(withTenant(userData));
+      scheduleRefresh(accessToken);
 
       await client.resetStore();
       return { success: true };
     } catch (err) {
-      return { 
-        success: false, 
-        message: err.graphQLErrors?.[0]?.message || 'Login failed' 
-      };
-    } finally {
-      if (mountedRef.current) setLoading(false);
+      return { success: false, message: err.graphQLErrors?.[0]?.message || err.message || 'Login failed' };
     }
   }, [loginMutation, client, scheduleRefresh]);
 
-  // --- 3. LIFECYCLE ---
+  /** SUPER_ADMIN only: act on behalf of another tenant. Pages read companyId from `user`. */
+  const switchTenant = useCallback(async (tenant) => {
+    const base = readJson(USER_KEY);
+    if (base?.role !== 'SUPER_ADMIN') return;
+    if (tenant?.id) localStorage.setItem(TENANT_KEY, JSON.stringify({ id: tenant.id, name: tenant.name }));
+    else localStorage.removeItem(TENANT_KEY);
+    setUser(withTenant(normalizeUser(base)));
+    await client.resetStore();
+  }, [client]);
 
   useEffect(() => {
     mountedRef.current = true;
-    
-    const initAuth = async () => {
+    (async () => {
       try {
-        // Attempt a silent refresh on first load (checks the HttpOnly
-        // cookie regardless of whether a local access token is cached -
-        // the cookie is the actual source of truth). isInitialCheck=true
-        // ensures a failure here is treated as "not logged in yet", not
-        // "session expired".
+        // The httpOnly cookie is the source of truth, regardless of any cached access token.
         await refreshSession(true);
-      } catch (e) {
-        console.warn("Initial auth check failed - treating as logged out.");
       } finally {
-        // ALWAYS set loading to false to unblock the UI
-        if (mountedRef.current) setLoading(false); 
+        if (mountedRef.current) setLoading(false);
       }
-    };
-
-    initAuth();
-
+    })();
     return () => {
       mountedRef.current = false;
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     };
   }, [refreshSession]);
 
-  const value = {
+  const value = useMemo(() => ({
     user,
     isAuthenticated: !!user,
     loading,
     login,
     logout,
+    switchTenant,
     refreshSession,
-    companyId: user?.companyId || localStorage.getItem(COMPANY_KEY)
-  };
+    companyId: user?.companyId || null,
+  }), [user, loading, login, logout, switchTenant, refreshSession]);
 
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
 };
 
-// --- 4. EXPORTS ---
+AuthProvider.propTypes = { children: PropTypes.node.isRequired };
 
-AuthProvider.propTypes = {
-  children: PropTypes.node.isRequired,
-};
-
-/**
- * Hook to use auth context. 
- * Explicitly exported as a named constant to solve the SyntaxError.
- */
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
 

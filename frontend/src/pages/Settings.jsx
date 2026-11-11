@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Smartphone, Mail, Shield, Palette, CheckCircle2 } from 'lucide-react';
+import { Bell, Smartphone, Mail, Palette } from 'lucide-react';
 import { GET_PREFERENCES } from '../graphql/queries';
 import { UPDATE_PREFERENCES } from '../graphql/mutations';
 import Card from '../components/Card';
@@ -10,182 +10,128 @@ import Loader from '../components/Loader';
 
 const DEBOUNCE_MS = 400;
 
-const Settings = () => {
-  // 1. Query Preferences
-  const { loading, error, data } = useQuery(GET_PREFERENCES, {
-    fetchPolicy: 'cache-and-network',
-  });
+// Two-factor auth was removed from this page: the toggle only flipped a database flag; no authenticator
+// flow exists, so it gave users false assurance. Re-add when TOTP is actually implemented.
+const SECTIONS = [
+  {
+    title: 'Alert channels',
+    icon: Bell,
+    items: [
+      { id: 'smsOptIn', label: 'SMS alerts', desc: 'Critical payroll run status via text.', icon: Smartphone },
+      { id: 'emailOptIn', label: 'Email reports', desc: 'Monthly GRA/SSNIT summaries.', icon: Mail },
+    ],
+  },
+];
 
-  // 2. Mutation with optimistic UI and error handling
+const Settings = () => {
+  const { loading, error, data } = useQuery(GET_PREFERENCES, { fetchPolicy: 'cache-and-network' });
   const [updatePrefs, { loading: isSaving }] = useMutation(UPDATE_PREFERENCES);
 
-  // local state initialized from data when it arrives
   const [localPrefs, setLocalPrefs] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const mountedRef = useRef(true);
-  const debounceRef = useRef(null);
+  const timerRef = useRef(null);
+  const pendingRef = useRef({});   // keys changed since the last commit
+  const confirmedRef = useRef(null); // last server-confirmed prefs (rollback target)
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      clearTimeout(timerRef.current);
     };
   }, []);
 
   useEffect(() => {
     if (data?.preferences) {
-      setLocalPrefs(data.preferences);
+      confirmedRef.current = data.preferences;
+      // Don't clobber toggles the user flipped that haven't been committed yet.
+      setLocalPrefs({ ...data.preferences, ...pendingRef.current });
     }
   }, [data]);
 
-  // Helper to perform the network update with optimistic response and rollback
-  const commitPreference = useCallback(async (key, newValue, previousPrefs) => {
-    setErrorMsg(null);
-
-    const optimistic = {
-      __typename: 'Mutation',
-      updatePreferences: {
-        __typename: 'Preferences',
-        ...previousPrefs,
-        [key]: newValue,
-      },
-    };
+  // FIXED: a single shared timer meant toggling two switches within 400ms cancelled the first one's save.
+  // Changes now accumulate in pendingRef and are committed together in one mutation.
+  const commit = useCallback(async () => {
+    const patch = pendingRef.current;
+    pendingRef.current = {};
+    timerRef.current = null;
+    if (!Object.keys(patch).length) return;
 
     try {
-      await updatePrefs({
-        variables: { input: { [key]: newValue } },
-        optimisticResponse: optimistic,
-      });
+      const { data: result } = await updatePrefs({ variables: { input: patch } });
+      confirmedRef.current = result?.updatePreferences ?? { ...confirmedRef.current, ...patch };
     } catch (err) {
-      // Rollback UI if mutation fails
       console.error('Preference update failed', err);
       if (!mountedRef.current) return;
-      setLocalPrefs(previousPrefs);
+      setLocalPrefs(confirmedRef.current); // roll back to the last server-confirmed state
       setErrorMsg('Unable to save preference. Please try again.');
     }
   }, [updatePrefs]);
 
-  // Debounced toggle handler to reduce network churn
   const handleToggle = useCallback((key) => {
-    if (!localPrefs) return;
-
-    const previous = localPrefs;
-    const newValue = !previous[key];
-    const updated = { ...previous, [key]: newValue };
-
-    // Update UI immediately
-    setLocalPrefs(updated);
+    setLocalPrefs((prev) => {
+      if (!prev) return prev;
+      const value = !prev[key];
+      pendingRef.current = { ...pendingRef.current, [key]: value };
+      return { ...prev, [key]: value };
+    });
     setErrorMsg(null);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(commit, DEBOUNCE_MS);
+  }, [commit]);
 
-    // Debounce network commit
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      commitPreference(key, newValue, previous);
-      debounceRef.current = null;
-    }, DEBOUNCE_MS);
-  }, [localPrefs, commitPreference]);
-
-  if (loading && !localPrefs) return <Loader message="Accessing your vault..." />;
-  if (error) {
-    return (
-      <div role="alert" className="p-4 text-rose-400 bg-rose-400/10 rounded-xl">
-        Connection Error: {error.message}
-      </div>
-    );
+  if (loading && !localPrefs) return <Loader message="Loading your preferences..." />;
+  if (error && !localPrefs) {
+    return <div role="alert" className="p-4 text-rose-400 bg-rose-400/10 rounded-xl">Connection error: {error.message}</div>;
   }
-
-  const sections = [
-    {
-      title: 'Alert Channels',
-      icon: Bell,
-      items: [
-        { id: 'smsOptIn', label: 'SMS Alerts', desc: 'Critical payroll run status via text.', icon: Smartphone },
-        { id: 'emailOptIn', label: 'Email Reports', desc: 'Monthly GRA/SSNIT summaries.', icon: Mail },
-      ],
-    },
-    {
-      title: 'Security',
-      icon: Shield,
-      items: [
-        { id: 'twoFactorEnabled', label: 'Two-Factor Auth', desc: 'Secure login via authenticator app.', icon: CheckCircle2 },
-      ],
-    },
-  ];
 
   return (
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Preferences</h1>
-          <p className="text-slate-400 text-sm mt-1">Configure your personal dashboard and alerts.</p>
+          <p className="text-slate-400 text-sm mt-1">Choose how Paylio contacts you.</p>
         </div>
-
         <AnimatePresence>
           {isSaving && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0 }}
-              className="flex items-center space-x-2 text-primary text-xs font-bold uppercase tracking-widest"
-              aria-live="polite"
-            >
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+              className="flex items-center space-x-2 text-primary text-xs font-bold" aria-live="polite">
               <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-              <span>Cloud Syncing...</span>
+              <span>Saving...</span>
             </motion.div>
           )}
         </AnimatePresence>
       </header>
 
       {errorMsg && (
-        <div role="status" aria-live="polite" className="rounded-xl bg-rose-500/10 text-rose-400 p-3 border border-rose-500/20">
-          {errorMsg}
-        </div>
+        <div role="alert" className="rounded-xl bg-rose-500/10 text-rose-400 p-3 border border-rose-500/20">{errorMsg}</div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {sections.map((section) => (
+        {SECTIONS.map((section) => (
           <div key={section.title} className="space-y-4">
             <div className="flex items-center space-x-2 px-1">
               <section.icon size={18} className="text-slate-500" />
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">{section.title}</h3>
+              <h2 className="text-xs font-bold tracking-widest text-slate-500">{section.title}</h2>
             </div>
-
             <Card className="divide-y divide-white/5 p-0 overflow-hidden">
               {section.items.map((item) => {
                 const checked = !!localPrefs?.[item.id];
                 return (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between p-5 hover:bg-white/[0.02] transition-colors"
-                  >
+                  <div key={item.id} className="flex items-center justify-between p-5 hover:bg-white/[0.02] transition-colors">
                     <div className="flex items-start space-x-4">
-                      <div className="mt-1 p-2 rounded-lg bg-slate-900 text-slate-400" aria-hidden="true">
-                        <item.icon size={18} />
-                      </div>
+                      <div className="mt-1 p-2 rounded-lg bg-slate-900 text-slate-400" aria-hidden="true"><item.icon size={18} /></div>
                       <div>
                         <p className="text-sm font-bold text-white">{item.label}</p>
                         <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
                       </div>
                     </div>
-
-                    {/* Accessible Toggle */}
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={checked}
-                      onClick={() => handleToggle(item.id)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle(item.id); } }}
-                      className={`relative h-6 w-11 rounded-full transition-colors duration-200 outline-none ring-offset-slate-950 focus:ring-2 focus:ring-primary/50 ${
-                        checked ? 'bg-primary' : 'bg-slate-700'
-                      }`}
-                      aria-label={`${item.label} toggle`}
-                    >
-                      <motion.div
-                        animate={{ x: checked ? 22 : 2 }}
-                        className="h-5 w-5 rounded-full bg-white shadow-lg"
-                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                      />
+                    {/* A native button already handles Enter/Space; the old extra onKeyDown fired the toggle twice. */}
+                    <button type="button" role="switch" aria-checked={checked} onClick={() => handleToggle(item.id)}
+                      className={`relative h-6 w-11 rounded-full transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${checked ? 'bg-primary' : 'bg-slate-700'}`}
+                      aria-label={`${item.label} toggle`}>
+                      <motion.div animate={{ x: checked ? 22 : 2 }} className="h-5 w-5 rounded-full bg-white shadow-lg" transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
                     </button>
                   </div>
                 );
@@ -194,11 +140,10 @@ const Settings = () => {
           </div>
         ))}
 
-        {/* Branding Visual Section */}
         <Card className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 flex flex-col items-center justify-center text-center p-8">
           <Palette className="text-indigo-400 mb-4" size={40} />
-          <h3 className="text-lg font-bold text-white">Visual Themes</h3>
-          <p className="text-sm text-slate-400 mt-2">Dynamic themes are synced to your OS settings for the best PWA experience.</p>
+          <h2 className="text-lg font-bold text-white">Appearance</h2>
+          <p className="text-sm text-slate-400 mt-2">Use the sun/moon button in the top bar to switch between dark and light mode.</p>
         </Card>
       </div>
     </div>

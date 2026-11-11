@@ -1,79 +1,57 @@
 import express from 'express';
+import ExcelJS from 'exceljs';
 import prisma from '../config/db.js';
 import authMiddleware from '../middleware/auth.js';
 import rbac from '../middleware/rbac.js';
 import logger from '../config/logger.js';
-import { Parser } from 'json2csv';
-import ExcelJS from 'exceljs';
+import { toCsv } from '../utils/csv.js';
+import { writeAuditSafe, actorFromReq } from '../services/auditService.js';
 
 const router = express.Router();
 router.use(authMiddleware);
 
-/**
- * 1. Individual Payslip Data
- * Scoped by Tenant and Employee ID for security.
- */
+const tenantRun = (req) => (req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {});
+
+/** 1. Individual payslip data - scoped by tenant; employees see only their own FINALIZED payslips. */
 router.get('/payslip/:itemId', rbac(['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
   const { itemId } = req.params;
   try {
-    const where = {
-      id: itemId,
-      payrollRun: req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {}
-    };
-
+    const where = { id: itemId, payrollRun: tenantRun(req) };
     if (req.userRole === 'EMPLOYEE') {
       where.employee = { userId: req.userId };
+      where.payrollRun = { ...tenantRun(req), status: 'FINALIZED' };
     }
 
     const item = await prisma.payrollItem.findFirst({
       where,
       select: {
-        grossSalary: true,
-        taxableIncome: true,
-        ssnitEmployee: true,
-        payeTax: true,
-        netPay: true,
-        employee: {
-          select: {
-            name: true,
-            ssnitNumber: true,
-            ghanaCardPin: true,
-            position: true
-          }
-        },
-        payrollRun: { select: { month: true } }
+        grossSalary: true, taxableIncome: true, ssnitEmployee: true, payeTax: true, netPay: true,
+        employee: { select: { name: true, ssnitNumber: true, ghanaCardPin: true, position: true } },
+        payrollRun: { select: { month: true } },
       },
     });
-
     if (!item) return res.status(404).json({ error: 'Payslip not found or access denied' });
-    res.json(item);
+    return res.json(item);
   } catch (error) {
     logger.error('Payslip Fetch Error', { itemId, userId: req.userId, error: error.message });
-    res.status(500).json({ error: 'Failed to fetch payslip' });
+    return res.status(500).json({ error: 'Failed to fetch payslip' });
   }
 });
 
-/**
- * 2. GRA Schedule (Monthly Tax Return Compliance)
- */
+/** 2. GRA schedule (monthly PAYE return) */
 router.get('/gra-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, res) => {
   const { runId } = req.params;
   const { format = 'json' } = req.query;
-
   try {
     const items = await prisma.payrollItem.findMany({
-      where: {
-        payrollRunId: runId,
-        payrollRun: req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {}
-      },
+      where: { payrollRunId: runId, payrollRun: tenantRun(req) },
       select: {
         employee: { select: { ghanaCardPin: true, name: true } },
         taxableIncome: true,
         payeTax: true,
-        payrollRun: { select: { month: true } }
+        payrollRun: { select: { month: true, companyId: true } },
       },
     });
-
     if (!items.length) return res.status(404).json({ error: 'No records found' });
 
     const schedule = items.map((item, i) => ({
@@ -83,19 +61,17 @@ router.get('/gra-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, re
       assessableIncome: item.taxableIncome.toFixed(2),
       payeTax: item.payeTax.toFixed(2),
     }));
-
-    // FIXED (2026-07-10): `sum + item.payeTax` where item.payeTax is a
-    // Prisma Decimal instance. decimal.js's valueOf()/toJSON() deliberately
-    // return a STRING (to prevent exactly this kind of silent bug) - so
-    // `0 + Decimal` does NOT add, it string-concatenates every payeTax
-    // value together into one garbage string. Wrapping in Number() forces
-    // correct numeric coercion, matching CLAUDE.md's Decimal-safety rule.
+    // Number() is required: Prisma Decimal `+` string-concatenates instead of adding.
     const totalTax = items.reduce((sum, item) => sum + Number(item.payeTax), 0);
+
+    await writeAuditSafe(prisma, {
+      actor: actorFromReq(req), companyId: items[0].payrollRun.companyId, action: 'REPORT_GRA_EXPORTED',
+      resourceType: 'PayrollRun', resourceId: runId, details: { format, rows: items.length },
+    });
 
     if (format === 'excel') {
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('GRA Schedule');
-      
       sheet.columns = [
         { header: 'S/N', key: 'serialNo', width: 10 },
         { header: 'TIN (Ghana Card)', key: 'tin', width: 25 },
@@ -103,51 +79,38 @@ router.get('/gra-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, re
         { header: 'Assessable Income (GHS)', key: 'assessableIncome', width: 20 },
         { header: 'PAYE Tax (GHS)', key: 'payeTax', width: 20 },
       ];
-
       sheet.addRows(schedule);
       sheet.addRow({ name: 'TOTAL', payeTax: totalTax.toFixed(2) });
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.attachment(`GRA_Schedule_${runId}.xlsx`);
-      return await workbook.xlsx.write(res).then(() => res.end());
+      await workbook.xlsx.write(res);
+      return res.end();
     }
 
-    res.json({ schedule, totalTax: totalTax.toFixed(2) });
+    return res.json({ schedule, totalTax: totalTax.toFixed(2) });
   } catch (error) {
     logger.error('GRA Export Error', { runId, error: error.message });
-    res.status(500).json({ error: 'Failed to generate GRA schedule' });
+    if (!res.headersSent) return res.status(500).json({ error: 'Failed to generate GRA schedule' });
+    return res.end();
   }
 });
 
-/**
- * 3. SSNIT Schedule (Tier 1 & 2 Compliance)
- */
+/** 3. SSNIT schedule (Tier 1 & 2) */
 router.get('/ssnit-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, res) => {
   const { runId } = req.params;
   const { format = 'json' } = req.query;
-
   try {
     const items = await prisma.payrollItem.findMany({
-      where: {
-        payrollRunId: runId,
-        payrollRun: req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {}
-      },
+      where: { payrollRunId: runId, payrollRun: tenantRun(req) },
       select: {
         employee: { select: { ssnitNumber: true, name: true } },
-        grossSalary: true,
-        ssnitEmployee: true,
-        ssnitEmployer: true,
-        payrollRun: { select: { month: true } }
-      }
+        grossSalary: true, ssnitEmployee: true, ssnitEmployer: true,
+        payrollRun: { select: { month: true, companyId: true } },
+      },
     });
-
     if (!items.length) return res.status(404).json({ error: 'No records found' });
 
-    // FIXED (2026-07-10): same Decimal `+` bug as the GRA route above, but
-    // worse here - `item.ssnitEmployee + item.ssnitEmployer` string-concats
-    // into e.g. "12.3456.78", and calling `.toFixed(2)` on that STRING
-    // throws `TypeError: ...toFixed is not a function`, crashing this
-    // entire route (both JSON and CSV format) for every request.
     const ssnitData = items.map((item, i) => ({
       serialNo: i + 1,
       ssnitNumber: item.employee.ssnitNumber,
@@ -158,17 +121,20 @@ router.get('/ssnit-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, 
       total: (Number(item.ssnitEmployee) + Number(item.ssnitEmployer)).toFixed(2),
     }));
 
-    if (format === 'csv') {
-      const parser = new Parser();
-      res.setHeader('Content-Type', 'text/csv');
-      res.attachment(`SSNIT_${runId}.csv`);
-      return res.send(parser.parse(ssnitData));
-    }
+    await writeAuditSafe(prisma, {
+      actor: actorFromReq(req), companyId: items[0].payrollRun.companyId, action: 'REPORT_SSNIT_EXPORTED',
+      resourceType: 'PayrollRun', resourceId: runId, details: { format, rows: items.length },
+    });
 
-    res.json({ ssnitData });
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.attachment(`SSNIT_${runId}.csv`);
+      return res.send(toCsv(ssnitData, ['serialNo', 'ssnitNumber', 'name', 'grossSalary', 'employeeContribution', 'employerContribution', 'total']));
+    }
+    return res.json({ ssnitData });
   } catch (error) {
     logger.error('SSNIT Export Error', { runId, error: error.message });
-    res.status(500).json({ error: 'Failed to generate SSNIT schedule' });
+    return res.status(500).json({ error: 'Failed to generate SSNIT schedule' });
   }
 });
 

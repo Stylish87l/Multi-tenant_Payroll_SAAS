@@ -1,245 +1,183 @@
 import { trace } from '@opentelemetry/api';
-import pRetry from 'p-retry';
+import pRetry, { AbortError } from 'p-retry';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../config/db.js';
 import logger from '../config/logger.js';
 
-/**
- * NEW: Live-mode gate. Without real provider credentials configured, this
- * service runs in SIMULATION mode - it behaves exactly as it did before
- * (fabricates a 'SENT' result) but now says so loudly in the logs, so a
- * misconfigured production deployment is obvious rather than silently
- * "working" while never actually moving money. This does not change
- * behavior for existing dev/staging setups; it only makes the previously
- * implicit simulation explicit and makes production capable of doing the
- * real thing once credentials exist.
- */
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || null;
 const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET || PAYSTACK_SECRET_KEY;
 const HUBTEL_CLIENT_ID = process.env.HUBTEL_CLIENT_ID || null;
 const HUBTEL_CLIENT_SECRET = process.env.HUBTEL_CLIENT_SECRET || null;
 const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
 
-if (process.env.NODE_ENV === 'production' && !PAYSTACK_SECRET_KEY && !HUBTEL_CLIENT_ID) {
-  logger.warn(
-    '⚠️  No payment provider credentials configured (PAYSTACK_SECRET_KEY / ' +
-    'HUBTEL_CLIENT_ID+HUBTEL_CLIENT_SECRET). Payouts will run in SIMULATION ' +
-    'mode - no real money will move, and payslips will appear as "SENT" ' +
-    'without genuine disbursement. Configure provider credentials before ' +
-    'running real payroll.'
-  );
+/**
+ * Simulation mode fabricates a "SENT" result without moving money. It is now OPT-IN in
+ * production (ALLOW_PAYMENT_SIMULATION=true). Previously a production deploy without provider
+ * credentials silently "paid" everyone - the payslips said SENT and no money moved.
+ */
+const ALLOW_SIMULATION = process.env.ALLOW_PAYMENT_SIMULATION === 'true' || process.env.NODE_ENV !== 'production';
+
+/** Thrown for "this item may not be paid right now". Must NEVER flip the item to FAILED. */
+class PayoutStateError extends Error {
+  constructor(message) { super(message); this.name = 'PayoutStateError'; this.expose = true; }
 }
 
+/** 4xx responses are deterministic: retrying cannot help and risks duplicate transfers. */
+const assertOk = (res, json, label) => {
+  if (res.ok && json?.status !== false) return;
+  const message = `${label} failed: ${json?.message || json?.Message || res.status}`;
+  if (res.status >= 400 && res.status < 500) throw new AbortError(message);
+  throw new Error(message);
+};
+
 /**
- * Real Paystack Transfer API call. Paystack's transfer endpoint is a
- * two-step flow (create a transfer recipient, then initiate a transfer to
- * it) - for brevity and because employee bank/mobile-money recipient codes
- * would need to be created and cached separately, this performs the
- * recipient-creation + transfer as a single best-effort call using the
- * employee's bank details already on file. Verify field names against
- * Paystack's current API reference before enabling in production - their
- * public Transfer API has been stable for years but recipient `type`
- * values (nuban vs mobile_money) depend on the employee's actual payout
- * method, which this schema doesn't yet distinguish (see
- * Employee.bankName/bankAccount - no "payout method" field).
+ * Paystack Transfer (recipient creation + transfer).
+ * VERIFY before production: Paystack needs a bank CODE (not free-text bankName), and recipient
+ * `type` depends on payout method. Left unmapped on purpose to avoid silently misrouting funds.
  */
-const callPaystackTransfer = async ({ employee, amountInKobo, reference }) => {
+const callPaystackTransfer = async ({ employee, amountInSubunit, reference }) => {
+  const headers = { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' };
+
   const recipientRes = await fetch('https://api.paystack.co/transferrecipient', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
+    signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
-      type: 'nuban',
-      name: employee.name,
-      account_number: employee.bankAccount,
-      bank_code: employee.bankName, // NOTE: Paystack requires a bank CODE, not a free-text name;
-      // map Employee.bankName -> Paystack bank code via their /bank list
-      // endpoint before going live. Left as-is here to avoid guessing a
-      // mapping table that could silently misroute funds.
-      currency: 'GHS',
+      type: 'nuban', name: employee.name, account_number: employee.bankAccount,
+      bank_code: employee.bankName, currency: 'GHS',
     }),
   });
-  const recipientJson = await recipientRes.json();
-  if (!recipientRes.ok || !recipientJson.status) {
-    throw new Error(`Paystack recipient creation failed: ${recipientJson.message || recipientRes.status}`);
-  }
+  const recipientJson = await recipientRes.json().catch(() => ({}));
+  assertOk(recipientRes, recipientJson, 'Paystack recipient creation');
 
   const transferRes = await fetch('https://api.paystack.co/transfer', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
+    signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
-      source: 'balance',
-      amount: amountInKobo,
-      recipient: recipientJson.data.recipient_code,
-      reference,
-      reason: 'Payroll disbursement',
+      source: 'balance', amount: amountInSubunit, recipient: recipientJson.data.recipient_code,
+      reference, reason: 'Payroll disbursement',
     }),
   });
-  const transferJson = await transferRes.json();
-  if (!transferRes.ok || !transferJson.status) {
-    throw new Error(`Paystack transfer failed: ${transferJson.message || transferRes.status}`);
-  }
+  const transferJson = await transferRes.json().catch(() => ({}));
+  assertOk(transferRes, transferJson, 'Paystack transfer');
 
   return { status: 'SENT', reference, providerTransferCode: transferJson.data?.transfer_code };
 };
 
-/**
- * Real Hubtel Send Money call. Hubtel's Merchant API surface varies by
- * account type (Receive Money vs Send Money vs Commission Services) - the
- * shape below follows their commonly documented Send Money pattern.
- * VERIFY against your specific Hubtel merchant contract/docs before
- * enabling in production; this is a reasonable starting structure, not a
- * guaranteed-correct integration for every Hubtel account type.
- */
+/** VERIFY against your Hubtel merchant contract/docs: request shape varies by account type. */
 const callHubtelTransfer = async ({ employee, amountInGHS, reference }) => {
   const auth = Buffer.from(`${HUBTEL_CLIENT_ID}:${HUBTEL_CLIENT_SECRET}`).toString('base64');
-
   const res = await fetch(
     `https://api.hubtel.com/v1/merchantaccount/merchants/${HUBTEL_MERCHANT_ACCOUNT}/transfers/out`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
-        RecipientName: employee.name,
-        RecipientBankAccount: employee.bankAccount,
-        RecipientBank: employee.bankName,
-        Amount: amountInGHS,
-        ClientReference: reference,
-        Description: 'Payroll disbursement',
+        RecipientName: employee.name, RecipientBankAccount: employee.bankAccount, RecipientBank: employee.bankName,
+        Amount: amountInGHS, ClientReference: reference, Description: 'Payroll disbursement',
       }),
     }
   );
-
-  const json = await res.json();
-  if (!res.ok) {
-    throw new Error(`Hubtel transfer failed: ${json.Message || res.status}`);
-  }
-
+  const json = await res.json().catch(() => ({}));
+  assertOk(res, json, 'Hubtel transfer');
   return { status: 'SENT', reference, providerTransactionId: json.Data?.TransactionId };
 };
 
 /**
- * Core Payout Logic with Idempotency Protection
+ * Core payout logic with idempotency and double-pay protection.
+ *
+ * FIXED (critical): the old catch block marked the item FAILED for ANY error - including the
+ * "already processed" guard. A second/concurrent call on a PAID or SENT item therefore flipped
+ * it to FAILED, making it eligible to be paid AGAIN. Now:
+ *  1. The item is atomically CLAIMED (updateMany conditioned on status + updatedAt), so two
+ *     concurrent calls cannot both proceed.
+ *  2. Guard errors never change status.
+ *  3. Only a failed provider call (claimed, pre-send) marks FAILED, and only from PENDING.
+ *  4. If the provider succeeded but our DB write failed, we do NOT mark FAILED (money moved) -
+ *     we log CRITICAL for manual reconciliation; the webhook will normally repair it.
  */
 export const processPayout = async (payrollItemId, provider = 'hubtel') => {
   const tracer = trace.getTracer('payment-service');
   return await tracer.startActiveSpan('processPayout', async (span) => {
+    let claimed = false;
+    let providerSucceeded = false;
     try {
-      // 1. Fetch Item & Check Previous Status (Critical Guard)
       const item = await prisma.payrollItem.findUnique({
         where: { id: payrollItemId },
-        include: {
-          employee: { select: { bankAccount: true, bankName: true, name: true } },
-          payrollRun: { select: { companyId: true } }
-        },
+        include: { employee: { select: { bankAccount: true, bankName: true, name: true } } },
       });
 
-      if (!item || item.paymentStatus === 'PAID' || item.paymentStatus === 'SENT') {
-        throw new Error(`Invalid Payout State: Item ${payrollItemId} already processed or missing.`);
+      if (!item) throw new PayoutStateError('Payroll item not found.');
+      if (item.paymentStatus === 'PAID' || item.paymentStatus === 'SENT') {
+        throw new PayoutStateError(`Item ${payrollItemId} has already been processed.`);
       }
-
       if (!item.employee?.bankAccount || !item.employee?.bankName) {
-        throw new Error(
-          `Cannot disburse: employee ${item.employee?.name || item.employeeId} has no bank account on file.`
-        );
+        throw new PayoutStateError(`Cannot disburse: ${item.employee?.name || item.employeeId} has no bank account on file.`);
       }
 
-      // 2. Generate/Retrieve Idempotency Key
+      const isLive = provider === 'paystack' ? !!PAYSTACK_SECRET_KEY : !!(HUBTEL_CLIENT_ID && HUBTEL_CLIENT_SECRET && HUBTEL_MERCHANT_ACCOUNT);
+      if (!isLive && !ALLOW_SIMULATION) {
+        throw new PayoutStateError(`Payment provider "${provider}" is not configured; refusing to simulate in production.`);
+      }
+      if (provider !== 'hubtel' && provider !== 'paystack') {
+        throw new PayoutStateError(`Unsupported payment provider: ${provider}`);
+      }
+
+      // Atomic claim. @updatedAt changes on every write, so a concurrent claimer's `updatedAt` filter fails.
       const idempotencyKey = item.paymentRef || `pay_${item.id}_${uuidv4().substring(0, 8)}`;
+      const claim = await prisma.payrollItem.updateMany({
+        where: { id: payrollItemId, paymentStatus: { in: ['PENDING', 'FAILED'] }, updatedAt: item.updatedAt },
+        data: { paymentRef: idempotencyKey, paymentStatus: 'PENDING' },
+      });
+      if (claim.count !== 1) throw new PayoutStateError(`Item ${payrollItemId} is already being processed.`);
+      claimed = true;
 
-      if (!item.paymentRef) {
-        await prisma.payrollItem.update({
-          where: { id: payrollItemId },
-          data: { paymentRef: idempotencyKey, paymentStatus: 'PENDING' }
-        });
-      }
-
-      // Prisma Decimal instances must be explicitly Number()-converted -
-      // see CLAUDE.md's Decimal-safety rule; `+`/comparisons on a raw
-      // Decimal silently do the wrong thing for some operators.
-      const netPayNumber = Number(item.netPay);
-
+      const netPay = Number(item.netPay);
       let gatewayResult;
-      const isLive = provider === 'paystack' ? !!PAYSTACK_SECRET_KEY : !!(HUBTEL_CLIENT_ID && HUBTEL_CLIENT_SECRET);
 
-      // 3. Execution with Provider-Specific Logic
       await pRetry(async () => {
         if (provider === 'hubtel') {
-          if (isLive) {
-            gatewayResult = await callHubtelTransfer({
-              employee: item.employee,
-              amountInGHS: netPayNumber,
-              reference: idempotencyKey,
-            });
-          } else {
-            logger.warn('PAYMENT_SIMULATION_MODE: Hubtel credentials not configured, faking SENT result', {
-              itemId: payrollItemId,
-            });
-            gatewayResult = { status: 'SENT', reference: idempotencyKey, simulated: true };
-          }
-        } else if (provider === 'paystack') {
-          const amountInKobo = Math.round(netPayNumber * 100);
-          if (isLive) {
-            gatewayResult = await callPaystackTransfer({
-              employee: item.employee,
-              amountInKobo,
-              reference: idempotencyKey,
-            });
-          } else {
-            logger.warn('PAYMENT_SIMULATION_MODE: Paystack credentials not configured, faking SENT result', {
-              itemId: payrollItemId,
-            });
-            gatewayResult = { status: 'SENT', reference: idempotencyKey, amount: amountInKobo, simulated: true };
-          }
+          gatewayResult = isLive
+            ? await callHubtelTransfer({ employee: item.employee, amountInGHS: netPay, reference: idempotencyKey })
+            : (logger.warn('PAYMENT_SIMULATION_MODE: Hubtel not configured, faking SENT', { itemId: payrollItemId }),
+               { status: 'SENT', reference: idempotencyKey, simulated: true });
         } else {
-          throw new Error(`Unsupported payment provider: ${provider}`);
+          const amountInSubunit = Math.round(netPay * 100);
+          gatewayResult = isLive
+            ? await callPaystackTransfer({ employee: item.employee, amountInSubunit, reference: idempotencyKey })
+            : (logger.warn('PAYMENT_SIMULATION_MODE: Paystack not configured, faking SENT', { itemId: payrollItemId }),
+               { status: 'SENT', reference: idempotencyKey, amount: amountInSubunit, simulated: true });
         }
-      }, { retries: 3, onFailedAttempt: error => {
-        logger.warn(`Payout attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`, { itemId: payrollItemId });
-      }});
-
-      // 4. Record the Attempt
-      await prisma.payrollItem.update({
-        where: { id: payrollItemId },
-        data: {
-          paymentStatus: 'SENT',
-          updatedAt: new Date()
-        }
+      }, {
+        retries: 3,
+        onFailedAttempt: (error) =>
+          logger.warn(`Payout attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`, { itemId: payrollItemId }),
       });
+      providerSucceeded = true;
 
-      // Fraud Detection Hook: Flag unusual amounts (> 100k GHS)
-      if (netPayNumber > 100000) {
-        logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPayNumber });
-      }
+      await prisma.payrollItem.update({ where: { id: payrollItemId }, data: { paymentStatus: 'SENT' } });
+
+      if (netPay > 100000) logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPay });
 
       span.setAttributes({
-        "payout.itemId": payrollItemId,
-        "payout.provider": provider,
-        "payout.status": "SENT",
-        "payout.reference": idempotencyKey,
-        "payout.simulated": !isLive,
+        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': 'SENT',
+        'payout.reference': idempotencyKey, 'payout.simulated': !isLive,
       });
-
       return gatewayResult;
-
     } catch (error) {
-      logger.error('Payout Execution Failed', { itemId: payrollItemId, error: error.message });
-      // Update DB to FAILED so admin can manually retry or change provider
-      await prisma.payrollItem.update({
-        where: { id: payrollItemId },
-        data: { paymentStatus: 'FAILED' }
-      }).catch(() => {
-        logger.error('Failed to mark payout as FAILED', { itemId: payrollItemId });
-      });
+      if (providerSucceeded) {
+        logger.error('CRITICAL: payout sent but status update failed - reconcile manually', { itemId: payrollItemId, error: error.message });
+      } else if (claimed) {
+        logger.error('Payout Execution Failed', { itemId: payrollItemId, error: error.message });
+        await prisma.payrollItem
+          .updateMany({ where: { id: payrollItemId, paymentStatus: 'PENDING' }, data: { paymentStatus: 'FAILED' } })
+          .catch(() => logger.error('Failed to mark payout as FAILED', { itemId: payrollItemId }));
+      } else {
+        logger.warn('Payout rejected by guard', { itemId: payrollItemId, reason: error.message });
+      }
       throw error;
     } finally {
       span.end();
@@ -247,38 +185,30 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
   });
 };
 
-/**
- * NEW: Verifies a Paystack webhook signature (HMAC-SHA512 of the raw
- * request body using the secret key, per Paystack's documented scheme).
- * server.js must capture the raw request body (see the `verify` callback
- * added to express.json()) for this to work, since JSON.stringify(parsed
- * body) is not guaranteed to byte-for-byte match what Paystack signed.
- *
- * @param {Buffer} rawBody
- * @param {string} signatureHeader - the 'x-paystack-signature' header value
- * @returns {boolean}
- */
+/** HMAC-SHA512 of the raw body with the secret key (Paystack's documented scheme). */
 export const verifyPaystackSignature = (rawBody, signatureHeader) => {
   if (!PAYSTACK_WEBHOOK_SECRET || !signatureHeader || !rawBody) return false;
   const hash = crypto.createHmac('sha512', PAYSTACK_WEBHOOK_SECRET).update(rawBody).digest('hex');
   try {
     return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signatureHeader));
   } catch {
-    // Buffers of different lengths throw in timingSafeEqual - treat as invalid.
-    return false;
+    return false; // differing lengths throw
   }
 };
 
-/**
- * Webhook Handler for Async Status Updates.
- * Promotes a payroll item from SENT -> PAID (or -> FAILED) once the
- * provider confirms the transfer's final state.
- */
+/** Constant-time shared-secret comparison (Hubtel placeholder auth). */
+export const verifySharedSecret = (provided, expected) => {
+  if (!provided || !expected) return false;
+  const a = crypto.createHash('sha256').update(String(provided)).digest();
+  const b = crypto.createHash('sha256').update(String(expected)).digest();
+  return crypto.timingSafeEqual(a, b);
+};
+
+/** Promotes SENT -> PAID (or FAILED) once the provider confirms the transfer's final state. */
 export const handlePaymentWebhook = async (payload) => {
   const { reference, status, failureReason } = payload;
-
   if (!reference) {
-    logger.warn('Webhook payload missing reference, ignoring', { payload });
+    logger.warn('Webhook payload missing reference, ignoring');
     return;
   }
 
@@ -293,9 +223,6 @@ export const handlePaymentWebhook = async (payload) => {
 
     if (updated.count > 0) {
       logger.info(`Payment status updated via webhook: ${reference} -> ${nextStatus}`, { failureReason });
-
-      // Audit trail: disbursement confirmation is exactly the kind of
-      // sensitive payroll event CLAUDE.md requires logging.
       const item = await prisma.payrollItem.findFirst({
         where: { paymentRef: reference },
         include: { payrollRun: { select: { companyId: true } } },
@@ -305,7 +232,7 @@ export const handlePaymentWebhook = async (payload) => {
           data: {
             companyId: item.payrollRun.companyId,
             action: 'PAYROLL_PAYOUT_WEBHOOK_CONFIRMED',
-            details: { reference, status: nextStatus, failureReason: failureReason || null },
+            details: { reference, status: nextStatus, failureReason: failureReason ? String(failureReason).slice(0, 500) : null },
             resourceId: item.id,
             resourceType: 'PayrollItem',
           },

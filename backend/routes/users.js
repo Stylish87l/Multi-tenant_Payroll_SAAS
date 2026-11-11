@@ -1,143 +1,127 @@
-// backend/routes/users.js
 import express from 'express';
 import crypto from 'crypto';
-import bcrypt from 'bcrypt'; // Standardized with resolvers.js hashing dependency
-import prisma from '../config/db.js'; // FIXED: Relative path step corrected from '../../'
-import authMiddleware from '../middleware/auth.js'; // FIXED: Relative path step corrected from '../../'
-import rbac from '../middleware/rbac.js'; // FIXED: Relative path step corrected from '../../'
-import logger from '../config/logger.js'; // FIXED: Relative path step corrected from '../../'
-import { sendInviteEmail } from '../services/emailService.js'; // FIXED: Relative path step corrected from '../../'
+import bcrypt from 'bcrypt';
+import prisma from '../config/db.js';
+import authMiddleware from '../middleware/auth.js';
+import rbac from '../middleware/rbac.js';
+import logger from '../config/logger.js';
+import { sendInviteEmail } from '../services/emailService.js';
+import { inviteSchema, acceptInviteSchema } from '../schemas/authSchema.js';
+import { writeAudit, actorFromReq } from '../services/auditService.js';
+import { badInput } from '../utils/appError.js';
 
 const router = express.Router();
 
-// 1. Invite User (Admin Only)
-router.post('/invite', authMiddleware, rbac(['ADMIN']), async (req, res) => {
-  const { email, name, role = 'EMPLOYEE' } = req.body;
+/**
+ * 1. Invite User (Admin only).
+ *
+ * FIXED (critical, 3 bugs):
+ *  - `role` came straight from the body: any tenant ADMIN could invite a SUPER_ADMIN. Now validated
+ *    against INVITABLE_ROLES (authSchema.js).
+ *  - User.password is NOT NULL, but the invite created the user without one, so EVERY invite threw a
+ *    Prisma error. A random, unusable bcrypt hash is stored until the invitee sets a real password.
+ *  - A PENDING user whose invite expired could never be re-invited ("USER_EXISTS"). Re-inviting
+ *    a still-PENDING user in the same company now issues a fresh invite.
+ */
+router.post('/invite', authMiddleware, rbac(['ADMIN']), async (req, res, next) => {
   try {
-    if (!email || !name) {
-      return res.status(400).json({ error: 'Email and Name are required' });
-    }
+    const parsed = inviteSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return next(parsed.error);
+    const { email, name, role } = parsed.data;
 
-    // FIXED (critical): User.companyId is a required, non-nullable FK
-    // (schema.prisma), but middleware/auth.js deliberately sets
-    // req.companyId to `null` for SUPER_ADMIN ("SUPER_ADMIN is global, not
-    // tied to a tenant"). This route previously wrote
-    // `companyId: req.companyId` unconditionally, so any SUPER_ADMIN
-    // hitting this endpoint got a Prisma constraint violation instead of
-    // a usable invite flow - there was no way for a SUPER_ADMIN to invite
-    // a user into a specific tenant at all. Mirrors the same
-    // req.body.companyId fallback pattern already used in
-    // routes/employees.js's getTenantContext() and
-    // routes/tenants.js/tenantBranding.js for the same role.
-    const targetCompanyId = req.userRole === 'SUPER_ADMIN' ? req.body.companyId : req.companyId;
+    const targetCompanyId = req.userRole === 'SUPER_ADMIN' ? parsed.data.companyId : req.companyId;
     if (!targetCompanyId) {
-      return res.status(400).json({
-        error:
-          req.userRole === 'SUPER_ADMIN'
-            ? 'companyId is required in the request body when inviting as SUPER_ADMIN.'
-            : 'Company context missing.',
-      });
+      throw badInput(req.userRole === 'SUPER_ADMIN' ? 'companyId is required when inviting as SUPER_ADMIN.' : 'Company context missing.');
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      // Check if user already exists
-      const existingUser = await tx.user.findUnique({ where: { email: email.toLowerCase() } });
-      if (existingUser) throw new Error('USER_EXISTS');
+    const placeholderHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
 
-      // Create the User shell
-      const user = await tx.user.create({
-        data: {
-          email: email.toLowerCase(),
-          name,
-          role,
-          companyId: targetCompanyId,
-          status: 'PENDING'
-        },
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.user.findUnique({ where: { email } });
+      let user;
+
+      if (existing) {
+        if (existing.status !== 'PENDING' || existing.companyId !== targetCompanyId) {
+          throw badInput('User with this email already exists');
+        }
+        await tx.invite.deleteMany({ where: { userId: existing.id } });
+        user = await tx.user.update({ where: { id: existing.id }, data: { name, role } });
+      } else {
+        user = await tx.user.create({
+          data: { email, name, role, companyId: targetCompanyId, status: 'PENDING', password: placeholderHash },
+        });
+      }
+
+      await tx.invite.create({ data: { token, email, role, expiresAt, companyId: targetCompanyId, userId: user.id } });
+      await writeAudit(tx, {
+        actor: actorFromReq(req),
+        companyId: targetCompanyId,
+        action: 'USER_INVITED',
+        resourceType: 'User',
+        resourceId: user.id,
+        details: { role },
       });
-
-      // Generate secure token
-      const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
-
-      await tx.invite.create({
-        data: {
-          token,
-          email: email.toLowerCase(),
-          role,
-          expiresAt,
-          companyId: targetCompanyId,
-          userId: user.id
-        },
-      });
-
-      return { user, token };
     });
 
-    const inviteLink = `${process.env.FRONTEND_URL}/accept-invite?token=${result.token}`;
-
-    // Attempt to send email, but don't crash if it fails
+    const inviteLink = `${String(process.env.FRONTEND_URL || '').replace(/\/$/, '')}/accept-invite?token=${token}`;
+    let emailSent = false;
     try {
-      await sendInviteEmail(email, name, inviteLink);
+      const result = await sendInviteEmail(email, name, inviteLink);
+      emailSent = !result?.skipped;
     } catch (mailError) {
-      logger.error('Mail Delivery Failed', { email, error: mailError.message });
+      logger.error('Mail Delivery Failed', { error: mailError.message });
     }
 
-    logger.info(`Invitation sent to ${email} by Admin: ${req.userId}`, { targetCompanyId });
-    res.status(201).json({ message: 'Invitation sent successfully' });
+    logger.info('Invitation created', { by: req.userId, targetCompanyId, emailSent });
+    return res.status(201).json({
+      message: emailSent ? 'Invitation sent successfully' : 'Invitation created, but the email could not be delivered.',
+      emailSent,
+    });
   } catch (error) {
-    if (error.message === 'USER_EXISTS') {
-      return res.status(400).json({ error: 'User with this email already exists' });
-    }
-    logger.error('Invite Error', { companyId: req.companyId, stack: error.stack });
-    res.status(500).json({ error: 'Failed to create invitation' });
+    return next(error);
   }
 });
 
-// 2. Accept Invite (Public Route)
-router.post('/accept-invite', async (req, res) => {
-  const { token, password } = req.body;
+/**
+ * 2. Accept Invite (public - the invitee has no session yet).
+ * FIXED: server.js previously mounted this router behind authMiddleware, so this route could
+ * never be reached by anyone without a token. Also: suspended accounts could be re-activated by
+ * accepting an old invite; passwords were only length-checked; the raw token was written to logs.
+ */
+router.post('/accept-invite', async (req, res, next) => {
   try {
-    if (!token || !password || password.length < 8) {
-      return res.status(400).json({ error: 'Valid token and password (min 8 chars) required' });
-    }
+    const parsed = acceptInviteSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return next(parsed.error);
+    const { token, password } = parsed.data;
 
-    // Find valid, non-expired invite
-    const invite = await prisma.invite.findUnique({
-      where: { token },
-      include: { user: true }
-    });
-
-    if (!invite || invite.expiresAt < new Date()) {
-      return res.status(400).json({ error: 'Invitation link is invalid or has expired' });
+    const invite = await prisma.invite.findUnique({ where: { token }, include: { user: true } });
+    if (!invite || invite.expiresAt < new Date() || invite.user.status !== 'PENDING') {
+      throw badInput('Invitation link is invalid or has expired');
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
     await prisma.$transaction(async (tx) => {
-      // 1. Update user to ACTIVE and set password
-      await tx.user.update({
-        where: { id: invite.userId },
-        data: {
-          password: hashedPassword,
-          status: 'ACTIVE'
-        }
-      });
-
-      // 2. Link User to Employee profile if exists
+      await tx.user.update({ where: { id: invite.userId }, data: { password: hashedPassword, status: 'ACTIVE' } });
       await tx.employee.updateMany({
-        where: { email: invite.email, companyId: invite.companyId },
-        data: { userId: invite.userId }
+        where: { email: invite.email, companyId: invite.companyId, userId: null },
+        data: { userId: invite.userId },
       });
-
-      // 3. Delete the used invite (One-time use)
-      await tx.invite.delete({ where: { id: invite.id } });
+      await tx.invite.delete({ where: { id: invite.id } }); // one-time use
+      await writeAudit(tx, {
+        actor: { userId: invite.userId, companyId: invite.companyId, ip: req.ip, userAgent: req.get('User-Agent') },
+        action: 'USER_INVITE_ACCEPTED',
+        resourceType: 'User',
+        resourceId: invite.userId,
+      });
     });
 
-    logger.info(`Invite accepted and account activated for: ${invite.email}`);
-    res.json({ message: 'Account activated successfully. You can now log in.' });
+    logger.info('Invite accepted and account activated', { userId: invite.userId });
+    return res.json({ message: 'Account activated successfully. You can now log in.' });
   } catch (error) {
-    logger.error('Accept Invite Error', { token, stack: error.stack });
-    res.status(500).json({ error: 'Activation failed. Please contact your administrator.' });
+    return next(error);
   }
 });
 

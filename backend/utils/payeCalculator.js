@@ -1,16 +1,16 @@
-import prisma from '../config/db.js';
 import logger from '../config/logger.js';
 import { trace } from '@opentelemetry/api';
+import { loadTaxConfig } from './taxConfig.js';
 
-// FIXED: Adjusted limits to represent actual bracket WIDTHS rather than cumulative thresholds
+// Bracket WIDTHS (not cumulative thresholds). Built-in fallback only - real bands live in TaxConfig.
 const DEFAULT_BANDS = [
   { limit: 490, rate: 0.00 },
   { limit: 110, rate: 0.05 },
   { limit: 130, rate: 0.10 },
-  { limit: 3170, rate: 0.175 },  // Width for 730 to 3,900
-  { limit: 12100, rate: 0.25 },  // Width for 3,900 to 16,000
-  { limit: 14520, rate: 0.30 },  // Width for 16,000 to 30,520
-  { limit: null, rate: 0.35 },   // Exceeding 30,520
+  { limit: 3170, rate: 0.175 },
+  { limit: 12100, rate: 0.25 },
+  { limit: 14520, rate: 0.30 },
+  { limit: null, rate: 0.35 },
 ];
 
 const DEFAULT_RELIEFS = {
@@ -18,11 +18,12 @@ const DEFAULT_RELIEFS = {
   child: 600,
   oldAge: 1500,
   agedDependent: 1000,
-  disabilityRate: 0.25
+  disabilityRate: 0.25,
 };
 
 /**
- * Modern PAYE Calculator (2026 Ghana Rules)
+ * PAYE Calculator (Ghana)
+ * @param {number} year payroll year; selects the TaxConfig row (defaults to the current year)
  */
 export const calculatePAYE = async (
   assessableIncome,
@@ -30,27 +31,25 @@ export const calculatePAYE = async (
   companyId = null,
   bonus = 0,
   ytdBonus = 0,
-  basicSalary = null
+  basicSalary = null,
+  year = new Date().getUTCFullYear()
 ) => {
   const tracer = trace.getTracer('payroll-service');
   return await tracer.startActiveSpan('calculatePAYE', async (span) => {
     try {
-      // 1. Fetch Tax Configuration
+      // 1. Tax configuration (tenant override > global; see utils/taxConfig.js)
       let bands = DEFAULT_BANDS;
       let reliefs = DEFAULT_RELIEFS;
 
-      const dbConfig = await prisma.taxConfig.findFirst({
-        where: { type: 'PAYE', year: 2026, OR: [{ companyId }, { companyId: null }] },
-        orderBy: { companyId: 'desc' },
-      });
-
-      if (dbConfig?.config) {
-        const parsed = typeof dbConfig.config === 'string' ? JSON.parse(dbConfig.config) : dbConfig.config;
-        bands = parsed.bands || DEFAULT_BANDS;
-        reliefs = parsed.reliefs || DEFAULT_RELIEFS;
+      const stored = await loadTaxConfig({ type: 'PAYE', companyId, year });
+      if (stored) {
+        bands = stored.bands || DEFAULT_BANDS;
+        reliefs = stored.reliefs || DEFAULT_RELIEFS;
+      } else {
+        logger.warn('No PAYE TaxConfig found - using built-in defaults', { companyId, year });
       }
 
-      // 2. Calculate Reliefs (Annualized → Monthly)
+      // 2. Reliefs (annualised -> monthly)
       let annualRelief = 0;
       if (employeeData.isMarried || employeeData.hasResponsibility) annualRelief += reliefs.marriage;
 
@@ -68,7 +67,7 @@ export const calculatePAYE = async (
         monthlyRelief += assessableIncome * reliefs.disabilityRate;
       }
 
-      // 3. Bonus Tax Logic (GRA 15% Rule)
+      // 3. Bonus tax (GRA 15% rule)
       let bonusTax = 0;
       let excessBonusToTaxable = 0;
       if (bonus > 0) {
@@ -80,23 +79,21 @@ export const calculatePAYE = async (
           );
         }
         const monthlyBasicForBonusCalc = basicSalary != null ? Number(basicSalary) : assessableIncome;
-        const annualBasicEstimate = monthlyBasicForBonusCalc * 12;
-        const bonusThreshold = annualBasicEstimate * 0.15;
+        const bonusThreshold = monthlyBasicForBonusCalc * 12 * 0.15;
 
         if (ytdBonus + bonus <= bonusThreshold) {
           bonusTax = bonus * 0.05;
         } else {
           const qualifyingPart = Math.max(0, bonusThreshold - ytdBonus);
-          const excessPart = bonus - qualifyingPart;
           bonusTax = qualifyingPart * 0.05;
-          excessBonusToTaxable = excessPart;
+          excessBonusToTaxable = bonus - qualifyingPart;
         }
       }
 
-      // 4. Calculate Taxable Income
+      // 4. Taxable income
       const taxableIncome = Math.max(0, assessableIncome + excessBonusToTaxable - monthlyRelief);
 
-      // 5. Graduated Band Calculation (BigInt Precision in pesewas)
+      // 5. Graduated bands (BigInt precision in pesewas)
       let remainingToTax = BigInt(Math.round(taxableIncome * 100));
       let totalPayePesewas = 0n;
 
@@ -110,7 +107,7 @@ export const calculatePAYE = async (
         } else {
           const bandLimitPesewas = BigInt(Math.round(band.limit * 100));
           taxableInThisBand = remainingToTax > bandLimitPesewas ? bandLimitPesewas : remainingToTax;
-          remainingToTax -= taxableInThisBand; // FIXED: Subtract what was actually taxed, not the absolute limit
+          remainingToTax -= taxableInThisBand;
         }
 
         const rateScaled = BigInt(Math.round(band.rate * 1000));
@@ -120,23 +117,14 @@ export const calculatePAYE = async (
       const monthlyPAYE = Number(totalPayePesewas) / 100;
       const finalTax = Number((monthlyPAYE + bonusTax).toFixed(2));
 
-      // 6. Telemetry
       span.setAttributes({
-        "tax.chargeable": taxableIncome,
-        "tax.paye": monthlyPAYE,
-        "tax.bonus": bonusTax,
-        "tax.total": finalTax,
+        'tax.chargeable': taxableIncome,
+        'tax.paye': monthlyPAYE,
+        'tax.bonus': bonusTax,
+        'tax.total': finalTax,
       });
 
-      return {
-        assessableIncome,
-        monthlyRelief,
-        taxableIncome,
-        payeTax: monthlyPAYE,
-        bonusTax,
-        totalTax: finalTax,
-      };
-
+      return { assessableIncome, monthlyRelief, taxableIncome, payeTax: monthlyPAYE, bonusTax, totalTax: finalTax };
     } catch (error) {
       logger.error('PAYE Calc Error', { companyId, stack: error.stack });
       throw error;

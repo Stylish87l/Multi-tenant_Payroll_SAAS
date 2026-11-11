@@ -3,54 +3,41 @@ import prisma from '../config/db.js';
 import authMiddleware from '../middleware/auth.js';
 import rbac from '../middleware/rbac.js';
 import logger from '../config/logger.js';
+import { tenantSchema } from '../schemas/authSchema.js';
+import { writeAudit, actorFromReq } from '../services/auditService.js';
+import { conflict } from '../utils/appError.js';
 
 const router = express.Router();
 
 /**
- * Tenant Creation (Admin Only)
- * Registers a new company/tenant in the system.
+ * Tenant Creation - SUPER_ADMIN only.
+ * FIXED: was rbac(['ADMIN']); SUPER_ADMIN inherits ADMIN, so every tenant ADMIN could also create
+ * brand-new companies. Registering a tenant is a platform-level action.
  */
-router.post('/create', authMiddleware, rbac(['ADMIN']), async (req, res) => {
-  const { name, tin, address } = req.body;
-
+router.post('/create', authMiddleware, rbac(['SUPER_ADMIN']), async (req, res, next) => {
   try {
-    // 1. Basic Validation
-    if (!name || !tin) {
-      return res.status(400).json({ error: 'Company name and TIN are required.' });
-    }
+    const parsed = tenantSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return next(parsed.error);
+    const { name, tin, address } = parsed.data;
 
-    // 2. Validation: Ensure the TIN (Tax Identification Number) is unique
-    const existingCompany = await prisma.company.findUnique({ where: { tin } });
-    if (existingCompany) {
-      return res.status(409).json({ error: 'A company with this TIN already exists.' });
-    }
-
-    // 3. Tenant Creation
-    const company = await prisma.company.create({
-      data: { 
-        name: name.trim(),
-        tin: tin.trim(),
-        address: address?.trim() || null,
-        createdBy: req.userId, // Audit trail: who created the tenant
-      }
+    const company = await prisma.$transaction(async (tx) => {
+      if (await tx.company.findUnique({ where: { tin } })) throw conflict('A company with this TIN already exists.');
+      const created = await tx.company.create({ data: { name, tin, address: address || null, createdBy: req.userId } });
+      await writeAudit(tx, {
+        actor: actorFromReq(req),
+        companyId: created.id,
+        action: 'TENANT_CREATED',
+        resourceType: 'Company',
+        resourceId: created.id,
+        details: { name, tin },
+      });
+      return created;
     });
 
-    logger.info(`New Tenant Registered: ${company.name} (ID: ${company.id}) by User: ${req.userId}`);
-    
-    res.status(201).json({
-      message: 'Tenant created successfully',
-      company,
-    });
-
+    logger.info(`New Tenant Registered: ${company.name} (ID: ${company.id})`, { by: req.userId });
+    return res.status(201).json({ message: 'Tenant created successfully', company });
   } catch (error) {
-    logger.error('Tenant Creation Failure', { 
-      error: error.message, 
-      stack: error.stack,
-      requestBody: { name, tin, address },
-      userId: req.userId,
-    });
-    
-    res.status(500).json({ error: 'Internal server error during tenant creation.' });
+    return next(error); // P2002 race on TIN -> 409 via errorHandler
   }
 });
 

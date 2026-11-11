@@ -12,21 +12,18 @@ export const EMPLOYEE_CORE_FIELDS = gql`
   }
 `;
 
+// The three allowance columns are now read AND written (previously only the deprecated computed total
+// was exposed, so every UI-created employee silently had zero allowances in payroll).
 export const EMPLOYEE_FINANCIAL_FIELDS = gql`
   fragment EmployeeFinancial on Employee {
     id
     basicSalary
-    allowances
+    housingAllowance
+    transportAllowance
+    otherAllowance
   }
 `;
 
-// FIXED (2026-07-05): added so the Employees.jsx edit form can actually
-// prefill an employee's GRA tax-relief attributes and banking details.
-// Previously these were never fetched by the list/edit query at all, so
-// every "edit" silently reset them to their Prisma column defaults the
-// moment updateEmployee ran (since resolvers.js's update previously wrote
-// `undefined` for anything not in formData, and formData never had these
-// keys to begin with).
 export const EMPLOYEE_RELIEF_FIELDS = gql`
   fragment EmployeeRelief on Employee {
     id
@@ -53,10 +50,11 @@ export const GET_PAYROLL_RUNS = gql`
         errorMessage
         isFinalized
         runType
+        companyId
       }
-      page 
-      limit 
-      total 
+      page
+      limit
+      total
       pageInfo {
         hasNextPage
         endCursor
@@ -72,7 +70,7 @@ export const GET_EMPLOYEES = gql`
         ...EmployeeCore
         ...EmployeeFinancial
         ...EmployeeRelief
-        ssnitNumber 
+        ssnitNumber
         ghanaCardPin
       }
       page
@@ -89,15 +87,7 @@ export const GET_EMPLOYEES = gql`
   ${EMPLOYEE_RELIEF_FIELDS}
 `;
 
-// FIXED (2026-07-10): $companyId changed from ID! to ID (nullable).
-// SUPER_ADMIN's JWT deliberately carries companyId: null (see
-// backend/utils/authTokens.js / middleware/auth.js - "SUPER_ADMIN is
-// global, not tied to a specific tenant"). A non-null ID! variable made
-// this query impossible to run for that role without sending an invalid
-// value. The underlying resolvers (employeeCount, recentPayrollRuns) both
-// already handle a null/absent companyId correctly for SUPER_ADMIN
-// (falling back to an explicit, logged global aggregate) - only the
-// client-side contract was too strict.
+// $companyId is nullable: SUPER_ADMIN has no tenant until one is selected.
 export const GET_DASHBOARD_DATA = gql`
   query GetDashboardData($companyId: ID) {
     stats: employeeCount(companyId: $companyId)
@@ -112,26 +102,12 @@ export const GET_DASHBOARD_DATA = gql`
   }
 `;
 
-export const GET_ME = gql`
-  query GetMe {
-    me {
-      id
-      email
-      name
-      role
-      companyId
-      status
-    }
-  }
-`;
-
 export const GET_PREFERENCES = gql`
   query GetPreferences {
     preferences {
       id
       smsOptIn
       emailOptIn
-      twoFactorEnabled
       darkMode
       language
       notificationsEnabled
@@ -139,9 +115,7 @@ export const GET_PREFERENCES = gql`
   }
 `;
 
-// NEW (2026-07-10): SUPER_ADMIN-only tenant directory for the Branding
-// page's company picker. Deliberately requests only scalar identity
-// fields - no employee/payroll data is exposed through this query.
+// SUPER_ADMIN-only tenant directory (Branding picker + navbar tenant switcher).
 export const GET_COMPANIES = gql`
   query GetCompanies {
     companies {

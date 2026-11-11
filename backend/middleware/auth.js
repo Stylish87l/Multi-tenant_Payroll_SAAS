@@ -1,4 +1,4 @@
-import { verifyAccessToken } from '../utils/authTokens.js';
+import { verifyAccessToken, extractBearerToken } from '../utils/authTokens.js';
 import logger from '../config/logger.js';
 
 /**
@@ -6,44 +6,37 @@ import logger from '../config/logger.js';
  * Validates the token and scopes the request to a specific user and tenant.
  */
 const authMiddleware = (req, res, next) => {
-  const authHeader = req.headers.authorization || req.headers.Authorization || req.get?.('authorization') || '';
-  const raw = typeof authHeader === 'string' ? authHeader.trim() : '';
-  const token = raw.startsWith('Bearer ') ? raw.split(' ')[1] : null;
+  const token = extractBearerToken(req.headers.authorization);
 
   if (!token) {
     logger.warn('Auth Failed: No token provided', { path: req.originalUrl, ip: req.ip });
-    return res.status(401).json({ error: 'Authentication token missing' });
+    return res.status(401).json({ error: 'Authentication token missing', code: 'TOKEN_MISSING' });
   }
 
   try {
     const decoded = verifyAccessToken(token);
 
-    // Attach identity and tenant scope
+    if (!decoded?.userId || !decoded?.role) {
+      return res.status(401).json({ error: 'Invalid token', code: 'TOKEN_INVALID' });
+    }
+
     req.userId = decoded.userId;
     req.userRole = decoded.role;
-
     // SUPER_ADMIN is global, not tied to a tenant
     req.companyId = decoded.role === 'SUPER_ADMIN' ? null : decoded.companyId;
+    req.user = { id: decoded.userId, email: decoded.email, role: decoded.role };
 
-    req.user = {
-      id: decoded.userId,
-      email: decoded.email,
-      role: decoded.role,
-    };
-
-    next();
+    return next();
   } catch (error) {
-    logger.error('JWT Verification Error', {
-      message: error.message,
-      path: req.originalUrl,
-      stack: error.stack,
+    // 401 for BOTH expired and invalid: 403 means "authenticated but forbidden".
+    const expired = error.code === 'TOKEN_EXPIRED';
+    if (!expired) {
+      logger.warn('JWT Verification Error', { code: error.code, path: req.originalUrl, ip: req.ip });
+    }
+    return res.status(401).json({
+      error: expired ? 'Session expired' : 'Invalid token',
+      code: error.code || 'TOKEN_INVALID',
     });
-
-    const isExpired = String(error.message).toLowerCase().includes('expired');
-    const status = isExpired ? 401 : 403;
-    const message = isExpired ? 'Session expired' : 'Invalid token';
-
-    return res.status(status).json({ error: message });
   }
 };
 

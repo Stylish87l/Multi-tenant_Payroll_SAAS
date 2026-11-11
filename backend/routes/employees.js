@@ -1,59 +1,68 @@
 import express from 'express';
 import { z } from 'zod';
+import ExcelJS from 'exceljs';
 import prisma from '../config/db.js';
 import authMiddleware from '../middleware/auth.js';
 import rbac from '../middleware/rbac.js';
 import logger from '../config/logger.js';
-import { AsyncParser } from 'json2csv'; // Memory-safe streaming parser alternative
-import ExcelJS from 'exceljs';
 import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employeeSchema.js';
+import { csvLine } from '../utils/csv.js';
+import { writeAudit, actorFromReq } from '../services/auditService.js';
 
 const router = express.Router();
 router.use(authMiddleware);
 router.use(rbac(['SUPER_ADMIN', 'ADMIN', 'HR']));
 
-// Hard ceiling on list/export page size, independent of what the client
-// requests - mirrors the cap added to the equivalent GraphQL resolvers so
-// REST and GraphQL agree on the maximum a single request can return.
+// Hard ceiling on list page size; REST and GraphQL agree on the maximum a request can return.
 const MAX_PAGE_SIZE = 100;
+const EXPORT_CHUNK = 500;
+const MAX_JSON_EXPORT_ROWS = 10_000;
 
-const formatZodErrors = (error) => {
-  return error.errors.reduce((acc, err) => {
+const formatZodErrors = (error) =>
+  error.errors.reduce((acc, err) => {
     acc[err.path[0]] = err.message;
     return acc;
   }, {});
-};
 
-// Helper: Establish secure scoping rules depending on role context
+// Tenant scoping. SUPER_ADMIN may target a tenant explicitly; everyone else is pinned to their own.
+// FIXED: `req.body.companyId` threw on every GET (Express 5 leaves req.body undefined).
 const getTenantContext = (req, targetCompanyId = null) => {
   if (req.userRole === 'SUPER_ADMIN') {
-    // If super admin passes a specific tenant context, enforce it. Otherwise, drop constraint.
-    const companyId = targetCompanyId || req.body.companyId || req.query.companyId;
+    const companyId = targetCompanyId || req.body?.companyId || req.query?.companyId;
     return companyId ? { companyId } : {};
   }
   return { companyId: req.companyId };
 };
 
-// 1. List Employees
+const handleKnownErrors = (error, res) => {
+  if (error instanceof z.ZodError) return res.status(400).json({ errors: formatZodErrors(error) });
+  if (error.code === 'P2025') return res.status(404).json({ error: 'Employee profile not found or access denied.' });
+  if (error.code === 'P2002') return res.status(409).json({ error: 'An employee with the same email, SSNIT number or Ghana Card already exists.' });
+  return null;
+};
+
+// 1. List
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '', active = 'true', sortBy = 'name', sortOrder = 'asc', companyId } = req.query;
+    const { search = '', active = 'true', sortBy = 'name', sortOrder = 'asc', companyId } = req.query;
 
     if (!req.companyId && req.userRole !== 'SUPER_ADMIN') {
       return res.status(403).json({ error: 'Company context missing' });
     }
 
-    const skip = (Math.max(1, Number(page)) - 1) * Number(limit);
-    const take = Math.min(Number(limit) || 10, MAX_PAGE_SIZE);
+    // FIXED: skip used the raw limit while take was capped, so limit>100 silently skipped records.
+    const take = Math.min(Math.max(Number(req.query.limit) || 10, 1), MAX_PAGE_SIZE);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const skip = (page - 1) * take;
 
     const where = {
       ...getTenantContext(req, companyId),
       isActive: active === 'true',
       ...(search && {
         OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-          { ssnitNumber: { contains: search, mode: 'insensitive' } },
+          { name: { contains: String(search), mode: 'insensitive' } },
+          { email: { contains: String(search), mode: 'insensitive' } },
+          { ssnitNumber: { contains: String(search), mode: 'insensitive' } },
         ],
       }),
     };
@@ -65,75 +74,76 @@ router.get('/', async (req, res) => {
 
     const [employees, total] = await Promise.all([
       prisma.employee.findMany({
-        where,
-        orderBy,
-        skip,
-        take,
+        where, orderBy, skip, take,
         select: {
-          id: true,
-          name: true,
-          email: true,
-          basicSalary: true,
-          housingAllowance: true,
-          transportAllowance: true,
-          otherAllowance: true,
-          position: true,
-          isActive: true,
+          id: true, name: true, email: true, basicSalary: true, housingAllowance: true,
+          transportAllowance: true, otherAllowance: true, position: true, isActive: true,
         },
       }),
       prisma.employee.count({ where }),
     ]);
 
-    res.json({ employees, total, page: Number(page), limit: take });
+    res.json({ employees, total, page, limit: take });
   } catch (error) {
     logger.error('Employee List Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     res.status(500).json({ error: 'Failed to list employees' });
   }
 });
 
-// 2. Export (Optimized with Batch Chunks)
+// 2. Export - genuinely streamed in chunks (the previous "chunking" accumulated every row in memory anyway)
+async function* employeeChunks(where) {
+  let cursor;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const chunk = await prisma.employee.findMany({
+      where,
+      take: EXPORT_CHUNK,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      select: { id: true, name: true, email: true, basicSalary: true, ssnitNumber: true, position: true },
+      orderBy: { id: 'asc' },
+    });
+    if (!chunk.length) return;
+    yield chunk;
+    cursor = chunk[chunk.length - 1].id;
+    if (chunk.length < EXPORT_CHUNK) return;
+  }
+}
+
 router.get('/export', async (req, res) => {
   const { format = 'json', companyId } = req.query;
   try {
     const where = getTenantContext(req, companyId);
-
-    // Using Chunking/Batching to prevent running out of V8 Heap RAM
-    const CHUNK_SIZE = 500;
-    let skip = 0;
-    let hasMore = true;
-    let allEmployees = [];
-
-    while (hasMore) {
-      const chunk = await prisma.employee.findMany({
-        where,
-        skip,
-        take: CHUNK_SIZE,
-        select: { name: true, email: true, basicSalary: true, ssnitNumber: true, position: true },
-        orderBy: { id: 'asc' }
-      });
-
-      allEmployees.push(...chunk);
-      skip += CHUNK_SIZE;
-      if (chunk.length < CHUNK_SIZE) hasMore = false;
-    }
-
     const filePrefix = where.companyId ? `company_${where.companyId}` : 'global';
+    const stamp = Date.now();
+    let exported = 0;
+
+    const audit = () =>
+      writeAudit(prisma, {
+        actor: actorFromReq(req),
+        companyId: where.companyId ?? null,
+        action: 'EMPLOYEES_EXPORTED',
+        resourceType: 'Employee',
+        details: { format, rows: exported },
+      }).catch((e) => logger.error('AUDIT_WRITE_FAILED', { action: 'EMPLOYEES_EXPORTED', message: e.message }));
 
     if (format === 'csv') {
       const fields = ['name', 'email', 'position', 'basicSalary', 'ssnitNumber'];
-      const transformOpts = { highWaterMark: 16384, encoding: 'utf-8' };
-      const asyncParser = new AsyncParser({ fields }, transformOpts);
-
-      const csv = await asyncParser.parse(allEmployees).promise();
-      res.setHeader('Content-Type', 'text/csv');
-      res.attachment(`employees_${filePrefix}_${Date.now()}.csv`);
-      return res.send(csv);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.attachment(`employees_${filePrefix}_${stamp}.csv`);
+      res.write(csvLine(fields));
+      for await (const chunk of employeeChunks(where)) {
+        for (const row of chunk) res.write(csvLine(fields.map((f) => (f === 'basicSalary' ? String(row[f]) : row[f]))));
+        exported += chunk.length;
+      }
+      await audit();
+      return res.end();
     }
 
     if (format === 'excel') {
-      const workbook = new ExcelJS.Workbook();
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.attachment(`employees_${filePrefix}_${stamp}.xlsx`);
+      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: res, useStyles: false });
       const sheet = workbook.addWorksheet('Employees');
-
       sheet.columns = [
         { header: 'Full Name', key: 'name', width: 25 },
         { header: 'Email Address', key: 'email', width: 25 },
@@ -141,20 +151,30 @@ router.get('/export', async (req, res) => {
         { header: 'Basic Salary', key: 'basicSalary', width: 15 },
         { header: 'SSNIT Number', key: 'ssnitNumber', width: 20 },
       ];
-
-      sheet.addRows(allEmployees);
-
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.attachment(`employees_${filePrefix}_${Date.now()}.xlsx`);
-
-      await workbook.xlsx.write(res);
-      return res.end();
+      for await (const chunk of employeeChunks(where)) {
+        for (const row of chunk) sheet.addRow({ ...row, basicSalary: Number(row.basicSalary) }).commit();
+        exported += chunk.length;
+      }
+      sheet.commit();
+      await workbook.commit();
+      await audit();
+      return undefined;
     }
 
-    res.json(allEmployees);
+    const all = [];
+    for await (const chunk of employeeChunks(where)) {
+      all.push(...chunk);
+      if (all.length > MAX_JSON_EXPORT_ROWS) {
+        return res.status(413).json({ error: `JSON export is limited to ${MAX_JSON_EXPORT_ROWS} rows. Use format=csv or format=excel.` });
+      }
+    }
+    exported = all.length;
+    await audit();
+    return res.json(all.map(({ id, ...rest }) => rest));
   } catch (error) {
     logger.error('Employee Export Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
-    res.status(500).json({ error: 'Export failed' });
+    if (!res.headersSent) return res.status(500).json({ error: 'Export failed' });
+    return res.end();
   }
 });
 
@@ -164,48 +184,33 @@ router.post('/', async (req, res) => {
     const data = employeeSchema.parse(req.body);
 
     const businessRuleError = validateEmployeeBusinessRules(data);
-    if (businessRuleError) {
-      return res.status(400).json({ errors: { isDisabled: businessRuleError } });
-    }
+    if (businessRuleError) return res.status(400).json({ errors: { isDisabled: businessRuleError } });
 
-    // Dynamically choose target tenant domain
     const targetCompanyId = req.userRole === 'SUPER_ADMIN' ? req.body.companyId : req.companyId;
     if (!targetCompanyId) {
       return res.status(400).json({ error: 'companyId is required to bind this employee payload.' });
     }
 
-    const duplicate = await prisma.employee.findFirst({
-      where: { email: data.email, companyId: targetCompanyId }
-    });
+    const duplicate = await prisma.employee.findFirst({ where: { email: data.email, companyId: targetCompanyId } });
     if (duplicate) return res.status(400).json({ error: 'Email already registered in this target tenant company.' });
 
     const employee = await prisma.$transaction(async (tx) => {
-      const created = await tx.employee.create({
-        data: { ...data, companyId: targetCompanyId },
+      const created = await tx.employee.create({ data: { ...data, companyId: targetCompanyId } });
+      await writeAudit(tx, {
+        actor: actorFromReq(req),
+        companyId: targetCompanyId,
+        action: 'EMPLOYEE_CREATED',
+        resourceType: 'Employee',
+        resourceId: created.id,
+        details: { employeeId: created.id, basicSalary: String(created.basicSalary) },
       });
-
-      // CLAUDE.md rule: every sensitive payroll action (salary change)
-      // must trigger an AuditLog entry. Creating an employee record sets
-      // their initial salary/relief profile, which directly drives every
-      // future PAYE/SSNIT calculation - it belongs in the audit trail.
-      await tx.auditLog.create({
-        data: {
-          userId: req.userId || null,
-          companyId: targetCompanyId,
-          action: 'EMPLOYEE_CREATED',
-          details: { employeeId: created.id, basicSalary: String(created.basicSalary) },
-          resourceId: created.id,
-          resourceType: 'Employee',
-        },
-      });
-
       return created;
     });
 
-    logger.info(`Employee created: ${employee.id} by User: ${req.userId}`, { role: req.userRole, targetCompanyId });
+    logger.info(`Employee created: ${employee.id}`, { by: req.userId, role: req.userRole, targetCompanyId });
     res.status(201).json(employee);
   } catch (error) {
-    if (error instanceof z.ZodError) return res.status(400).json({ errors: formatZodErrors(error) });
+    if (handleKnownErrors(error, res)) return;
     logger.error('Employee Create Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     res.status(500).json({ error: 'Failed to create employee' });
   }
@@ -219,71 +224,61 @@ router.put('/:id', async (req, res) => {
     const tenantCondition = getTenantContext(req);
 
     const existing = await prisma.employee.findFirst({ where: { id, ...tenantCondition } });
-    if (!existing) {
-      return res.status(404).json({ error: 'Employee profile not found or access denied.' });
-    }
+    if (!existing) return res.status(404).json({ error: 'Employee profile not found or access denied.' });
 
     const businessRuleError = validateEmployeeBusinessRules(data, existing);
-    if (businessRuleError) {
-      return res.status(400).json({ errors: { isDisabled: businessRuleError } });
-    }
+    if (businessRuleError) return res.status(400).json({ errors: { isDisabled: businessRuleError } });
 
-    const salaryChanged =
-      data.basicSalary !== undefined && Number(data.basicSalary) !== Number(existing.basicSalary);
+    const salaryChanged = data.basicSalary !== undefined && Number(data.basicSalary) !== Number(existing.basicSalary);
 
     const employee = await prisma.$transaction(async (tx) => {
-      const updated = await tx.employee.update({
-        where: { id, ...tenantCondition },
-        data,
-      });
-
-      // CLAUDE.md rule: salary changes must be audited. Also record any
-      // update as a general trail entry so HR edits (relief flags, bank
-      // details) are traceable even when salary itself didn't change.
-      await tx.auditLog.create({
-        data: {
-          userId: req.userId || null,
-          companyId: existing.companyId,
-          action: salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
-          details: {
-            employeeId: id,
-            changedFields: Object.keys(data),
-            ...(salaryChanged
-              ? { previousSalary: String(existing.basicSalary), newSalary: String(data.basicSalary) }
-              : {}),
-          },
-          resourceId: id,
-          resourceType: 'Employee',
+      const updated = await tx.employee.update({ where: { id, ...tenantCondition }, data });
+      await writeAudit(tx, {
+        actor: actorFromReq(req),
+        companyId: existing.companyId,
+        action: salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
+        resourceType: 'Employee',
+        resourceId: id,
+        details: {
+          employeeId: id,
+          changedFields: Object.keys(data),
+          ...(salaryChanged ? { previousSalary: String(existing.basicSalary), newSalary: String(data.basicSalary) } : {}),
         },
       });
-
       return updated;
     });
 
-    logger.info(`Employee updated: ${id} by User: ${req.userId}`, { role: req.userRole });
+    logger.info(`Employee updated: ${id}`, { by: req.userId, role: req.userRole });
     res.json(employee);
   } catch (error) {
-    if (error instanceof z.ZodError) return res.status(400).json({ errors: formatZodErrors(error) });
-    if (error.code === 'P2025') return res.status(404).json({ error: 'Employee profile not found or access denied.' });
+    if (handleKnownErrors(error, res)) return;
     logger.error('Employee Update Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     res.status(500).json({ error: 'Failed to update employee' });
   }
 });
 
-// 5. Soft Delete
+// 5. Soft delete (now also stamps deletedAt and is audited - previously neither)
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const tenantCondition = getTenantContext(req);
-
-    await prisma.employee.update({
-      where: { id, ...tenantCondition },
-      data: { isActive: false },
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.employee.update({
+        where: { id, ...tenantCondition },
+        data: { isActive: false, deletedAt: new Date() },
+      });
+      await writeAudit(tx, {
+        actor: actorFromReq(req),
+        companyId: updated.companyId,
+        action: 'EMPLOYEE_DEACTIVATED',
+        resourceType: 'Employee',
+        resourceId: id,
+      });
     });
-    logger.info(`Employee deactivated: ${id} by User: ${req.userId}`, { role: req.userRole });
+    logger.info(`Employee deactivated: ${id}`, { by: req.userId, role: req.userRole });
     res.json({ message: 'Employee deactivated successfully' });
   } catch (error) {
-    if (error.code === 'P2025') return res.status(404).json({ error: 'Employee profile not found or access denied.' });
+    if (handleKnownErrors(error, res)) return;
     logger.error('Employee Deactivate Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     res.status(500).json({ error: 'Failed to deactivate employee' });
   }
