@@ -28,7 +28,8 @@ export const calculateSSNIT = async (
   basicSalary,
   allowances = 0,
   companyId = null,
-  year = new Date().getUTCFullYear()
+  year = new Date().getUTCFullYear(),
+  effectiveAt = null
 ) => {
   const tracer = trace.getTracer('payroll-service');
   return await tracer.startActiveSpan('calculateSSNIT', async (span) => {
@@ -50,9 +51,10 @@ export const calculateSSNIT = async (
       };
 
       // 2. Base Calculation in pesewas
-      const salaryInPesewas = BigInt(Math.round((Number(basicSalary) + Number(allowances)) * 100));
-      const maxInPesewas = config.maxEarnings * 100n;
-      const minInPesewas = config.minContributionBase * 100n;
+      // Ghana SSNIT contributions are calculated on basic salary, not allowances.
+      const salaryInPesewas = BigInt(Math.round(Number(basicSalary) * 100));
+      const maxInPesewas = config.maxEarnings;
+      const minInPesewas = config.minContributionBase;
 
       let effectiveBase = salaryInPesewas;
       if (effectiveBase > maxInPesewas) effectiveBase = maxInPesewas;
