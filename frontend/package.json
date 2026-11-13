@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Multi-tenant PWA for Ghanaian payroll management.",
-  "engines": { "node": ">=20.19.0" },
+  "engines": { "node": ">=24.0.0" },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
