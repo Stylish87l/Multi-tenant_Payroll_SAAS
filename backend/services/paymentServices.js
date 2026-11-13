@@ -16,7 +16,7 @@ const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
  * production (ALLOW_PAYMENT_SIMULATION=true). Previously a production deploy without provider
  * credentials silently "paid" everyone - the payslips said SENT and no money moved.
  */
-const ALLOW_SIMULATION = process.env.NODE_ENV !== 'production';
+const ALLOW_SIMULATION = ['development', 'test'].includes(process.env.NODE_ENV);
 
 /** Thrown for "this item may not be paid right now". Must NEVER flip the item to FAILED. */
 class PayoutStateError extends Error {
