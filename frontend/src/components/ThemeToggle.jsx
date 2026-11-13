@@ -6,7 +6,6 @@
  * - Modern: Lucide icons; smooth transition via CSS vars.
  */
 import React, { useContext } from 'react';
-import PropTypes from 'prop-types';
 import { Sun, Moon } from 'lucide-react';
 import { ThemeContext } from '../context/ThemeContext';
 
@@ -25,7 +24,5 @@ const ThemeToggle = () => {
     </button>
   );
 };
-
-ThemeToggle.propTypes = {}; // No props
 
 export default ThemeToggle;
