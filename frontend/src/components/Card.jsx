@@ -38,7 +38,7 @@ const Card = ({ children, className = '', onClick }) => {
       style={{ willChange: 'transform' }}
       transition={{ duration: 0.4, ease: 'easeOut' }}
       className={`
-        relative group overflow-hidden
+        glass-panel relative group overflow-hidden
         rounded-2xl border border-white/10 
         bg-slate-900/50 backdrop-blur-xl 
         transition-colors duration-500 hover:border-white/20
