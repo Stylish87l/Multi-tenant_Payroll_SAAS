@@ -7,6 +7,7 @@ import rbac from '../middleware/rbac.js';
 import logger from '../config/logger.js';
 import { getLogoBuffer } from '../utils/fetchLogo.js';
 import { writeAuditSafe, actorFromReq } from '../services/auditService.js';
+import { buildPayslipItemWhere, hasConsistentPayslipTenant } from '../utils/payslipAccess.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -145,19 +146,11 @@ const generatePayslipPDF = (doc, item, logo) => {
 };
 
 const findPayslip = async (req, itemId) => {
-  const where = {
-    id: itemId,
-    ...(req.userRole === 'SUPER_ADMIN' ? {} : { payrollRun: { companyId: req.companyId } }),
-  };
-  if (req.userRole === 'EMPLOYEE') {
-    where.employee = { userId: req.userId };
-    where.payrollRun = { companyId: req.companyId, status: 'FINALIZED' };
-  }
+  const where = buildPayslipItemWhere({
+    userRole: req.userRole, companyId: req.companyId, userId: req.userId,
+  }, itemId);
   const item = await prisma.payrollItem.findFirst({ where, select: ITEM_SELECT });
-  if (!item) return null;
-  // Protect against inconsistent legacy relations as well as cross-tenant identifiers.
-  if (item.employee.companyId !== item.payrollRun.companyId) return null;
-  return item;
+  return hasConsistentPayslipTenant(item) ? item : null;
 };
 
 // Individual PDF: employees can download only their own finalized payslip.
