@@ -281,7 +281,7 @@ const Branding = () => {
                 reader.readAsDataURL(file);
               }} className="w-full text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white" />
               {form.logoUrl && <div className="flex items-center gap-3"><img src={form.logoUrl} alt="Selected company logo" className="h-12 max-w-40 object-contain rounded bg-white p-1" /><button type="button" onClick={() => setForm((prev) => ({ ...prev, logoUrl: '' }))} className="text-xs text-rose-400">Remove logo</button></div>}
-              <p className="text-[11px] text-slate-600">Upload PNG or JPEG, maximum 512 KB. The logo is stored with this tenant's branding.</p>
+              <p className="text-[11px] text-slate-600">Upload PNG or JPEG, maximum 512 KB. The logo is stored with this tenant&apos;s branding.</p>
               {fieldErrors.logoUrl && <p className="text-xs text-rose-400">{fieldErrors.logoUrl}</p>}
               {fieldErrors.logoDataUrl && <p className="text-xs text-rose-400">{fieldErrors.logoDataUrl}</p>}
 
