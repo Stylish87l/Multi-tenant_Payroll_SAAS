@@ -12,6 +12,8 @@ model Company {
   name            String
   tin             String?      @unique
   address         String?
+  contactEmail    String?
+  contactPhone    String?
   themeColor      String?
   logoUrl         String?
   footerNote      String?
@@ -117,6 +119,10 @@ model PayrollItem {
   payrollRunId  String
   employeeId    String
   grossSalary   Decimal       @db.Decimal(18, 4)
+  basicSalarySnapshot Decimal? @db.Decimal(18, 4)
+  housingAllowanceSnapshot Decimal? @db.Decimal(18, 4)
+  transportAllowanceSnapshot Decimal? @db.Decimal(18, 4)
+  otherAllowanceSnapshot Decimal? @db.Decimal(18, 4)
   taxableIncome Decimal       @db.Decimal(18, 4)
   ssnitEmployee Decimal       @db.Decimal(18, 4)
   ssnitEmployer Decimal       @db.Decimal(18, 4)
