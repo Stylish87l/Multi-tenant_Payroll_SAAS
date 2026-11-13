@@ -26,7 +26,7 @@ const toPesewas = (value, fallback) => {
  */
 export const calculateSSNIT = async (
   basicSalary,
-  allowances = 0,
+  _allowances = 0,
   companyId = null,
   year = new Date().getUTCFullYear(),
   effectiveAt = null
