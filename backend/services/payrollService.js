@@ -91,6 +91,10 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
 
     items.push({
       employeeId: emp.id,
+      basicSalarySnapshot: round2(basic),
+      housingAllowanceSnapshot: round2(D(emp.housingAllowance)),
+      transportAllowanceSnapshot: round2(D(emp.transportAllowance)),
+      otherAllowanceSnapshot: round2(D(emp.otherAllowance)),
       grossSalary: round2(gross),
       taxableIncome: round2(D(paye.taxableIncome)),
       ssnitEmployee: round2(ssnitEmployee),

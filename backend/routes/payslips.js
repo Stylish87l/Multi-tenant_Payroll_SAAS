@@ -7,112 +7,201 @@ import rbac from '../middleware/rbac.js';
 import logger from '../config/logger.js';
 import { getLogoBuffer } from '../utils/fetchLogo.js';
 import { writeAuditSafe, actorFromReq } from '../services/auditService.js';
+import { buildPayslipItemWhere, hasConsistentPayslipTenant } from '../utils/payslipAccess.js';
 
 const router = express.Router();
 router.use(authMiddleware);
 
-const COMPANY_SELECT = { id: true, name: true, address: true, logoUrl: true, themeColor: true, footerNote: true };
+const COMPANY_SELECT = {
+  id: true, name: true, address: true, contactEmail: true, contactPhone: true,
+  tin: true, logoUrl: true, themeColor: true, footerNote: true, payslipTemplate: true,
+};
 const ITEM_SELECT = {
-  grossSalary: true, ssnitEmployee: true, payeTax: true, netPay: true,
-  employee: { select: { name: true, position: true, ghanaCardPin: true, ssnitNumber: true, basicSalary: true, userId: true } },
-  payrollRun: { select: { month: true, companyId: true, company: { select: COMPANY_SELECT } } },
+  id: true, grossSalary: true, basicSalarySnapshot: true,
+  housingAllowanceSnapshot: true, transportAllowanceSnapshot: true, otherAllowanceSnapshot: true,
+  taxableIncome: true, ssnitEmployee: true, ssnitEmployer: true, ssnitTier1: true, ssnitTier2: true,
+  payeTax: true, netPay: true, paymentStatus: true, paymentRef: true,
+  employee: {
+    select: {
+      id: true, companyId: true, name: true, email: true, position: true,
+      ghanaCardPin: true, ssnitNumber: true, userId: true,
+    },
+  },
+  payrollRun: {
+    select: {
+      id: true, month: true, companyId: true, status: true, processedAt: true,
+      company: { select: COMPANY_SELECT },
+    },
+  },
 };
 
-// Header-safe filename fragment (the old single-payslip name only replaced whitespace, so quotes,
-// semicolons or non-ASCII in an employee name could break or inject into Content-Disposition).
 const safeName = (name) => String(name || 'employee').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 50) || 'employee';
+const money = (value) => Number(value ?? 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const templateFor = (company) => company.payslipTemplate && typeof company.payslipTemplate === 'object' ? company.payslipTemplate : {};
 
-const num = (v) => Number(v);
+const addSection = (doc, title) => {
+  doc.moveDown(0.8);
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#334155').text(title.toUpperCase());
+  doc.moveDown(0.35);
+  doc.moveTo(48, doc.y).lineTo(547, doc.y).strokeColor('#cbd5e1').lineWidth(0.7).stroke();
+  doc.moveDown(0.35);
+};
+const addRow = (doc, label, amount, emphasis = false) => {
+  const y = doc.y;
+  doc.font(emphasis ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#1e293b');
+  doc.text(label, 50, y, { width: 340 });
+  doc.text(money(amount), 405, y, { width: 140, align: 'right' });
+  doc.y = y + 17;
+};
+const addTextRow = (doc, label, value) => {
+  const y = doc.y;
+  doc.font('Helvetica').fontSize(9).fillColor('#334155').text(label, 50, y, { width: 130 });
+  doc.font('Helvetica-Bold').text(value || '—', 185, y, { width: 350 });
+  doc.y = y + 16;
+};
 
-/** `logo` is a pre-fetched PNG/JPEG Buffer (or null). */
-const generatePayslipPDF = (doc, item, logo) => {
+export const generatePayslipPDF = (doc, item, logo) => {
   const { employee, payrollRun } = item;
   const company = payrollRun.company;
+  const template = templateFor(company);
+  const displayName = template.companyDisplayName || company.name;
+  const alignment = ['left', 'center', 'right'].includes(template.logoAlignment) ? template.logoAlignment : 'center';
+  const logoX = alignment === 'left' ? 50 : alignment === 'right' ? 445 : (doc.page.width - 100) / 2;
 
   if (logo) {
     try {
-      const y = doc.y;
-      doc.image(logo, (doc.page.width - 120) / 2, y, { fit: [120, 60] });
-      doc.y = y + 70;
-    } catch (err) {
-      logger.warn('Logo rendering failed', { companyId: company.id, error: err.message });
+      doc.image(logo, logoX, doc.y, { fit: [100, 48] });
+      doc.y += 56;
+    } catch (error) {
+      logger.warn('Payslip logo could not be rendered', { companyId: company.id, error: error.message });
     }
   }
 
-  doc.fillColor(company.themeColor || 'black').fontSize(16).font('Helvetica-Bold')
-    .text(company.name.toUpperCase(), { align: 'center' });
-  doc.fillColor('black').fontSize(10).font('Helvetica').text(company.address || '', { align: 'center' });
-  doc.text(`OFFICIAL PAYSLIP: ${String(payrollRun.month).slice(0, 7)}`, { align: 'center' });
-  doc.moveDown(2);
+  doc.font('Helvetica-Bold').fontSize(17).fillColor(company.themeColor || '#172554')
+    .text(displayName.toUpperCase(), 48, doc.y, { width: 500, align: alignment });
+  doc.moveDown(0.25);
+  doc.font('Helvetica').fontSize(8.5).fillColor('#475569');
+  if (company.address) doc.text(company.address, 48, doc.y, { width: 500, align: alignment });
+  const contacts = [company.contactEmail, company.contactPhone, company.tin ? `TIN: ${company.tin}` : null].filter(Boolean).join('  |  ');
+  if (contacts) doc.text(contacts, 48, doc.y, { width: 500, align: alignment });
+  if (template.tagline) doc.font('Helvetica-Oblique').text(template.tagline, 48, doc.y, { width: 500, align: alignment });
 
-  doc.fontSize(10).text(`Employee: ${employee.name}`, 50);
-  doc.text(`Position: ${employee.position || 'N/A'}`, 50);
-  doc.text(`Ghana Card: ${employee.ghanaCardPin || 'N/A'}`, 50);
-  doc.text(`SSNIT No: ${employee.ssnitNumber || 'N/A'}`, 50);
-  doc.moveDown();
+  doc.moveDown(0.8);
+  doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(14).text('EMPLOYEE PAYSLIP', { align: 'center' });
+  doc.font('Helvetica').fontSize(9).fillColor('#64748b')
+    .text(`Pay period: ${String(payrollRun.month).slice(0, 7)}${payrollRun.status === 'DRAFT' ? '  •  DRAFT' : ''}`, { align: 'center' });
+  doc.moveDown(0.8);
+  doc.moveTo(48, doc.y).lineTo(547, doc.y).strokeColor('#cbd5e1').stroke();
+  doc.moveDown(0.55);
 
-  const drawLine = () => doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-  const row = (label, value) => { doc.text(label, 50); doc.text(value, 450, doc.y - 12, { align: 'right' }); };
+  addSection(doc, 'Employee information');
+  addTextRow(doc, 'Employee name', employee.name);
+  addTextRow(doc, 'Employee ID', employee.id);
+  addTextRow(doc, 'Position', employee.position);
+  addTextRow(doc, 'Email', employee.email);
+  addTextRow(doc, 'SSNIT number', employee.ssnitNumber);
+  addTextRow(doc, 'Ghana Card PIN', employee.ghanaCardPin);
 
-  drawLine();
-  doc.font('Helvetica-Bold').text('DESCRIPTION', 50, doc.y + 5);
-  doc.text('AMOUNT (GHS)', 450, doc.y - 12, { align: 'right' });
-  doc.moveDown(0.5);
-  drawLine();
-  doc.font('Helvetica').moveDown(0.5);
+  addSection(doc, 'Earnings (GHS)');
+  const snapshotsAvailable = item.basicSalarySnapshot !== null && item.basicSalarySnapshot !== undefined;
+  if (snapshotsAvailable) {
+    addRow(doc, 'Basic salary', item.basicSalarySnapshot);
+    addRow(doc, 'Housing allowance', item.housingAllowanceSnapshot);
+    addRow(doc, 'Transport allowance', item.transportAllowanceSnapshot);
+    addRow(doc, 'Other allowance', item.otherAllowanceSnapshot);
+  } else {
+    // Legacy payroll rows do not contain an immutable allowance breakdown. Never substitute
+    // the employee's current salary/allowances for the values used when this run was calculated.
+    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b').text('Historical earnings split is unavailable for this legacy payroll record.');
+    doc.moveDown(0.35);
+  }
+  addRow(doc, 'Gross earnings', item.grossSalary, true);
 
-  row('Basic Salary', num(employee.basicSalary).toFixed(2));
-  const allowances = num(item.grossSalary) - num(employee.basicSalary);
-  if (allowances > 0) row('Total Allowances', allowances.toFixed(2));
+  addSection(doc, 'Employee deductions (GHS)');
+  addRow(doc, 'Employee SSNIT contribution', item.ssnitEmployee);
+  addRow(doc, 'PAYE income tax', item.payeTax);
+  addRow(doc, 'Total deductions', Number(item.ssnitEmployee) + Number(item.payeTax), true);
 
-  doc.font('Helvetica-Bold').text('GROSS SALARY', 50, doc.y + 5);
-  doc.text(num(item.grossSalary).toFixed(2), 450, doc.y - 12, { align: 'right' });
-  doc.moveDown(1.5);
+  addSection(doc, 'Employer contributions (not deducted from net pay)');
+  addRow(doc, 'Employer SSNIT contribution', item.ssnitEmployer);
 
-  doc.font('Helvetica');
-  row('SSNIT Employee (5.5%)', num(item.ssnitEmployee).toFixed(2));
-  row('Income Tax (PAYE)', num(item.payeTax).toFixed(2));
-  doc.moveDown(1);
+  doc.moveDown(0.4);
+  doc.roundedRect(48, doc.y, 499, 48, 6).fillAndStroke('#eff6ff', '#bfdbfe');
+  const netY = doc.y + 10;
+  doc.fillColor('#1e3a8a').font('Helvetica-Bold').fontSize(10).text('NET PAY', 62, netY);
+  doc.fontSize(16).text(`GHS ${money(item.netPay)}`, 300, netY - 2, { width: 232, align: 'right' });
+  doc.y += 61;
 
-  drawLine();
-  doc.font('Helvetica-Bold').fontSize(12).text('NET PAYABLE', 50, doc.y + 10);
-  doc.text(`GHS ${num(item.netPay).toFixed(2)}`, 450, doc.y - 14, { align: 'right' });
-  doc.moveDown(2);
-  drawLine();
+  addSection(doc, 'Payment information');
+  addTextRow(doc, 'Payment status', String(item.paymentStatus || 'PENDING').replaceAll('_', ' '));
+  addTextRow(doc, 'Payment reference', item.paymentRef);
+  addTextRow(doc, 'Payroll finalized', payrollRun.processedAt ? new Date(payrollRun.processedAt).toLocaleDateString('en-GH') : 'Not finalized');
 
-  doc.fontSize(8).font('Helvetica-Oblique')
-    .text(company.footerNote || 'Generated by Payroll System. Secure Document.', { align: 'center' });
+  if (template.showFooter !== false) {
+    const footer = company.footerNote || 'This is an electronically generated payslip and does not require a signature.';
+    const footerY = Math.min(doc.y + 12, doc.page.height - 62);
+    doc.moveTo(48, footerY).lineTo(547, footerY).strokeColor('#cbd5e1').stroke();
+    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b')
+      .text(footer, 48, footerY + 8, { width: 499, align: 'center' });
+  }
 };
 
-// ROUTE 1: single payslip
-router.get('/item/:itemId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
+const findPayslip = async (req, itemId) => {
+  const where = buildPayslipItemWhere({
+    userRole: req.userRole, companyId: req.companyId, userId: req.userId,
+  }, itemId);
+  where.payrollRun = { ...(where.payrollRun || {}), status: 'FINALIZED' };
+  const item = await prisma.payrollItem.findFirst({ where, select: ITEM_SELECT });
+  return hasConsistentPayslipTenant(item) ? item : null;
+};
+
+
+router.get('/mine', rbac(['EMPLOYEE']), async (req, res) => {
+  if (req.userRole !== 'EMPLOYEE') return res.status(403).json({ error: 'Employee access only.' });
+  try {
+    const items = await prisma.payrollItem.findMany({
+      where: {
+        employee: { userId: req.userId, companyId: req.companyId },
+        payrollRun: { companyId: req.companyId, status: 'FINALIZED' },
+      },
+      select: {
+        id: true, netPay: true, paymentStatus: true, paymentRef: true,
+        payrollRun: { select: { month: true } },
+      },
+      orderBy: { payrollRun: { month: 'desc' } },
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json({ payslips: items.map((item) => ({
+      id: item.id, month: item.payrollRun.month, netPay: item.netPay,
+      paymentStatus: item.paymentStatus, paymentRef: item.paymentRef,
+    })) });
+  } catch (error) {
+    logger.error('Employee payslip list failed', { userId: req.userId, companyId: req.companyId, message: error.message });
+    return res.status(500).json({ error: 'Unable to load payslips.' });
+  }
+});
+
+// Individual PDF: employees can download only their own finalized payslip.
+router.get('/item/:itemId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
   const { itemId } = req.params;
   try {
-    const payrollRun = req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {};
-    const where = { id: itemId, payrollRun };
-
-    if (req.userRole === 'EMPLOYEE') {
-      // Own payslip only, and only once the run is finalized (never an unreviewed DRAFT).
-      where.employee = { userId: req.userId };
-      where.payrollRun = { ...payrollRun, status: 'FINALIZED' };
-    }
-
-    const item = await prisma.payrollItem.findFirst({ where, select: ITEM_SELECT });
-    if (!item) {
-      logger.warn('Payslip PDF access denied or not found', { itemId, userId: req.userId, role: req.userRole });
-      return res.status(404).json({ error: 'Payslip not found or access denied' });
-    }
+    const item = await findPayslip(req, itemId);
+    if (!item) return res.status(404).json({ error: 'Payslip not found or access denied' });
 
     const logo = await getLogoBuffer(item.payrollRun.company.logoUrl);
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const doc = new PDFDocument({ margin: 48, size: 'A4', bufferPages: true });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="payslip_${safeName(item.employee.name)}.pdf"`);
-
+    res.setHeader('Content-Disposition', `attachment; filename="payslip_${safeName(item.employee.name)}_${safeName(item.payrollRun.month)}.pdf"`);
+    res.setHeader('Cache-Control', 'private, no-store');
     doc.pipe(res);
     generatePayslipPDF(doc, item, logo);
     doc.end();
 
-    logger.info(`Payslip generated for ItemID ${itemId}`, { by: req.userId, role: req.userRole });
+    await writeAuditSafe(prisma, {
+      actor: actorFromReq(req), companyId: item.payrollRun.companyId,
+      action: 'PAYSLIP_EXPORTED', resourceType: 'PayrollItem', resourceId: item.id,
+      details: { payrollRunId: item.payrollRun.id, paymentStatus: item.paymentStatus },
+    });
     return undefined;
   } catch (error) {
     logger.error('Single Payslip Error', { itemId, role: req.userRole, stack: error.stack });
@@ -121,50 +210,47 @@ router.get('/item/:itemId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'HR', 'ACCOUNTANT'
   }
 });
 
-// ROUTE 2: bulk payslips (ZIP)
+// Bulk PDF export remains tenant-scoped and is limited to one payroll run.
 router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), async (req, res) => {
   const { runId } = req.params;
   let archive;
   try {
+    const run = await prisma.payrollRun.findFirst({
+      where: req.userRole === 'SUPER_ADMIN' ? { id: runId } : { id: runId, companyId: req.companyId },
+      select: { id: true, companyId: true },
+    });
+    if (!run) return res.status(404).json({ error: 'Payroll run not found or access denied' });
+    const runStatus = await prisma.payrollRun.findUnique({ where: { id: runId }, select: { status: true } });
+    if (runStatus?.status !== 'FINALIZED') return res.status(409).json({ error: 'Payslips are available only after payroll is finalized.' });
     const items = await prisma.payrollItem.findMany({
-      where: req.userRole === 'SUPER_ADMIN'
-        ? { payrollRunId: runId }
-        : { payrollRunId: runId, payrollRun: { companyId: req.companyId } },
+      where: { payrollRunId: runId },
       select: ITEM_SELECT,
+      orderBy: { employee: { name: 'asc' } },
     });
     if (!items.length) return res.status(404).json({ error: 'No records found for this payroll run' });
-
-    // Defense-in-depth tenant check
-    if (req.userRole !== 'SUPER_ADMIN') {
-      const leaked = items.find((i) => i.payrollRun.companyId !== req.companyId);
-      if (leaked) {
-        logger.error('CRITICAL: Cross-tenant payslip leak prevented in bulk export', {
-          runId, userId: req.userId, expectedCompany: req.companyId, foundCompany: leaked.payrollRun.companyId,
-        });
-        return res.status(403).json({ error: 'Access denied: Tenant mismatch' });
-      }
+    if (items.some((item) => item.payrollRun.companyId !== run.companyId || item.employee.companyId !== run.companyId)) {
+      logger.error('Cross-tenant relationship mismatch prevented in bulk payslip export', { runId, companyId: run.companyId });
+      return res.status(403).json({ error: 'Access denied: tenant mismatch' });
     }
 
     const logo = await getLogoBuffer(items[0].payrollRun.company.logoUrl);
-
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="bulk_payslips_${safeName(runId)}.zip"`);
-
+    res.setHeader('Cache-Control', 'private, no-store');
     archive = archiver('zip', { zlib: { level: 5 } });
-    archive.on('error', (err) => logger.error('Archive error', { runId, message: err.message }));
+    archive.on('error', (err) => logger.error('Payslip archive error', { runId, message: err.message }));
     archive.pipe(res);
 
-    let index = 0;
-    for (const item of items) {
-      index += 1;
-      // Sequential: bounds memory to one PDF at a time on large runs.
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
       await new Promise((resolve, reject) => {
-        const doc = new PDFDocument({ margin: 50, size: 'A4' });
+        const doc = new PDFDocument({ margin: 48, size: 'A4' });
         const chunks = [];
         doc.on('data', (chunk) => chunks.push(chunk));
         doc.on('end', () => {
-          // Index suffix: two employees with the same name previously collided on one zip entry.
-          archive.append(Buffer.concat(chunks), { name: `payslip_${String(index).padStart(3, '0')}_${safeName(item.employee.name)}.pdf` });
+          archive.append(Buffer.concat(chunks), {
+            name: `payslip_${String(index + 1).padStart(3, '0')}_${safeName(item.employee.name)}.pdf`,
+          });
           resolve();
         });
         doc.on('error', reject);
@@ -172,22 +258,17 @@ router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), asy
         doc.end();
       });
     }
-
     await archive.finalize();
     await writeAuditSafe(prisma, {
-      actor: actorFromReq(req),
-      companyId: items[0].payrollRun.companyId,
-      action: 'PAYSLIPS_BULK_EXPORTED',
-      resourceType: 'PayrollRun',
-      resourceId: runId,
+      actor: actorFromReq(req), companyId: run.companyId,
+      action: 'PAYSLIPS_BULK_EXPORTED', resourceType: 'PayrollRun', resourceId: runId,
       details: { count: items.length },
     });
-    logger.info(`Bulk payslips generated for RunID ${runId}`, { by: req.userId, role: req.userRole });
     return undefined;
   } catch (error) {
     logger.error('Bulk Payslips Error', { runId, role: req.userRole, stack: error.stack });
     if (!res.headersSent) return res.status(500).json({ error: 'Failed to generate zip archive' });
-    archive?.abort(); // headers already sent: terminate rather than leave the download hanging
+    archive?.abort();
     return res.end();
   }
 });

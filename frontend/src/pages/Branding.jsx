@@ -16,7 +16,13 @@ const EMPTY_FORM = {
   themeColor: '',
   logoUrl: '',
   footerNote: '',
-  tagline: '', // simple, safe subset of payslipTemplate JSON - avoids a raw JSON textarea
+  address: '',
+  contactEmail: '',
+  contactPhone: '',
+  companyDisplayName: '',
+  logoAlignment: 'center',
+  showFooter: true,
+  tagline: '',
 };
 
 const Branding = () => {
@@ -69,6 +75,12 @@ const Branding = () => {
         themeColor: b.themeColor || '',
         logoUrl: b.logoUrl || '',
         footerNote: b.footerNote || '',
+        address: b.address || '',
+        contactEmail: b.contactEmail || '',
+        contactPhone: b.contactPhone || '',
+        companyDisplayName: b.payslipTemplate?.companyDisplayName || b.name || '',
+        logoAlignment: b.payslipTemplate?.logoAlignment || 'center',
+        showFooter: b.payslipTemplate?.showFooter !== false,
         tagline: b.payslipTemplate?.tagline || '',
       });
     } catch (err) {
@@ -95,16 +107,13 @@ const Branding = () => {
     if (form.themeColor && !HEX_COLOR_RE.test(form.themeColor)) {
       errs.themeColor = 'Must be a valid hex color, e.g. #4B6EF5';
     }
-    if (form.logoUrl) {
+    if (form.logoUrl && !form.logoUrl.startsWith('data:image/')) {
       try {
         const u = new URL(form.logoUrl);
-        if (u.protocol !== 'https:') {
-          errs.logoUrl = 'Logo URL must use https://';
-        }
-      } catch {
-        errs.logoUrl = 'Must be a valid URL';
-      }
+        if (u.protocol !== 'https:') errs.logoUrl = 'Logo URL must use https://';
+      } catch { errs.logoUrl = 'Must be a valid URL'; }
     }
+    if (form.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail)) errs.contactEmail = 'Enter a valid email address.';
     if (form.footerNote && form.footerNote.length > 300) {
       errs.footerNote = 'Must be 300 characters or fewer';
     }
@@ -129,9 +138,19 @@ const Branding = () => {
     try {
       const payload = {
         themeColor: form.themeColor || null,
-        logoUrl: form.logoUrl || null,
+        ...(form.logoUrl?.startsWith('data:image/')
+          ? { logoDataUrl: form.logoUrl }
+          : { logoUrl: form.logoUrl || null }),
         footerNote: form.footerNote || null,
-        payslipTemplate: form.tagline ? { tagline: form.tagline } : null,
+        address: form.address || null,
+        contactEmail: form.contactEmail || null,
+        contactPhone: form.contactPhone || null,
+        payslipTemplate: {
+          companyDisplayName: form.companyDisplayName || null,
+          logoAlignment: form.logoAlignment,
+          showFooter: form.showFooter,
+          tagline: form.tagline || null,
+        },
       };
 
       const res = await fetch(`${REST_BASE}/api/companies/${selectedCompanyId}/branding`, {
@@ -246,17 +265,36 @@ const Branding = () => {
 
               <div className="flex items-center gap-2 text-slate-400 pt-2 border-t border-white/5">
                 <Image size={16} />
-                <h3 className="text-xs font-bold uppercase tracking-widest">Logo URL</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest">Company logo</h3>
               </div>
-              <input
-                type="url"
-                value={form.logoUrl}
-                onChange={(e) => setForm({ ...form, logoUrl: e.target.value })}
-                placeholder="https://cdn.example.com/logo.png"
-                className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
-              />
-              <p className="text-[11px] text-slate-600">Must be an https:// URL. Used on payslips and company header.</p>
+              <input type="file" accept="image/png,image/jpeg" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 512 * 1024) {
+                  setFieldErrors((prev) => ({ ...prev, logoDataUrl: 'Choose a PNG or JPEG image no larger than 512 KB.' }));
+                  e.target.value = '';
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => setForm((prev) => ({ ...prev, logoUrl: String(reader.result) }));
+                reader.onerror = () => setFieldErrors((prev) => ({ ...prev, logoDataUrl: 'Unable to read the selected image.' }));
+                reader.readAsDataURL(file);
+              }} className="w-full text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white" />
+              {form.logoUrl && <div className="flex items-center gap-3"><img src={form.logoUrl} alt="Selected company logo" className="h-12 max-w-40 object-contain rounded bg-white p-1" /><button type="button" onClick={() => setForm((prev) => ({ ...prev, logoUrl: '' }))} className="text-xs text-rose-400">Remove logo</button></div>}
+              <p className="text-[11px] text-slate-600">Upload PNG or JPEG, maximum 512 KB. The logo is stored with this tenant&apos;s branding.</p>
               {fieldErrors.logoUrl && <p className="text-xs text-rose-400">{fieldErrors.logoUrl}</p>}
+              {fieldErrors.logoDataUrl && <p className="text-xs text-rose-400">{fieldErrors.logoDataUrl}</p>}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="text-xs text-slate-400">Payslip display name<input value={form.companyDisplayName} onChange={(e) => setForm({ ...form, companyDisplayName: e.target.value })} maxLength={120} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white" placeholder="Company name on payslip" /></label>
+                <label className="text-xs text-slate-400">Logo alignment<select value={form.logoAlignment} onChange={(e) => setForm({ ...form, logoAlignment: e.target.value })} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+              </div>
+              <label className="block text-xs text-slate-400">Company address<textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} maxLength={300} rows={2} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white" placeholder="Company address" /></label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="text-xs text-slate-400">Contact email<input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white" placeholder="payroll@company.com" /></label>
+                <label className="text-xs text-slate-400">Contact phone<input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} maxLength={40} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white" placeholder="+233 ..." /></label>
+              </div>
+              {fieldErrors.contactEmail && <p className="text-xs text-rose-400">{fieldErrors.contactEmail}</p>}
 
               <div className="flex items-center gap-2 text-slate-400 pt-2 border-t border-white/5">
                 <MessageSquare size={16} />
@@ -265,13 +303,14 @@ const Branding = () => {
               <textarea
                 value={form.footerNote}
                 onChange={(e) => setForm({ ...form, footerNote: e.target.value })}
-                maxLength={300}
+                maxLength={500}
                 rows={3}
                 placeholder="e.g. Generated by Paylio. Confidential document."
                 className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary resize-none"
               />
-              <p className="text-[11px] text-slate-600 text-right">{form.footerNote.length}/300</p>
+              <p className="text-[11px] text-slate-600 text-right">{form.footerNote.length}/500</p>
               {fieldErrors.footerNote && <p className="text-xs text-rose-400">{fieldErrors.footerNote}</p>}
+              <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={form.showFooter} onChange={(e) => setForm({ ...form, showFooter: e.target.checked })} className="rounded border-white/20 bg-slate-950" /> Show footer on payslip</label>
 
               <div className="flex items-center gap-2 text-slate-400 pt-2 border-t border-white/5">
                 <MessageSquare size={16} />
@@ -302,7 +341,7 @@ const Branding = () => {
             <Card className="border-white/5 bg-slate-950/40 p-6">
               <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Payslip Header Preview</h3>
               <div className="rounded-xl border border-white/10 bg-white p-6">
-                <div className="flex flex-col items-center text-center">
+                <div className={`flex flex-col ${form.logoAlignment === 'left' ? 'items-start text-left' : form.logoAlignment === 'right' ? 'items-end text-right' : 'items-center text-center'}`}>
                   {form.logoUrl ? (
                     <img
                       src={form.logoUrl}
@@ -320,17 +359,15 @@ const Branding = () => {
                     style={{ color: previewThemeColor }}
                   >
                     {isSuperAdmin
-                      ? (companies.find((c) => c.id === selectedCompanyId)?.name || 'Company Name')
-                      : (user?.companyName || 'Your Company')}
+                      ? (form.companyDisplayName || companies.find((c) => c.id === selectedCompanyId)?.name || 'Company Name')
+                      : (form.companyDisplayName || user?.companyName || 'Your Company')}
                   </h2>
-                  {form.tagline && (
-                    <p className="text-xs text-slate-500 mt-1 italic">{form.tagline}</p>
-                  )}
-                  <p className="text-sm text-slate-700 mt-3">OFFICIAL PAYSLIP: 2026-07</p>
+                  {form.address && <p className="text-xs text-slate-500 mt-1">{form.address}</p>}
+                  {[form.contactEmail, form.contactPhone].filter(Boolean).join(' · ') && <p className="text-xs text-slate-500 mt-1">{[form.contactEmail, form.contactPhone].filter(Boolean).join(' · ')}</p>}
+                  {form.tagline && <p className="text-xs text-slate-500 mt-1 italic">{form.tagline}</p>}
+                  <p className="text-sm text-slate-700 mt-3">EMPLOYEE PAYSLIP · Preview period</p>
                   <div className="w-full border-t border-slate-200 my-4" />
-                  <p className="text-[10px] text-slate-400 italic">
-                    {form.footerNote || 'Generated by Payroll System 2026. Secure Document.'}
-                  </p>
+                  {form.showFooter && <p className="text-[10px] text-slate-400 italic">{form.footerNote || 'This is an electronically generated payslip and does not require a signature.'}</p>}
                 </div>
               </div>
               <p className="text-[11px] text-slate-600 mt-4">
