@@ -49,14 +49,14 @@ export const calculatePAYE = async (
       let bonusTax = 0;
       let excessBonusToTaxable = 0;
       if (bonus > 0) {
-        if (basicSalary == null) {
+        if ((basicSalary === null || basicSalary === undefined)) {
           logger.warn(
             'calculatePAYE: bonus provided without basicSalary - bonus threshold ' +
             'is falling back to assessableIncome, which may not match GRA rules.',
             { companyId }
           );
         }
-        const monthlyBasicForBonusCalc = basicSalary != null ? Number(basicSalary) : assessableIncome;
+        const monthlyBasicForBonusCalc = (basicSalary !== null && basicSalary !== undefined) ? Number(basicSalary) : assessableIncome;
         const bonusThreshold = monthlyBasicForBonusCalc * 12 * 0.15;
 
         if (ytdBonus + bonus <= bonusThreshold) {
