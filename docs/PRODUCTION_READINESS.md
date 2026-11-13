@@ -27,6 +27,12 @@ This document records the hardening work on `chore/production-readiness-hardenin
 - Exact-year configuration is required. Create and independently approve the 2027 PAYE and SSNIT configuration before processing January 2027 payroll. Do not copy forward 2026 rates by default.
 - Effective-dated tax records should be changed through reviewed migrations or an audited admin workflow. Do not silently edit a configuration used by a finalized payroll.
 
+## Security and dependency audit follow-up
+
+- The initial frontend install reported 35 dependency vulnerabilities in total (including development dependencies), with 3 marked critical. This is not yet a production-only vulnerability count. Run `npm audit --omit=dev` separately in backend and frontend, triage every high/critical advisory, upgrade affected direct/transitive packages, and regenerate lockfiles. Do not run `npm audit fix --force` blindly.
+- Keep CodeQL and Dependabot enabled; review and merge their findings regularly.
+- The new CI workflow is being validated on this branch. Do not merge until both backend and frontend checks pass on the latest PR commit.
+
 ## Required before enabling live payouts
 
 1. **Hubtel authentication:** replace the placeholder shared-secret header with the exact authentication/signature mechanism agreed with Hubtel for this merchant account. Verify timestamp/replay protection and raw-body signature validation. Until verified, do not enable Hubtel webhook settlement in production.
