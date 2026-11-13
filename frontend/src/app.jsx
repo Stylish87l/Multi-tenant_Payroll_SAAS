@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { lazy, Suspense, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import PropTypes from 'prop-types';
@@ -102,6 +102,38 @@ function AppRoutes() {
       </Routes>
     </AnimatePresence>
   );
+}
+
+function GlassPanelReveal() {
+  useEffect(() => {
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const seen = new WeakSet();
+    const observer = new IntersectionObserver((entries, currentObserver) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.remove('glass-panel--reveal-pending');
+        entry.target.classList.add('glass-panel--revealed');
+        currentObserver.unobserve(entry.target);
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -48px 0px' });
+    const scan = (node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_NODE) return;
+      const panels = [];
+      if (node.matches && node.matches('.glass-panel')) panels.push(node);
+      if (node.querySelectorAll) node.querySelectorAll('.glass-panel').forEach((panel) => panels.push(panel));
+      panels.forEach((panel) => {
+        if (seen.has(panel)) return;
+        seen.add(panel);
+        panel.classList.add('glass-panel--reveal-pending');
+        observer.observe(panel);
+      });
+    };
+    scan(document);
+    const mutations = new MutationObserver((records) => records.forEach((record) => record.addedNodes.forEach(scan)));
+    mutations.observe(document.body, { childList: true, subtree: true });
+    return () => { mutations.disconnect(); observer.disconnect(); };
+  }, []);
+  return null;
 }
 
 function Shell() {
