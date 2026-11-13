@@ -2,7 +2,7 @@ import { trace } from '@opentelemetry/api';
 import pRetry, { AbortError } from 'p-retry';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import prisma from '../config/db.js';
+import prisma, { Prisma } from '../config/db.js';
 import logger from '../config/logger.js';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || null;
@@ -107,10 +107,17 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
     try {
       const item = await prisma.payrollItem.findUnique({
         where: { id: payrollItemId },
-        include: { employee: { select: { bankAccount: true, bankName: true, name: true } } },
+        include: { employee: { select: { bankAccount: true, bankName: true, name: true } }, payrollRun: { select: { status: true } } },
       });
 
       if (!item) throw new PayoutStateError('Payroll item not found.');
+      if (item.payrollRun?.status !== 'FINALIZED') {
+        throw new PayoutStateError('Payroll must be FINALIZED before any payout can be processed.');
+      }
+      const netPayDecimal = new Prisma.Decimal(item.netPay);
+      if (!netPayDecimal.isFinite() || netPayDecimal.lte(0)) {
+        throw new PayoutStateError('Payout amount must be a finite positive amount.');
+      }
       if (item.paymentStatus === 'PAID' || item.paymentStatus === 'SENT') {
         throw new PayoutStateError(`Item ${payrollItemId} has already been processed.`);
       }
@@ -135,7 +142,8 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       if (claim.count !== 1) throw new PayoutStateError(`Item ${payrollItemId} is already being processed.`);
       claimed = true;
 
-      const netPay = Number(item.netPay);
+      // Decimal validation above; convert only at the external provider boundary.
+      const netPay = netPayDecimal.toNumber();
       let gatewayResult;
 
       await pRetry(async () => {
@@ -145,7 +153,7 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
             : (logger.warn('PAYMENT_SIMULATION_MODE: Hubtel not configured, faking SENT', { itemId: payrollItemId }),
                { status: 'SENT', reference: idempotencyKey, simulated: true });
         } else {
-          const amountInSubunit = Math.round(netPay * 100);
+          const amountInSubunit = netPayDecimal.mul(100).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP).toNumber();
           gatewayResult = isLive
             ? await callPaystackTransfer({ employee: item.employee, amountInSubunit, reference: idempotencyKey })
             : (logger.warn('PAYMENT_SIMULATION_MODE: Paystack not configured, faking SENT', { itemId: payrollItemId }),
