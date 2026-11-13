@@ -155,6 +155,32 @@ const findPayslip = async (req, itemId) => {
   return hasConsistentPayslipTenant(item) ? item : null;
 };
 
+
+router.get('/mine', rbac(['EMPLOYEE']), async (req, res) => {
+  if (req.userRole !== 'EMPLOYEE') return res.status(403).json({ error: 'Employee access only.' });
+  try {
+    const items = await prisma.payrollItem.findMany({
+      where: {
+        employee: { userId: req.userId, companyId: req.companyId },
+        payrollRun: { companyId: req.companyId, status: 'FINALIZED' },
+      },
+      select: {
+        id: true, netPay: true, paymentStatus: true, paymentRef: true,
+        payrollRun: { select: { month: true } },
+      },
+      orderBy: { payrollRun: { month: 'desc' } },
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json({ payslips: items.map((item) => ({
+      id: item.id, month: item.payrollRun.month, netPay: item.netPay,
+      paymentStatus: item.paymentStatus, paymentRef: item.paymentRef,
+    })) });
+  } catch (error) {
+    logger.error('Employee payslip list failed', { userId: req.userId, companyId: req.companyId, message: error.message });
+    return res.status(500).json({ error: 'Unable to load payslips.' });
+  }
+});
+
 // Individual PDF: employees can download only their own finalized payslip.
 router.get('/item/:itemId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
   const { itemId } = req.params;
