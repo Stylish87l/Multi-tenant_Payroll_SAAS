@@ -16,7 +16,6 @@ export const notFoundHandler = (req, res) => {
  * Request bodies are logged through the Winston redaction format, which scrubs
  * passwords, tokens, bank accounts, Ghana Card PINs and SSNIT numbers.
  */
-// eslint-disable-next-line no-unused-vars
 const errorHandler = (err, req, res, next) => {
   if (res.headersSent) return next(err);
 
