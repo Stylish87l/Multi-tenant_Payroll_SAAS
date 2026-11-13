@@ -25,6 +25,12 @@ export const sidebarMenuItems = [
     roles: ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'],
   },
   {
+    name: 'My Payslips',
+    path: '/payslips',
+    icon: Receipt,
+    roles: ['EMPLOYEE'],
+  },
+  {
     name: 'Reports',
     path: '/reports',
     icon: FileText,
