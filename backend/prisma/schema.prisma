@@ -232,11 +232,11 @@ model TaxConfig {
   year      Int
   type      String
   config        Json
-  effectiveFrom DateTime @default("2026-01-01T00:00:00.000Z") @map("effective_from")
+  effectiveFrom DateTime @default("2026-01-01T00:00:00.000Z") @map("effective_from") @db.Timestamptz(3)
   createdAt     DateTime @default(now())
   company       Company? @relation(fields: [companyId], references: [id], onDelete: SetNull) // Cascade doesn't make sense on a nullable FK
 
-  @@index([companyId, type, year, effectiveFrom])
+  @@index([companyId, type, year, effectiveFrom], map: "tax_configs_company_type_year_effective_from_idx")
   @@map("tax_configs")
 }
 
