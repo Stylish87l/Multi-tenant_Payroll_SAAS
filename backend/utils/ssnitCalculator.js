@@ -34,18 +34,20 @@ export const calculateSSNIT = async (
   return await tracer.startActiveSpan('calculateSSNIT', async (span) => {
     try {
       // 1. Config Loading (tenant-specific overrides win over global; see utils/taxConfig.js)
-      let config = DEFAULT_CONFIG;
       const stored = await loadTaxConfig({ type: 'SSNIT', companyId, year });
-      if (stored) {
-        config = {
-          ...DEFAULT_CONFIG,
-          ...stored,
-          maxEarnings: toBigInt(stored.maxEarnings, DEFAULT_CONFIG.maxEarnings),
-          minContributionBase: toBigInt(stored.minContributionBase, DEFAULT_CONFIG.minContributionBase),
-        };
-      } else {
-        logger.warn('No SSNIT TaxConfig found - using built-in defaults', { companyId, year });
+      if (!stored) {
+        throw new Error(`SSNIT configuration for ${year} is missing. Payroll is blocked until an approved statutory configuration is installed.`);
       }
+      const required = ['maxEarnings', 'minContributionBase', 'employeeRate', 'employerRate', 'tier1Rate', 'tier2Rate'];
+      const missing = required.filter((key) => stored[key] === undefined || stored[key] === null);
+      if (missing.length) {
+        throw new Error(`SSNIT configuration for ${year} is incomplete: ${missing.join(', ')}.`);
+      }
+      const config = {
+        ...stored,
+        maxEarnings: toBigInt(stored.maxEarnings, DEFAULT_CONFIG.maxEarnings),
+        minContributionBase: toBigInt(stored.minContributionBase, DEFAULT_CONFIG.minContributionBase),
+      };
 
       // 2. Base Calculation in pesewas
       const salaryInPesewas = BigInt(Math.round((Number(basicSalary) + Number(allowances)) * 100));
