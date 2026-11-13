@@ -54,12 +54,10 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
     const allowances = D(emp.housingAllowance).plus(D(emp.transportAllowance)).plus(D(emp.otherAllowance));
     const gross = basic.plus(allowances);
 
-    // eslint-disable-next-line no-await-in-loop
     const ssnit = await calculateSSNIT(basic.toNumber(), allowances.toNumber(), companyId, year, normalizedMonth);
     const ssnitEmployee = D(ssnit.employeeDeduction);
     const assessable = gross.minus(ssnitEmployee);
 
-    // eslint-disable-next-line no-await-in-loop
     const paye = await calculatePAYE(
       assessable.toNumber(),
       {
