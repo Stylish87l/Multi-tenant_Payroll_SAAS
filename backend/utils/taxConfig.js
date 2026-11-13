@@ -9,7 +9,7 @@ import prisma from '../config/db.js';
  * `nulls: 'last'` makes company-specific rows win as intended.
  *
  * Also: the year was hard-coded to 2026, so from 2027 the DB config was never
- * found. We now take the newest config at or before the payroll year
+ * found. We require configuration for the exact payroll year
  * (exact year first, then company-specific within that year).
  *
  * A 60s in-memory cache removes two DB round-trips per employee per payroll run.
@@ -25,7 +25,7 @@ export const loadTaxConfig = async ({ type, companyId = null, year }) => {
   if (hit && hit.expires > Date.now()) return hit.value;
 
   const row = await prisma.taxConfig.findFirst({
-    where: { type, year: { lte: year }, OR: [{ companyId: companyId ?? null }, { companyId: null }] },
+    where: { type, year, OR: [{ companyId: companyId ?? null }, { companyId: null }] },
     orderBy: [{ year: 'desc' }, { companyId: { sort: 'desc', nulls: 'last' } }],
   });
 
