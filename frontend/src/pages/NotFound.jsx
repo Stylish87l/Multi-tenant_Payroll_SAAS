@@ -37,7 +37,7 @@ const NotFound = () => {
             Lost in the Cloud?
           </h1>
           <p className="text-slate-400 text-sm mb-10 leading-relaxed">
-            The page you are looking for has been moved or doesn't exist in our 2026 payroll environment.
+            The page you are looking for has been moved or doesn&apos;t exist in our 2026 payroll environment.
           </p>
 
           {/* Action Grid */}
