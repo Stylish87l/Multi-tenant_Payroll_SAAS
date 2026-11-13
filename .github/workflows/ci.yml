@@ -50,6 +50,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+        env:
+          VITE_GRAPHQL_API_URL: https://api.example.invalid/graphql
       - run: npm run build
         env:
           VITE_GRAPHQL_API_URL: https://api.example.invalid/graphql
