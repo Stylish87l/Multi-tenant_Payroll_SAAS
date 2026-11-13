@@ -113,7 +113,7 @@ const Branding = () => {
         if (u.protocol !== 'https:') errs.logoUrl = 'Logo URL must use https://';
       } catch { errs.logoUrl = 'Must be a valid URL'; }
     }
-    if (form.contactEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(form.contactEmail)) errs.contactEmail = 'Enter a valid email address.';
+    if (form.contactEmail && !/^[^\s@]+@[^\s@]+\\.[^\s@]+$/.test(form.contactEmail)) errs.contactEmail = 'Enter a valid email address.';
     if (form.footerNote && form.footerNote.length > 300) {
       errs.footerNote = 'Must be 300 characters or fewer';
     }
