@@ -80,18 +80,22 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-const allowedOrigins = [
+const developmentOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5173',
   'https://studio.apollographql.com',
   'https://sandbox.embed.apollographql.com',
-  'https://usepaylio.vercel.app',
 ];
+const allowedOrigins = new Set([
+  process.env.FRONTEND_URL,
+  ...(process.env.ALLOWED_ORIGINS || '').split(',').map((origin) => origin.trim()),
+  ...(!isProd ? developmentOrigins : []),
+].filter(Boolean));
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || origin === process.env.FRONTEND_URL || !isProd) {
+    if (!origin || allowedOrigins.has(origin)) {
       return callback(null, true);
     }
     logger.warn(`Rejected Origin blocked by CORS: ${origin}`);
@@ -100,7 +104,8 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight', 'x-apollo-operation-name'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight', 'x-apollo-operation-name', 'x-csrf-token'],
+  exposedHeaders: ['Content-Disposition'],
 }));
 
 // --- Rate limiters ---
