@@ -48,11 +48,11 @@ const PAYE_CONFIG = {
   reliefs: { marriage: 1200, child: 600, oldAge: 1500, agedDependent: 1000, disabilityRate: 0.25 },
 };
 
-const upsertTaxConfig = (id, type, config, effectiveFrom = '2026-01-01T00:00:00.000Z') =>
+const upsertTaxConfig = (id, type, config, effectiveFrom = null, year = 2026) =>
   prisma.taxConfig.upsert({
     where: { id },
     update: forceTax ? { config } : {},
-    create: { id, companyId: null, year: 2026, type, config, effectiveFrom: new Date(effectiveFrom) },
+    create: { id, companyId: null, year, type, config, effectiveFrom: new Date(effectiveFrom || `${year}-01-01T00:00:00.000Z`) },
   });
 
 const requireStrongPassword = (name, value) => {
