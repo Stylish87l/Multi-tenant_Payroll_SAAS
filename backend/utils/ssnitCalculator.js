@@ -4,17 +4,17 @@ import { loadTaxConfig } from './taxConfig.js';
 
 // Built-in fallback only. Real rates live in the TaxConfig table (see prisma/seed.js).
 const DEFAULT_CONFIG = {
-  maxEarnings: BigInt(69000),
+  maxEarnings: 69000,
   employeeRate: 5.5, // %
   employerRate: 13,  // %
   tier1Rate: 13.5,   // %
   tier2Rate: 5,      // %
-  minContributionBase: BigInt(490),
+  minContributionBase: 587.8,
 };
 
-const toBigInt = (value, fallback) => {
+const toPesewas = (value, fallback) => {
   const n = Number(value);
-  return Number.isFinite(n) ? BigInt(Math.round(n)) : fallback;
+  return Number.isFinite(n) ? BigInt(Math.round(n * 100)) : fallback;
 };
 
 /**
@@ -35,7 +35,7 @@ export const calculateSSNIT = async (
   return await tracer.startActiveSpan('calculateSSNIT', async (span) => {
     try {
       // 1. Config Loading (tenant-specific overrides win over global; see utils/taxConfig.js)
-      const stored = await loadTaxConfig({ type: 'SSNIT', companyId, year });
+      const stored = await loadTaxConfig({ type: 'SSNIT', companyId, year, effectiveAt });
       if (!stored) {
         throw new Error(`SSNIT configuration for ${year} is missing. Payroll is blocked until an approved statutory configuration is installed.`);
       }
@@ -46,8 +46,8 @@ export const calculateSSNIT = async (
       }
       const config = {
         ...stored,
-        maxEarnings: toBigInt(stored.maxEarnings, DEFAULT_CONFIG.maxEarnings),
-        minContributionBase: toBigInt(stored.minContributionBase, DEFAULT_CONFIG.minContributionBase),
+        maxEarnings: toPesewas(stored.maxEarnings, 6900000n),
+        minContributionBase: toPesewas(stored.minContributionBase, 58780n),
       };
 
       // 2. Base Calculation in pesewas
