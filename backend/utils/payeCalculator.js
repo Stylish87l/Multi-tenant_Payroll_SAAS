@@ -2,25 +2,6 @@ import logger from '../config/logger.js';
 import { trace } from '@opentelemetry/api';
 import { loadTaxConfig } from './taxConfig.js';
 
-// Bracket WIDTHS (not cumulative thresholds). Built-in fallback only - real bands live in TaxConfig.
-const DEFAULT_BANDS = [
-  { limit: 490, rate: 0.00 },
-  { limit: 110, rate: 0.05 },
-  { limit: 130, rate: 0.10 },
-  { limit: 3170, rate: 0.175 },
-  { limit: 12100, rate: 0.25 },
-  { limit: 14520, rate: 0.30 },
-  { limit: null, rate: 0.35 },
-];
-
-const DEFAULT_RELIEFS = {
-  marriage: 1200,
-  child: 600,
-  oldAge: 1500,
-  agedDependent: 1000,
-  disabilityRate: 0.25,
-};
-
 /**
  * PAYE Calculator (Ghana)
  * @param {number} year payroll year; selects the TaxConfig row (defaults to the current year)
