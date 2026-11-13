@@ -26,7 +26,16 @@ module.exports = {
         glass: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
       },
       backdropBlur: { xs: '2px' },
-      animation: { 'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite' },
+      animation: {
+        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'fade-in-up': 'fade-in-up 560ms cubic-bezier(0.2, 0.7, 0.2, 1) both',
+      },
+      keyframes: {
+        'fade-in-up': {
+          '0%': { opacity: '0', transform: 'translate3d(0, 1rem, 0)' },
+          '100%': { opacity: '1', transform: 'translate3d(0, 0, 0)' },
+        },
+      },
     },
   },
 
