@@ -20,6 +20,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Employees = lazy(() => import('./pages/Employees'));
 const Payroll = lazy(() => import('./pages/Payroll'));
 const Reports = lazy(() => import('./pages/Reports'));
+const MyPayslips = lazy(() => import('./pages/MyPayslips'));
 const Branding = lazy(() => import('./pages/Branding'));
 const Settings = lazy(() => import('./pages/Settings'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -66,6 +67,7 @@ const protectedRoutes = [
   { path: '/employees/*', basePath: '/employees', element: <Employees /> },
   { path: '/payroll/*', basePath: '/payroll', element: <Payroll /> },
   { path: '/reports/*', basePath: '/reports', element: <Reports /> },
+  { path: '/payslips/*', basePath: '/payslips', element: <MyPayslips /> },
   { path: '/branding/*', basePath: '/branding', element: <Branding /> },
   { path: '/settings/*', basePath: '/settings', element: <Settings /> },
 ];
