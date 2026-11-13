@@ -78,9 +78,16 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
     );
 
     const payeTax = D(paye.totalTax);
-    const netPay = gross.minus(ssnitEmployee).minus(payeTax);
-    if (netPay.isNegative()) {
-      logger.warn('Negative net pay computed - check deductions for this employee', { employeeId: emp.id, companyId });
+    const netPay = round2(gross.minus(ssnitEmployee).minus(payeTax));
+    // Never persist a payroll item that cannot be disbursed or reconciled safely.
+    // A zero/negative result must be reviewed as an input/configuration error.
+    if (!netPay.isFinite() || netPay.lte(0)) {
+      logger.error('Payroll blocked: non-positive net pay', {
+        employeeId: emp.id,
+        companyId,
+        netPay: netPay.toString(),
+      });
+      throw badInput(`Payroll cannot be created: employee ${emp.id} has non-positive net pay. Review salary, deductions and statutory configuration.`);
     }
 
     items.push({
