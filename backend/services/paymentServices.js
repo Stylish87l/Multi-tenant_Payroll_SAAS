@@ -1,5 +1,5 @@
 import { trace } from '@opentelemetry/api';
-import pRetry, { AbortError } from 'p-retry';
+import { AbortError } from 'p-retry';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import prisma, { Prisma } from '../config/db.js';
@@ -118,7 +118,7 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       if (!netPayDecimal.isFinite() || netPayDecimal.lte(0)) {
         throw new PayoutStateError('Payout amount must be a finite positive amount.');
       }
-      if (item.paymentStatus === 'PAID' || item.paymentStatus === 'SENT') {
+      if (['PAID', 'SENT', 'PROCESSING'].includes(item.paymentStatus)) {
         throw new PayoutStateError(`Item ${payrollItemId} has already been processed.`);
       }
       if (!item.employee?.bankAccount || !item.employee?.bankName) {
@@ -137,7 +137,7 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       const idempotencyKey = item.paymentRef || `pay_${item.id}_${uuidv4().substring(0, 8)}`;
       const claim = await prisma.payrollItem.updateMany({
         where: { id: payrollItemId, paymentStatus: { in: ['PENDING', 'FAILED'] }, updatedAt: item.updatedAt },
-        data: { paymentRef: idempotencyKey, paymentStatus: 'PENDING' },
+        data: { paymentRef: idempotencyKey, paymentStatus: 'PROCESSING' },
       });
       if (claim.count !== 1) throw new PayoutStateError(`Item ${payrollItemId} is already being processed.`);
       claimed = true;
@@ -146,27 +146,25 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       const netPay = netPayDecimal.toNumber();
       let gatewayResult;
 
-      await pRetry(async () => {
-        if (provider === 'hubtel') {
-          gatewayResult = isLive
-            ? await callHubtelTransfer({ employee: item.employee, amountInGHS: netPay, reference: idempotencyKey })
-            : (logger.warn('PAYMENT_SIMULATION_MODE: Hubtel not configured, faking SENT', { itemId: payrollItemId }),
-               { status: 'SENT', reference: idempotencyKey, simulated: true });
-        } else {
-          const amountInSubunit = netPayDecimal.mul(100).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP).toNumber();
-          gatewayResult = isLive
-            ? await callPaystackTransfer({ employee: item.employee, amountInSubunit, reference: idempotencyKey })
-            : (logger.warn('PAYMENT_SIMULATION_MODE: Paystack not configured, faking SENT', { itemId: payrollItemId }),
-               { status: 'SENT', reference: idempotencyKey, amount: amountInSubunit, simulated: true });
-        }
-      }, {
-        retries: 3,
-        onFailedAttempt: (error) =>
-          logger.warn(`Payout attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`, { itemId: payrollItemId }),
-      });
+      if (provider === 'hubtel') {
+        gatewayResult = isLive
+          ? await callHubtelTransfer({ employee: item.employee, amountInGHS: netPay, reference: idempotencyKey })
+          : (logger.warn('PAYMENT_SIMULATION_MODE: Hubtel not configured, faking SENT', { itemId: payrollItemId }),
+             { status: 'SENT', reference: idempotencyKey, simulated: true });
+      } else {
+        const amountInSubunit = netPayDecimal.mul(100).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP).toNumber();
+        gatewayResult = isLive
+          ? await callPaystackTransfer({ employee: item.employee, amountInSubunit, reference: idempotencyKey })
+          : (logger.warn('PAYMENT_SIMULATION_MODE: Paystack not configured, faking SENT', { itemId: payrollItemId }),
+             { status: 'SENT', reference: idempotencyKey, amount: amountInSubunit, simulated: true });
+      }
       providerSucceeded = true;
 
-      await prisma.payrollItem.update({ where: { id: payrollItemId }, data: { paymentStatus: 'SENT' } });
+      // A webhook can arrive before the provider request returns. Never overwrite its final state.
+      await prisma.payrollItem.updateMany({
+        where: { id: payrollItemId, paymentStatus: 'PROCESSING' },
+        data: { paymentStatus: 'SENT' },
+      });
 
       if (netPay > 100000) logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPay });
 
@@ -179,10 +177,18 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       if (providerSucceeded) {
         logger.error('CRITICAL: payout sent but status update failed - reconcile manually', { itemId: payrollItemId, error: error.message });
       } else if (claimed) {
-        logger.error('Payout Execution Failed', { itemId: payrollItemId, error: error.message });
-        await prisma.payrollItem
-          .updateMany({ where: { id: payrollItemId, paymentStatus: 'PENDING' }, data: { paymentStatus: 'FAILED' } })
-          .catch(() => logger.error('Failed to mark payout as FAILED', { itemId: payrollItemId }));
+        logger.error('Payout Execution Failed; payment remains PROCESSING until reconciled', {
+          itemId: payrollItemId,
+          error: error.message,
+          deterministic: error instanceof AbortError,
+        });
+        // A timeout/network error/5xx may mean the provider accepted the transfer.
+        // Only a definitive 4xx rejection is safe to mark FAILED and retry.
+        if (error instanceof AbortError) {
+          await prisma.payrollItem
+            .updateMany({ where: { id: payrollItemId, paymentStatus: 'PROCESSING' }, data: { paymentStatus: 'FAILED' } })
+            .catch(() => logger.error('Failed to mark definitively rejected payout as FAILED', { itemId: payrollItemId }));
+        }
       } else {
         logger.warn('Payout rejected by guard', { itemId: payrollItemId, reason: error.message });
       }
@@ -225,7 +231,7 @@ export const handlePaymentWebhook = async (payload) => {
     const nextStatus = ['success', 'successful', 'paid'].includes(normalizedStatus) ? 'PAID' : 'FAILED';
 
     const updated = await prisma.payrollItem.updateMany({
-      where: { paymentRef: reference, paymentStatus: { in: ['SENT', 'PENDING'] } },
+      where: { paymentRef: reference, paymentStatus: { in: ['SENT', 'PENDING', 'PROCESSING'] } },
       data: { paymentStatus: nextStatus },
     });
 
