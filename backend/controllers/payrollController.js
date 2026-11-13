@@ -2,7 +2,7 @@ import prisma from '../config/db.js';
 import logger from '../config/logger.js';
 import { createDraftPayrollRun } from '../services/payrollService.js';
 import { actorFromReq } from '../services/auditService.js';
-import { badInput, forbidden, notFound } from '../utils/appError.js';
+import { badInput, notFound } from '../utils/appError.js';
 
 export const runPayroll = async (req, res, next) => {
   try {
