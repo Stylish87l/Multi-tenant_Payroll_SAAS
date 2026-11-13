@@ -60,7 +60,7 @@ const addTextRow = (doc, label, value) => {
   doc.y = y + 16;
 };
 
-const generatePayslipPDF = (doc, item, logo) => {
+export const generatePayslipPDF = (doc, item, logo) => {
   const { employee, payrollRun } = item;
   const company = payrollRun.company;
   const template = templateFor(company);
@@ -112,7 +112,8 @@ const generatePayslipPDF = (doc, item, logo) => {
   } else {
     // Legacy payroll rows do not contain an immutable allowance breakdown. Never substitute
     // the employee's current salary/allowances for the values used when this run was calculated.
-    addRow(doc, 'Gross earnings (historical total; legacy record)', item.grossSalary);
+    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b').text('Historical earnings split is unavailable for this legacy payroll record.');
+    doc.moveDown(0.35);
   }
   addRow(doc, 'Gross earnings', item.grossSalary, true);
 
@@ -149,12 +150,13 @@ const findPayslip = async (req, itemId) => {
   const where = buildPayslipItemWhere({
     userRole: req.userRole, companyId: req.companyId, userId: req.userId,
   }, itemId);
+  where.payrollRun = { ...(where.payrollRun || {}), status: 'FINALIZED' };
   const item = await prisma.payrollItem.findFirst({ where, select: ITEM_SELECT });
   return hasConsistentPayslipTenant(item) ? item : null;
 };
 
 // Individual PDF: employees can download only their own finalized payslip.
-router.get('/item/:itemId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
+router.get('/item/:itemId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
   const { itemId } = req.params;
   try {
     const item = await findPayslip(req, itemId);
@@ -192,6 +194,8 @@ router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), asy
       select: { id: true, companyId: true },
     });
     if (!run) return res.status(404).json({ error: 'Payroll run not found or access denied' });
+    const runStatus = await prisma.payrollRun.findUnique({ where: { id: runId }, select: { status: true } });
+    if (runStatus?.status !== 'FINALIZED') return res.status(409).json({ error: 'Payslips are available only after payroll is finalized.' });
     const items = await prisma.payrollItem.findMany({
       where: { payrollRunId: runId },
       select: ITEM_SELECT,
