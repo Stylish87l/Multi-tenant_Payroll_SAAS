@@ -47,7 +47,7 @@ export const getLogoBuffer = async (url) => {
 
   let buffer = null;
   try {
-    const embedded = /^data:image\\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(url);
+    const embedded = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(url);
     if (embedded) {
       const bytes = Buffer.from(embedded[2], 'base64');
       const validPng = embedded[1] === 'png' && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
