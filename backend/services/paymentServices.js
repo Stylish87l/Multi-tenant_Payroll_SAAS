@@ -16,7 +16,7 @@ const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
  * production (ALLOW_PAYMENT_SIMULATION=true). Previously a production deploy without provider
  * credentials silently "paid" everyone - the payslips said SENT and no money moved.
  */
-const ALLOW_SIMULATION = process.env.ALLOW_PAYMENT_SIMULATION === 'true' || process.env.NODE_ENV !== 'production';
+const ALLOW_SIMULATION = process.env.NODE_ENV !== 'production';
 
 /** Thrown for "this item may not be paid right now". Must NEVER flip the item to FAILED. */
 class PayoutStateError extends Error {
@@ -228,7 +228,16 @@ export const handlePaymentWebhook = async (payload) => {
 
   try {
     const normalizedStatus = String(status || '').toLowerCase();
-    const nextStatus = ['success', 'successful', 'paid'].includes(normalizedStatus) ? 'PAID' : 'FAILED';
+    const successful = ['success', 'successful', 'paid'].includes(normalizedStatus);
+    const failed = ['failed', 'failure', 'rejected', 'cancelled', 'canceled'].includes(normalizedStatus);
+    if (!successful && !failed) {
+      logger.warn('Webhook received with an unsupported payment status; no state change applied', {
+        reference,
+        status: normalizedStatus || null,
+      });
+      return;
+    }
+    const nextStatus = successful ? 'PAID' : 'FAILED';
 
     const updated = await prisma.payrollItem.updateMany({
       where: { paymentRef: reference, paymentStatus: { in: ['SENT', 'PENDING', 'PROCESSING'] } },
