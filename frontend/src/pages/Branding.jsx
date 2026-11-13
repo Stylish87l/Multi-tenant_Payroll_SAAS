@@ -334,7 +334,7 @@ const Branding = () => {
                 </div>
               </div>
               <p className="text-[11px] text-slate-600 mt-4">
-                This mirrors the layout used in <code>backend/routes/payslips.js</code>'s PDF generator.
+                This mirrors the layout used in <code>backend/routes/payslips.js</code>&apos;s PDF generator.
               </p>
             </Card>
           </form>
