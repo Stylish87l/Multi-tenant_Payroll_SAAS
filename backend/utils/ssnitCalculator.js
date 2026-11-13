@@ -2,16 +2,6 @@ import logger from '../config/logger.js';
 import { trace } from '@opentelemetry/api';
 import { loadTaxConfig } from './taxConfig.js';
 
-// Built-in fallback only. Real rates live in the TaxConfig table (see prisma/seed.js).
-const DEFAULT_CONFIG = {
-  maxEarnings: 69000,
-  employeeRate: 5.5, // %
-  employerRate: 13,  // %
-  tier1Rate: 13.5,   // %
-  tier2Rate: 5,      // %
-  minContributionBase: 587.8,
-};
-
 const toPesewas = (value, fallback) => {
   const n = Number(value);
   return Number.isFinite(n) ? BigInt(Math.round(n * 100)) : fallback;
