@@ -38,16 +38,12 @@ export const calculatePAYE = async (
   return await tracer.startActiveSpan('calculatePAYE', async (span) => {
     try {
       // 1. Tax configuration (tenant override > global; see utils/taxConfig.js)
-      let bands = DEFAULT_BANDS;
-      let reliefs = DEFAULT_RELIEFS;
-
       const stored = await loadTaxConfig({ type: 'PAYE', companyId, year });
-      if (stored) {
-        bands = stored.bands || DEFAULT_BANDS;
-        reliefs = stored.reliefs || DEFAULT_RELIEFS;
-      } else {
-        logger.warn('No PAYE TaxConfig found - using built-in defaults', { companyId, year });
+      if (!stored || !Array.isArray(stored.bands) || stored.bands.length === 0 || !stored.reliefs) {
+        throw new Error(`PAYE configuration for ${year} is missing or incomplete. Payroll is blocked until an approved statutory configuration is installed.`);
       }
+      const bands = stored.bands;
+      const reliefs = stored.reliefs;
 
       // 2. Reliefs (annualised -> monthly)
       let annualRelief = 0;
