@@ -5,6 +5,7 @@ import authMiddleware from '../middleware/auth.js';
 import rbac from '../middleware/rbac.js';
 import logger from '../config/logger.js';
 import { writeAuditSafe, actorFromReq } from '../services/auditService.js';
+import { mergePayslipTemplate } from '../utils/payslipBranding.js';
 
 const router = express.Router();
 
@@ -98,11 +99,8 @@ router.put('/:companyId/branding', authMiddleware, rbac(['SUPER_ADMIN', 'ADMIN']
 
     const current = await prisma.company.findUnique({ where: { id: companyId }, select: { payslipTemplate: true } });
     if (!current) return res.status(404).json({ error: 'Target company profile not found.' });
-    const existingTemplate = current.payslipTemplate && typeof current.payslipTemplate === 'object'
-      ? current.payslipTemplate : {};
     const nextTemplate = payslipTemplate === undefined
-      ? undefined
-      : payslipTemplate === null ? null : { ...existingTemplate, ...payslipTemplate };
+      ? undefined : mergePayslipTemplate(current.payslipTemplate, payslipTemplate);
 
     const company = await prisma.company.update({
       where: { id: companyId },
