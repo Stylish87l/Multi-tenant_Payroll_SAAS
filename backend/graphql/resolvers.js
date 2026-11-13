@@ -78,11 +78,11 @@ const toEmployeePayload = (input) => {
   const pin = ghanaCardPin ?? ghanaCardPIN;
   if (pin !== null && pin !== undefined) payload.ghanaCardPin = pin;
 
-  if (housingAllowance != null) payload.housingAllowance = housingAllowance;
-  if (transportAllowance != null) payload.transportAllowance = transportAllowance;
-  if (otherAllowance != null) payload.otherAllowance = otherAllowance;
+  if (housingAllowance !== null && housingAllowance !== undefined) payload.housingAllowance = housingAllowance;
+  if (transportAllowance !== null && transportAllowance !== undefined) payload.transportAllowance = transportAllowance;
+  if (otherAllowance !== null && otherAllowance !== undefined) payload.otherAllowance = otherAllowance;
   // Legacy aggregate maps entirely to otherAllowance when no specific field was sent.
-  if (allowances != null && housingAllowance == null && transportAllowance == null && otherAllowance == null) {
+  if (allowances !== null && allowances !== undefined && (housingAllowance === null || housingAllowance === undefined) && (transportAllowance === null || transportAllowance === undefined) && (otherAllowance === null || otherAllowance === undefined)) {
     payload.otherAllowance = allowances;
   }
   return payload;
