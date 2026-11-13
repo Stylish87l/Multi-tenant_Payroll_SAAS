@@ -27,7 +27,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: backend/package-lock.json
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run build
         env:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/payroll_ci
