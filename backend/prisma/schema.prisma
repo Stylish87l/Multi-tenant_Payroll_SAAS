@@ -269,6 +269,7 @@ enum RunType {
 
 enum PaymentStatus {
   PENDING
+  PROCESSING
   SENT
   PAID
   FAILED
