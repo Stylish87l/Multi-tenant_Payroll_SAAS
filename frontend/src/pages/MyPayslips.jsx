@@ -83,7 +83,7 @@ const MyPayslips = () => {
         <Card className="p-10 text-center">
           <Receipt size={32} className="mx-auto text-slate-500 mb-3" />
           <h2 className="font-semibold text-white">No finalized payslips yet</h2>
-          <p className="text-sm text-slate-400 mt-1">Your payslip will appear here after your company's payroll is finalized.</p>
+          <p className="text-sm text-slate-400 mt-1">Your payslip will appear here after your company&apos;s payroll is finalized.</p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
