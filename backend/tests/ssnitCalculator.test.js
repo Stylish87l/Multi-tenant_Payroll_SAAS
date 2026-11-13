@@ -1,6 +1,5 @@
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
-const findFirst = jest.fn();
 jest.unstable_mockModule('../utils/taxConfig.js', () => ({
   loadTaxConfig: jest.fn().mockResolvedValue({
     maxEarnings: 69000,
