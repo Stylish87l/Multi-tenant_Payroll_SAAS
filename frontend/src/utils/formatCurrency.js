@@ -73,7 +73,7 @@ export const formatGHS = (amount, currency = 'GHS', locale = 'en-GH') => {
   try {
     const formatter = getFormatter(locale, currency);
     return formatter.format(numeric);
-  } catch (err) {
+  } catch {
     // Last-resort fallback: manual formatting with thousands separators
     try {
       const sign = numeric < 0 ? '-' : '';

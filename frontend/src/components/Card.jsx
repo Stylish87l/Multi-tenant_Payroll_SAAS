@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import PropTypes from 'prop-types';
 import { motion, useMotionTemplate, useMotionValue } from 'framer-motion';
 
@@ -45,8 +45,8 @@ const Card = ({ children, className = '', onClick }) => {
         ${onClick ? 'cursor-pointer active:scale-[0.98]' : ''}
         ${className}
       `}
-      role={onClick ? 'button' : 'region'}
-      aria-label="Content Card"
+      role={onClick ? 'button' : undefined}
+      aria-label={onClick ? 'Open card' : undefined}
       data-testid="card-component"
     >
       <motion.div

@@ -1,7 +1,6 @@
 // src/pages/Reports.jsx
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@apollo/client';
-import { motion } from 'framer-motion';
 import { FileSpreadsheet, FileText, ShieldCheck, Download } from 'lucide-react';
 
 import Card from '../components/Card';
@@ -52,7 +51,7 @@ const Reports = () => {
   }, [user?.companyId]);
 
   const safeFilename = useCallback((name) => {
-    return name.replace(/[^a-z0-9_\-\.]/gi, '_');
+    return name.replace(/[^a-z0-9_.-]/gi, '_');
   }, []);
 
   const parseFilenameFromDisposition = useCallback((disposition) => {

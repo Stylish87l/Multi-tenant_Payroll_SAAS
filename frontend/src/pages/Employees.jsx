@@ -335,7 +335,7 @@ const Employees = () => {
 
           <div className="space-y-3 border-t border-white/5 pt-5">
             <div className="flex items-center gap-2 text-slate-400"><UsersIcon size={16} /><h3 className="text-xs font-bold tracking-widest">GRA tax relief details</h3></div>
-            <p className="text-xs text-slate-500 -mt-2">These directly affect PAYE relief on every payroll run. Confirm with the employee instead of leaving defaults if any don't apply.</p>
+            <p className="text-xs text-slate-500 -mt-2">These directly affect PAYE relief on every payroll run. Confirm with the employee instead of leaving defaults if any don&apos;t apply.</p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1">

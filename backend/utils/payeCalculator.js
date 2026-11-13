@@ -2,25 +2,6 @@ import logger from '../config/logger.js';
 import { trace } from '@opentelemetry/api';
 import { loadTaxConfig } from './taxConfig.js';
 
-// Bracket WIDTHS (not cumulative thresholds). Built-in fallback only - real bands live in TaxConfig.
-const DEFAULT_BANDS = [
-  { limit: 490, rate: 0.00 },
-  { limit: 110, rate: 0.05 },
-  { limit: 130, rate: 0.10 },
-  { limit: 3170, rate: 0.175 },
-  { limit: 12100, rate: 0.25 },
-  { limit: 14520, rate: 0.30 },
-  { limit: null, rate: 0.35 },
-];
-
-const DEFAULT_RELIEFS = {
-  marriage: 1200,
-  child: 600,
-  oldAge: 1500,
-  agedDependent: 1000,
-  disabilityRate: 0.25,
-};
-
 /**
  * PAYE Calculator (Ghana)
  * @param {number} year payroll year; selects the TaxConfig row (defaults to the current year)
@@ -32,22 +13,19 @@ export const calculatePAYE = async (
   bonus = 0,
   ytdBonus = 0,
   basicSalary = null,
-  year = new Date().getUTCFullYear()
+  year = new Date().getUTCFullYear(),
+  effectiveAt = null
 ) => {
   const tracer = trace.getTracer('payroll-service');
   return await tracer.startActiveSpan('calculatePAYE', async (span) => {
     try {
       // 1. Tax configuration (tenant override > global; see utils/taxConfig.js)
-      let bands = DEFAULT_BANDS;
-      let reliefs = DEFAULT_RELIEFS;
-
-      const stored = await loadTaxConfig({ type: 'PAYE', companyId, year });
-      if (stored) {
-        bands = stored.bands || DEFAULT_BANDS;
-        reliefs = stored.reliefs || DEFAULT_RELIEFS;
-      } else {
-        logger.warn('No PAYE TaxConfig found - using built-in defaults', { companyId, year });
+      const stored = await loadTaxConfig({ type: 'PAYE', companyId, year, effectiveAt });
+      if (!stored || !Array.isArray(stored.bands) || stored.bands.length === 0 || !stored.reliefs) {
+        throw new Error(`PAYE configuration for ${year} is missing or incomplete. Payroll is blocked until an approved statutory configuration is installed.`);
       }
+      const bands = stored.bands;
+      const reliefs = stored.reliefs;
 
       // 2. Reliefs (annualised -> monthly)
       let annualRelief = 0;
@@ -71,14 +49,14 @@ export const calculatePAYE = async (
       let bonusTax = 0;
       let excessBonusToTaxable = 0;
       if (bonus > 0) {
-        if (basicSalary == null) {
+        if ((basicSalary === null || basicSalary === undefined)) {
           logger.warn(
             'calculatePAYE: bonus provided without basicSalary - bonus threshold ' +
             'is falling back to assessableIncome, which may not match GRA rules.',
             { companyId }
           );
         }
-        const monthlyBasicForBonusCalc = basicSalary != null ? Number(basicSalary) : assessableIncome;
+        const monthlyBasicForBonusCalc = (basicSalary !== null && basicSalary !== undefined) ? Number(basicSalary) : assessableIncome;
         const bonusThreshold = monthlyBasicForBonusCalc * 12 * 0.15;
 
         if (ytdBonus + bonus <= bonusThreshold) {

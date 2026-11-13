@@ -32,11 +32,25 @@ const signAccessFor = (user) =>
 
 const isUserUsable = (user) => user && user.status === 'ACTIVE' && !user.deletedAt;
 
+const assertTrustedAuthOrigin = (req, res) => {
+  if (process.env.NODE_ENV !== 'production') return true;
+  const origin = req.get('Origin');
+  const allowed = new Set([
+    process.env.FRONTEND_URL,
+    ...(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()),
+  ].filter(Boolean));
+  if (origin && allowed.has(origin)) return true;
+  logger.warn('Blocked cookie-auth request from untrusted origin', { origin: origin || null, path: req.path, ip: req.ip });
+  res.status(403).json({ error: 'Untrusted request origin' });
+  return false;
+};
+
 router.get('/me', authMiddleware, (req, res) => {
   res.json({ user: req.user, companyId: req.companyId, role: req.userRole });
 });
 
 router.post('/refresh', async (req, res) => {
+  if (!assertTrustedAuthOrigin(req, res)) return;
   const rawRefresh = req.cookies?.[REFRESH_COOKIE_NAME];
   if (!rawRefresh) {
     logger.warn('Refresh attempt blocked: No refresh cookie present', { origin: req.headers.origin });
@@ -124,6 +138,7 @@ router.post('/refresh', async (req, res) => {
 });
 
 router.post('/logout', async (req, res) => {
+  if (!assertTrustedAuthOrigin(req, res)) return;
   const rawRefresh = req.cookies?.[REFRESH_COOKIE_NAME];
   if (rawRefresh) {
     try {

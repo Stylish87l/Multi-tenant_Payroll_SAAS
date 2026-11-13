@@ -31,7 +31,7 @@ const SSNIT_CONFIG = {
   tier1Rate: 13.5,     // % of base remitted to Tier 1
   tier2Rate: 5,        // % of base remitted to Tier 2
   maxEarnings: 69000,
-  minContributionBase: 490,
+  minContributionBase: 587.8,
 };
 
 // `limit` = bracket WIDTH, not a cumulative threshold (payeCalculator.js).
@@ -48,11 +48,11 @@ const PAYE_CONFIG = {
   reliefs: { marriage: 1200, child: 600, oldAge: 1500, agedDependent: 1000, disabilityRate: 0.25 },
 };
 
-const upsertTaxConfig = (id, type, config) =>
+const upsertTaxConfig = (id, type, config, effectiveFrom = null, year = 2026) =>
   prisma.taxConfig.upsert({
     where: { id },
     update: forceTax ? { config } : {},
-    create: { id, companyId: null, year: 2026, type, config },
+    create: { id, companyId: null, year, type, config, effectiveFrom: new Date(effectiveFrom || `${year}-01-01T00:00:00.000Z`) },
   });
 
 const requireStrongPassword = (name, value) => {
@@ -66,6 +66,18 @@ async function main() {
 
   await upsertTaxConfig('global-ssnit-2026', 'SSNIT', SSNIT_CONFIG);
   await upsertTaxConfig('global-paye-2026', 'PAYE', PAYE_CONFIG);
+  await upsertTaxConfig('global-paye-2026-sep', 'PAYE', {
+    bands: [
+      { limit: 588, rate: 0.0 },
+      { limit: 80, rate: 0.05 },
+      { limit: 100, rate: 0.1 },
+      { limit: 2900, rate: 0.175 },
+      { limit: 16000, rate: 0.25 },
+      { limit: 30332, rate: 0.3 },
+      { limit: null, rate: 0.35 },
+    ],
+    reliefs: { marriage: 1200, child: 600, oldAge: 1500, agedDependent: 1000, disabilityRate: 0.25 },
+  }, '2026-09-01T00:00:00.000Z');
   console.log(`Tax configs ensured (${forceTax ? 'overwritten' : 'existing rows preserved'}).`);
 
   if (process.env.SUPER_ADMIN_EMAIL) {

@@ -1,7 +1,6 @@
 // src/pages/Branding.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery } from '@apollo/client';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Paintbrush, Image, MessageSquare, Save, CheckCircle2, AlertCircle, Building2 } from 'lucide-react';
 import { GET_COMPANIES } from '../graphql/queries';
 import Card from '../components/Card';
@@ -286,7 +285,7 @@ const Branding = () => {
                 className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
               />
               <p className="text-[11px] text-slate-600">
-                Optional short line shown near the payslip header. Stored in the tenant's payslip template config.
+                Optional short line shown near the payslip header. Stored in the tenant&apos;s payslip template config.
               </p>
 
               <button
@@ -335,7 +334,7 @@ const Branding = () => {
                 </div>
               </div>
               <p className="text-[11px] text-slate-600 mt-4">
-                This mirrors the layout used in <code>backend/routes/payslips.js</code>'s PDF generator.
+                This mirrors the layout used in <code>backend/routes/payslips.js</code>&apos;s PDF generator.
               </p>
             </Card>
           </form>

@@ -2,19 +2,9 @@ import logger from '../config/logger.js';
 import { trace } from '@opentelemetry/api';
 import { loadTaxConfig } from './taxConfig.js';
 
-// Built-in fallback only. Real rates live in the TaxConfig table (see prisma/seed.js).
-const DEFAULT_CONFIG = {
-  maxEarnings: BigInt(69000),
-  employeeRate: 5.5, // %
-  employerRate: 13,  // %
-  tier1Rate: 13.5,   // %
-  tier2Rate: 5,      // %
-  minContributionBase: BigInt(490),
-};
-
-const toBigInt = (value, fallback) => {
+const toPesewas = (value, fallback) => {
   const n = Number(value);
-  return Number.isFinite(n) ? BigInt(Math.round(n)) : fallback;
+  return Number.isFinite(n) ? BigInt(Math.round(n * 100)) : fallback;
 };
 
 /**
@@ -26,31 +16,35 @@ const toBigInt = (value, fallback) => {
  */
 export const calculateSSNIT = async (
   basicSalary,
-  allowances = 0,
+  _allowances = 0,
   companyId = null,
-  year = new Date().getUTCFullYear()
+  year = new Date().getUTCFullYear(),
+  effectiveAt = null
 ) => {
   const tracer = trace.getTracer('payroll-service');
   return await tracer.startActiveSpan('calculateSSNIT', async (span) => {
     try {
       // 1. Config Loading (tenant-specific overrides win over global; see utils/taxConfig.js)
-      let config = DEFAULT_CONFIG;
-      const stored = await loadTaxConfig({ type: 'SSNIT', companyId, year });
-      if (stored) {
-        config = {
-          ...DEFAULT_CONFIG,
-          ...stored,
-          maxEarnings: toBigInt(stored.maxEarnings, DEFAULT_CONFIG.maxEarnings),
-          minContributionBase: toBigInt(stored.minContributionBase, DEFAULT_CONFIG.minContributionBase),
-        };
-      } else {
-        logger.warn('No SSNIT TaxConfig found - using built-in defaults', { companyId, year });
+      const stored = await loadTaxConfig({ type: 'SSNIT', companyId, year, effectiveAt });
+      if (!stored) {
+        throw new Error(`SSNIT configuration for ${year} is missing. Payroll is blocked until an approved statutory configuration is installed.`);
       }
+      const required = ['maxEarnings', 'minContributionBase', 'employeeRate', 'employerRate', 'tier1Rate', 'tier2Rate'];
+      const missing = required.filter((key) => stored[key] === undefined || stored[key] === null);
+      if (missing.length) {
+        throw new Error(`SSNIT configuration for ${year} is incomplete: ${missing.join(', ')}.`);
+      }
+      const config = {
+        ...stored,
+        maxEarnings: toPesewas(stored.maxEarnings, 6900000n),
+        minContributionBase: toPesewas(stored.minContributionBase, 58780n),
+      };
 
       // 2. Base Calculation in pesewas
-      const salaryInPesewas = BigInt(Math.round((Number(basicSalary) + Number(allowances)) * 100));
-      const maxInPesewas = config.maxEarnings * 100n;
-      const minInPesewas = config.minContributionBase * 100n;
+      // Ghana SSNIT contributions are calculated on basic salary, not allowances.
+      const salaryInPesewas = BigInt(Math.round(Number(basicSalary) * 100));
+      const maxInPesewas = config.maxEarnings;
+      const minInPesewas = config.minContributionBase;
 
       let effectiveBase = salaryInPesewas;
       if (effectiveBase > maxInPesewas) effectiveBase = maxInPesewas;

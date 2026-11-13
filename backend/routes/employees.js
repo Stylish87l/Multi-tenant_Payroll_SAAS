@@ -94,7 +94,6 @@ router.get('/', async (req, res) => {
 async function* employeeChunks(where) {
   let cursor;
   for (;;) {
-    // eslint-disable-next-line no-await-in-loop
     const chunk = await prisma.employee.findMany({
       where,
       take: EXPORT_CHUNK,
@@ -170,7 +169,7 @@ router.get('/export', async (req, res) => {
     }
     exported = all.length;
     await audit();
-    return res.json(all.map(({ id, ...rest }) => rest));
+    return res.json(all.map((employee) => Object.fromEntries(Object.entries(employee).filter(([key]) => key !== 'id'))));
   } catch (error) {
     logger.error('Employee Export Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     if (!res.headersSent) return res.status(500).json({ error: 'Export failed' });

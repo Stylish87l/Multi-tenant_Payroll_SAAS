@@ -10,7 +10,7 @@
     "dev": "node --env-file=.env --watch server.js",
     "build": "prisma generate",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "audit": "npm audit --omit=dev",
     "db:generate": "prisma generate",
@@ -20,7 +20,7 @@
   },
   "keywords": ["payroll", "ghana", "multi-tenant", "graphql", "prisma", "express"],
   "license": "ISC",
-  "engines": { "node": ">=20.19.0" },
+  "engines": { "node": ">=24.0.0" },
   "dependencies": {
     "@apollo/server": "^5.0.0",
     "@as-integrations/express5": "^1.1.2",
@@ -58,7 +58,7 @@
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "eslint": "^9.18.0",
-    "globals": "^15.14.0",
+    "globals": "^14.0.0",
     "jest": "^29.7.0",
     "supertest": "^7.0.0"
   }

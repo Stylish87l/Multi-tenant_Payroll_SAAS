@@ -158,7 +158,6 @@ router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), asy
     for (const item of items) {
       index += 1;
       // Sequential: bounds memory to one PDF at a time on large runs.
-      // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve, reject) => {
         const doc = new PDFDocument({ margin: 50, size: 'A4' });
         const chunks = [];

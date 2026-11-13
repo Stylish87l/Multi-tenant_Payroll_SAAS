@@ -47,7 +47,7 @@ model User {
   notifications          Notification[]
   processedRuns          PayrollRun[]          @relation("RunProcessor")
   refreshTokens          RefreshToken[]
-  company                Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company                Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
   employeeProfile        Employee?
   notificationPreference NotificationPreference?
 
@@ -73,18 +73,20 @@ model Employee {
   agedDependentsCount Int           @default(0)
   bankName            String?
   bankAccount         String?
-  ssnitNumber         String?       @unique
-  ghanaCardPin        String?       @unique
+  ssnitNumber         String?
+  ghanaCardPin        String?
   position            String?
   isActive            Boolean       @default(true)
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
   deletedAt           DateTime?
-  company             Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user                User?         @relation(fields: [userId], references: [id])
+  company             Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  user                User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   payrollItems        PayrollItem[]
 
   @@unique([companyId, email])
+  @@unique([companyId, ssnitNumber])
+  @@unique([companyId, ghanaCardPin])
   @@index([companyId, isActive])
   @@map("employees")
 }
@@ -102,8 +104,8 @@ model PayrollRun {
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
   items         PayrollItem[]
-  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  processedBy   User?         @relation("RunProcessor", fields: [processedById], references: [id])
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  processedBy   User?         @relation("RunProcessor", fields: [processedById], references: [id], onDelete: SetNull)
 
   @@unique([companyId, month])
   @@index([companyId])
@@ -127,9 +129,10 @@ model PayrollItem {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
-  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  payrollRun    PayrollRun    @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  payrollRun    PayrollRun    @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)
 
+  @@unique([payrollRunId, employeeId])
   @@index([payrollRunId])
   @@index([employeeId])
   @@index([paymentStatus])
@@ -149,7 +152,7 @@ model AuditLog {
   resourceId    String?
   resourceType  String?
   userAgent     String?
-  user          User?     @relation(fields: [userId], references: [id])
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, createdAt(sort: Desc)])
@@ -231,11 +234,12 @@ model TaxConfig {
   companyId String?                     // now optional
   year      Int
   type      String
-  config    Json
-  createdAt DateTime @default(now())
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull) // Cascade doesn't make sense on a nullable FK
+  config        Json
+  effectiveFrom DateTime @default("2026-01-01T00:00:00.000Z") @map("effective_from") @db.Timestamptz(3)
+  createdAt     DateTime @default(now())
+  company       Company? @relation(fields: [companyId], references: [id], onDelete: SetNull) // Cascade doesn't make sense on a nullable FK
 
-  @@index([companyId, type, year])
+  @@index([companyId, type, year, effectiveFrom], map: "tax_configs_company_type_year_effective_from_idx")
   @@map("tax_configs")
 }
 
@@ -268,6 +272,7 @@ enum RunType {
 
 enum PaymentStatus {
   PENDING
+  PROCESSING
   SENT
   PAID
   FAILED

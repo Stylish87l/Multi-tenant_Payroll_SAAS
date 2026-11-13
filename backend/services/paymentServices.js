@@ -1,8 +1,8 @@
 import { trace } from '@opentelemetry/api';
-import pRetry, { AbortError } from 'p-retry';
+import { AbortError } from 'p-retry';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import prisma from '../config/db.js';
+import prisma, { Prisma } from '../config/db.js';
 import logger from '../config/logger.js';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || null;
@@ -16,7 +16,7 @@ const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
  * production (ALLOW_PAYMENT_SIMULATION=true). Previously a production deploy without provider
  * credentials silently "paid" everyone - the payslips said SENT and no money moved.
  */
-const ALLOW_SIMULATION = process.env.ALLOW_PAYMENT_SIMULATION === 'true' || process.env.NODE_ENV !== 'production';
+const ALLOW_SIMULATION = ['development', 'test'].includes(process.env.NODE_ENV);
 
 /** Thrown for "this item may not be paid right now". Must NEVER flip the item to FAILED. */
 class PayoutStateError extends Error {
@@ -107,11 +107,18 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
     try {
       const item = await prisma.payrollItem.findUnique({
         where: { id: payrollItemId },
-        include: { employee: { select: { bankAccount: true, bankName: true, name: true } } },
+        include: { employee: { select: { bankAccount: true, bankName: true, name: true } }, payrollRun: { select: { status: true } } },
       });
 
       if (!item) throw new PayoutStateError('Payroll item not found.');
-      if (item.paymentStatus === 'PAID' || item.paymentStatus === 'SENT') {
+      if (item.payrollRun?.status !== 'FINALIZED') {
+        throw new PayoutStateError('Payroll must be FINALIZED before any payout can be processed.');
+      }
+      const netPayDecimal = new Prisma.Decimal(item.netPay);
+      if (!netPayDecimal.isFinite() || netPayDecimal.lte(0)) {
+        throw new PayoutStateError('Payout amount must be a finite positive amount.');
+      }
+      if (['PAID', 'SENT', 'PROCESSING'].includes(item.paymentStatus)) {
         throw new PayoutStateError(`Item ${payrollItemId} has already been processed.`);
       }
       if (!item.employee?.bankAccount || !item.employee?.bankName) {
@@ -130,35 +137,34 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       const idempotencyKey = item.paymentRef || `pay_${item.id}_${uuidv4().substring(0, 8)}`;
       const claim = await prisma.payrollItem.updateMany({
         where: { id: payrollItemId, paymentStatus: { in: ['PENDING', 'FAILED'] }, updatedAt: item.updatedAt },
-        data: { paymentRef: idempotencyKey, paymentStatus: 'PENDING' },
+        data: { paymentRef: idempotencyKey, paymentStatus: 'PROCESSING' },
       });
       if (claim.count !== 1) throw new PayoutStateError(`Item ${payrollItemId} is already being processed.`);
       claimed = true;
 
-      const netPay = Number(item.netPay);
+      // Decimal validation above; convert only at the external provider boundary.
+      const netPay = netPayDecimal.toNumber();
       let gatewayResult;
 
-      await pRetry(async () => {
-        if (provider === 'hubtel') {
-          gatewayResult = isLive
-            ? await callHubtelTransfer({ employee: item.employee, amountInGHS: netPay, reference: idempotencyKey })
-            : (logger.warn('PAYMENT_SIMULATION_MODE: Hubtel not configured, faking SENT', { itemId: payrollItemId }),
-               { status: 'SENT', reference: idempotencyKey, simulated: true });
-        } else {
-          const amountInSubunit = Math.round(netPay * 100);
-          gatewayResult = isLive
-            ? await callPaystackTransfer({ employee: item.employee, amountInSubunit, reference: idempotencyKey })
-            : (logger.warn('PAYMENT_SIMULATION_MODE: Paystack not configured, faking SENT', { itemId: payrollItemId }),
-               { status: 'SENT', reference: idempotencyKey, amount: amountInSubunit, simulated: true });
-        }
-      }, {
-        retries: 3,
-        onFailedAttempt: (error) =>
-          logger.warn(`Payout attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`, { itemId: payrollItemId }),
-      });
+      if (provider === 'hubtel') {
+        gatewayResult = isLive
+          ? await callHubtelTransfer({ employee: item.employee, amountInGHS: netPay, reference: idempotencyKey })
+          : (logger.warn('PAYMENT_SIMULATION_MODE: Hubtel not configured, faking SENT', { itemId: payrollItemId }),
+             { status: 'SENT', reference: idempotencyKey, simulated: true });
+      } else {
+        const amountInSubunit = netPayDecimal.mul(100).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP).toNumber();
+        gatewayResult = isLive
+          ? await callPaystackTransfer({ employee: item.employee, amountInSubunit, reference: idempotencyKey })
+          : (logger.warn('PAYMENT_SIMULATION_MODE: Paystack not configured, faking SENT', { itemId: payrollItemId }),
+             { status: 'SENT', reference: idempotencyKey, amount: amountInSubunit, simulated: true });
+      }
       providerSucceeded = true;
 
-      await prisma.payrollItem.update({ where: { id: payrollItemId }, data: { paymentStatus: 'SENT' } });
+      // A webhook can arrive before the provider request returns. Never overwrite its final state.
+      await prisma.payrollItem.updateMany({
+        where: { id: payrollItemId, paymentStatus: 'PROCESSING' },
+        data: { paymentStatus: 'SENT' },
+      });
 
       if (netPay > 100000) logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPay });
 
@@ -171,10 +177,18 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       if (providerSucceeded) {
         logger.error('CRITICAL: payout sent but status update failed - reconcile manually', { itemId: payrollItemId, error: error.message });
       } else if (claimed) {
-        logger.error('Payout Execution Failed', { itemId: payrollItemId, error: error.message });
-        await prisma.payrollItem
-          .updateMany({ where: { id: payrollItemId, paymentStatus: 'PENDING' }, data: { paymentStatus: 'FAILED' } })
-          .catch(() => logger.error('Failed to mark payout as FAILED', { itemId: payrollItemId }));
+        logger.error('Payout Execution Failed; payment remains PROCESSING until reconciled', {
+          itemId: payrollItemId,
+          error: error.message,
+          deterministic: error instanceof AbortError,
+        });
+        // A timeout/network error/5xx may mean the provider accepted the transfer.
+        // Only a definitive 4xx rejection is safe to mark FAILED and retry.
+        if (error instanceof AbortError) {
+          await prisma.payrollItem
+            .updateMany({ where: { id: payrollItemId, paymentStatus: 'PROCESSING' }, data: { paymentStatus: 'FAILED' } })
+            .catch(() => logger.error('Failed to mark definitively rejected payout as FAILED', { itemId: payrollItemId }));
+        }
       } else {
         logger.warn('Payout rejected by guard', { itemId: payrollItemId, reason: error.message });
       }
@@ -214,10 +228,19 @@ export const handlePaymentWebhook = async (payload) => {
 
   try {
     const normalizedStatus = String(status || '').toLowerCase();
-    const nextStatus = ['success', 'successful', 'paid'].includes(normalizedStatus) ? 'PAID' : 'FAILED';
+    const successful = ['success', 'successful', 'paid'].includes(normalizedStatus);
+    const failed = ['failed', 'failure', 'rejected', 'cancelled', 'canceled'].includes(normalizedStatus);
+    if (!successful && !failed) {
+      logger.warn('Webhook received with an unsupported payment status; no state change applied', {
+        reference,
+        status: normalizedStatus || null,
+      });
+      return;
+    }
+    const nextStatus = successful ? 'PAID' : 'FAILED';
 
     const updated = await prisma.payrollItem.updateMany({
-      where: { paymentRef: reference, paymentStatus: { in: ['SENT', 'PENDING'] } },
+      where: { paymentRef: reference, paymentStatus: { in: ['SENT', 'PENDING', 'PROCESSING'] } },
       data: { paymentStatus: nextStatus },
     });
 
