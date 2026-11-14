@@ -57,7 +57,7 @@ const callPaystackTransfer = async ({ employee, amountInSubunit, reference }) =>
   const transferJson = await transferRes.json().catch(() => ({}));
   assertOk(transferRes, transferJson, 'Paystack transfer');
 
-  return { status: 'SENT', reference, providerTransferCode: transferJson.data?.transfer_code };
+  return { status: 'PROCESSING', reference, providerTransferCode: transferJson.data?.transfer_code, providerStatus: transferJson.data?.status || 'pending' };
 };
 
 /** VERIFY against your Hubtel merchant contract/docs: request shape varies by account type. */
@@ -150,15 +150,18 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       providerSucceeded = true;
 
       // A webhook can arrive before the provider request returns. Never overwrite its final state.
+      // Paystack transfer acceptance is not proof that the employee has received funds.
+      // Keep the item PROCESSING until transfer.success / transfer.failed / transfer.reversed.
+      const finalizationStatus = provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT';
       await prisma.payrollItem.updateMany({
         where: { id: payrollItemId, paymentStatus: 'PROCESSING' },
-        data: { paymentStatus: 'SENT' },
+        data: { paymentStatus: finalizationStatus },
       });
 
       if (netPay > 100000) logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPay });
 
       span.setAttributes({
-        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': 'SENT',
+        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT',
         'payout.reference': idempotencyKey, 'payout.simulated': !isLive,
       });
       return gatewayResult;
