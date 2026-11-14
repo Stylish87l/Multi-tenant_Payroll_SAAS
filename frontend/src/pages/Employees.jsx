@@ -263,9 +263,9 @@ const Employees = () => {
             ))
           )}
         </AnimatePresence>
-      </div>
+      </div>}
 
-      {hasNextPage && (
+      {companyId && hasNextPage && (
         <div className="flex justify-center mt-4">
           <button onClick={loadNextPage} disabled={loading} className="px-4 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50">
             {loading ? 'Loading...' : 'Load more'}
