@@ -11,6 +11,7 @@ const router = express.Router();
 router.use(authMiddleware);
 
 const tenantRun = (req) => (req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {});
+const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE'];
 
 /** 1. Individual payslip data - scoped by tenant; employees see only their own FINALIZED payslips. */
 router.get('/payslip/:itemId', rbac(['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
