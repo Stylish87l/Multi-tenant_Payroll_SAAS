@@ -32,7 +32,7 @@ describe('employee account identity linking', () => {
     const tx = {
       employee: {
         findFirst: jest.fn().mockResolvedValue({ id: 'employee-1', userId: null }),
-        update: jest.fn().mockResolvedValue({ id: 'employee-1', userId: 'user-1' }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
 
@@ -40,8 +40,8 @@ describe('employee account identity linking', () => {
       email: 'person@example.test', companyId: 'tenant-a', userId: 'user-1',
     });
 
-    expect(tx.employee.update).toHaveBeenCalledWith({
-      where: { id: 'employee-1' }, data: { userId: 'user-1' },
+    expect(tx.employee.updateMany).toHaveBeenCalledWith({
+      where: { id: 'employee-1', companyId: 'tenant-a', userId: null, deletedAt: null }, data: { userId: 'user-1' },
     });
   });
 
@@ -49,14 +49,14 @@ describe('employee account identity linking', () => {
     const tx = {
       employee: {
         findFirst: jest.fn().mockResolvedValue({ id: 'employee-1', userId: 'user-2' }),
-        update: jest.fn(),
+        updateMany: jest.fn(),
       },
     };
 
     await expect(linkEmployeeProfileToUser(tx, {
       email: 'person@example.test', companyId: 'tenant-a', userId: 'user-1',
     })).rejects.toThrow(/already linked/);
-    expect(tx.employee.update).not.toHaveBeenCalled();
+    expect(tx.employee.updateMany).not.toHaveBeenCalled();
   });
 
   test('does not link deleted employee profiles', async () => {
