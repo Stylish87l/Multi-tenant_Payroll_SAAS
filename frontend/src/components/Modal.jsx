@@ -6,71 +6,72 @@ import { X } from 'lucide-react';
 
 const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      const handleEsc = (e) => e.key === 'Escape' && onClose();
-      window.addEventListener('keydown', handleEsc);
-      return () => {
-        document.body.style.overflow = 'unset';
-        window.removeEventListener('keydown', handleEsc);
-      };
-    }
+    if (!isOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleEsc);
+    };
   }, [isOpen, onClose]);
 
   const sizeMap = {
     sm: 'max-w-sm',
     md: 'max-w-lg',
     lg: 'max-w-2xl',
+    xl: 'max-w-4xl',
   };
 
   return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          {/* Backdrop */}
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto overscroll-contain p-2 sm:p-4">
           <motion.div
+            aria-hidden="true"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm"
           />
 
-          {/* Modal Container */}
           <motion.div
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 10 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className={`relative w-full ${sizeMap[size]} overflow-hidden rounded-2xl border border-white/20 bg-slate-900/80 shadow-2xl backdrop-blur-2xl`}
-            onClick={(e) => e.stopPropagation()}
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+            className={`relative my-auto flex max-h-[calc(100dvh-1rem)] w-full ${sizeMap[size]} flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl shadow-black/40 sm:max-h-[calc(100dvh-2rem)]`}
+            onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"
             tabIndex={-1}
           >
-            {/* Header */}
-            {title && (
-              <div className="flex items-center justify-between border-b border-white/10 p-6">
-                <h2 id="modal-title" className="text-xl font-semibold tracking-tight text-white">
-                  {title}
-                </h2>
-                <button
-                  onClick={onClose}
-                  className="rounded-full p-1 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-                  aria-label="Close modal"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            )}
+            <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-slate-900/95 px-5 py-4 backdrop-blur sm:px-6">
+              <h2 id="modal-title" className="text-lg font-semibold tracking-tight text-white sm:text-xl">
+                {title || 'Dialog'}
+              </h2>
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 transition-colors hover:border-white/20 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-            {/* Body */}
-            <div className="p-6 text-slate-300">{children}</div>
-
-            {/* Glow Line */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 text-slate-300 [scrollbar-gutter:stable] sm:p-6">
+              {children}
+            </div>
           </motion.div>
         </div>
       )}
@@ -84,7 +85,7 @@ Modal.propTypes = {
   onClose: PropTypes.func.isRequired,
   title: PropTypes.string,
   children: PropTypes.node.isRequired,
-  size: PropTypes.oneOf(['sm', 'md', 'lg']),
+  size: PropTypes.oneOf(['sm', 'md', 'lg', 'xl']),
 };
 
 export default Modal;
