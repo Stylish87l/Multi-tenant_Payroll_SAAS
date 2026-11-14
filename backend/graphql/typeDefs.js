@@ -29,7 +29,7 @@ const typeDefs = gql`
   enum Role { SUPER_ADMIN ADMIN HR ACCOUNTANT EMPLOYEE CUSTOM }
   enum Status { PENDING ACTIVE SUSPENDED }
 
-  enum PaymentStatus { PENDING SENT PAID FAILED }
+  enum PaymentStatus { PENDING PROCESSING SENT PAID FAILED }
   enum PaymentProvider { HUBTEL PAYSTACK }
 
   type User {
@@ -69,6 +69,7 @@ const typeDefs = gql`
     company: Company!
 
     bankName: String
+    bankCode: String
     bankAccount: String
 
     age: Int
