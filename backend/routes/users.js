@@ -11,6 +11,7 @@ import { writeAudit, actorFromReq } from '../services/auditService.js';
 import { badInput, forbidden, notFound } from '../utils/appError.js';
 
 const router = express.Router();
+const hashActivationToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const USER_SELECT = { id: true, email: true, name: true, role: true, status: true, companyId: true, createdAt: true, updatedAt: true };
 
 // Both direct provisioning and invitations create a PENDING identity and use the same
@@ -44,7 +45,7 @@ async function provisionUser(req, res, next, action) {
           data: { email, name, role, companyId: targetCompanyId, status: 'PENDING', password: placeholderHash },
         });
       }
-      await tx.invite.create({ data: { token, email, role, expiresAt, companyId: targetCompanyId, userId: user.id } });
+      await tx.invite.create({ data: { token: hashActivationToken(token), email, role, expiresAt, companyId: targetCompanyId, userId: user.id } });
       await writeAudit(tx, {
         actor: actorFromReq(req), companyId: targetCompanyId, action,
         resourceType: 'User', resourceId: user.id, details: { role, delivery: 'email_activation' },
@@ -134,7 +135,9 @@ router.post('/accept-invite', async (req, res, next) => {
     const parsed = acceptInviteSchema.safeParse(req.body ?? {});
     if (!parsed.success) return next(parsed.error);
     const { token, password } = parsed.data;
-    const invite = await prisma.invite.findUnique({ where: { token }, include: { user: true } });
+    const invite = await prisma.invite.findUnique({ where: { token: hashActivationToken(token) }, include: { user: true } })
+      // Backward compatibility for activation links issued before token hashing was introduced.
+      || await prisma.invite.findUnique({ where: { token }, include: { user: true } });
     if (!invite || invite.expiresAt < new Date() || invite.user.status !== 'PENDING' || invite.user.deletedAt) {
       throw badInput('Activation link is invalid or has expired.');
     }
