@@ -108,6 +108,7 @@ const typeDefs = gql`
     companyId: ID
 
     bankName: String
+    bankCode: String
     bankAccount: String
 
     age: Int
@@ -135,6 +136,7 @@ const typeDefs = gql`
     isActive: Boolean
 
     bankName: String
+    bankCode: String
     bankAccount: String
 
     age: Int
