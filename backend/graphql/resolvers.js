@@ -11,6 +11,7 @@ import { createDraftPayrollRun } from '../services/payrollService.js';
 import { createNotification } from '../services/notificationService.js';
 import { writeAudit, writeAuditSafe, actorFromCtx } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
+import { canReadEmployeeField, assertEmployeeInputPermissions } from '../policies/permissions.js';
 import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employeeSchema.js';
 import { registerSchema } from '../schemas/authSchema.js';
 import { isLocked, recordFailure, clearFailures } from '../utils/loginThrottle.js';
@@ -642,13 +643,13 @@ const resolvers = {
 
 export const createLoaders = () => ({
   company: new DataLoader(async (ids) => {
-    const companies = await prisma.company.findMany({ where: { id: { in: [...new Set(ids)] } } });
+    const companies = await prisma.company.findMany({ where: { id: { in: [...new Set(ids)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { id: companyId } : {}) } });
     const map = new Map(companies.map((c) => [c.id, c]));
     return ids.map((id) => map.get(id) || null);
   }),
 
   payrollRunLoader: new DataLoader(async (runIds) => {
-    const runs = await prisma.payrollRun.findMany({ where: { id: { in: [...new Set(runIds)] } } });
+    const runs = await prisma.payrollRun.findMany({ where: { id: { in: [...new Set(runIds)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { companyId } : {}) } });
     const map = new Map(runs.map((r) => [r.id, r]));
     return runIds.map((id) => map.get(id) || null);
   }),
@@ -656,7 +657,7 @@ export const createLoaders = () => ({
   payrollRunTotalLoader: new DataLoader(async (runIds) => {
     const rows = await prisma.payrollItem.groupBy({
       by: ['payrollRunId'],
-      where: { payrollRunId: { in: [...new Set(runIds)] } },
+      where: { payrollRunId: { in: [...new Set(runIds)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { payrollRun: { companyId } } : {}) },
       _sum: { netPay: true },
     });
     const map = new Map(rows.map((r) => [r.payrollRunId, r._sum.netPay]));
