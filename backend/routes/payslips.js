@@ -139,8 +139,13 @@ export const generatePayslipPDF = (doc, item, logo) => {
   doc.y += 61;
 
   addSection(doc, 'Payment information');
-  addTextRow(doc, 'Bank name', employee.bankName);
-  addTextRow(doc, 'Account number', maskAccountNumber(employee.bankAccount));
+  addTextRow(doc, 'Bank on file', employee.bankName);
+  addTextRow(doc, 'Account on file', maskAccountNumber(employee.bankAccount));
+  if (employee.bankName || employee.bankAccount) {
+    doc.font('Helvetica-Oblique').fontSize(7).fillColor('#64748b')
+      .text('Bank details are from the current employee profile; the actual payout destination is not stored on this historical payroll record.', 50, doc.y, { width: 495 });
+    doc.moveDown(0.25);
+  }
   addTextRow(doc, 'Payment status', String(item.paymentStatus || 'PENDING').replaceAll('_', ' '));
   addTextRow(doc, 'Payment reference', item.paymentRef);
   addTextRow(doc, 'Payroll finalized', payrollRun.processedAt ? new Date(payrollRun.processedAt).toLocaleDateString('en-GH') : 'Not finalized');
