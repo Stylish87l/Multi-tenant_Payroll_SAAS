@@ -3,6 +3,7 @@ import logger from '../config/logger.js';
 import notificationSchema from '../schemas/notificationSchema.js';
 import { sendTransactionalEmail } from './emailService.js';
 import { forbidden, zodToAppError } from '../utils/appError.js';
+import { enqueueBackgroundJob } from './backgroundJobService.js';
 
 /**
  * Single notification pipeline for REST and GraphQL.
@@ -87,12 +88,16 @@ export const createNotification = async ({ actor, input }) => {
     throw forbidden('Recipient is not in your organization.');
   }
 
-  const notification = await prisma.notification.create({
-    data: { ...validated, companyId: recipient.companyId },
+  return prisma.$transaction(async (tx) => {
+    const notification = await tx.notification.create({
+      data: { ...validated, companyId: recipient.companyId },
+    });
+    await enqueueBackgroundJob(tx, {
+      type: 'NOTIFICATION_DISPATCH',
+      payload: { notificationId: notification.id },
+      companyId: recipient.companyId,
+      idempotencyKey: `notification:${notification.id}`,
+    });
+    return notification;
   });
-
-  dispatchNotification(notification).catch((err) =>
-    logger.error('Async Dispatch Error', { id: notification.id, err: err.message })
-  );
-  return notification;
 };
