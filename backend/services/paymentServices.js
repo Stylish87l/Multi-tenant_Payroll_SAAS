@@ -18,7 +18,6 @@ const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
  * credentials silently "paid" everyone - the payslips said SENT and no money moved.
  */
 
-/** Thrown for "this item may not be paid right now". Must NEVER flip the item to FAILED. */
 /** 4xx responses are deterministic: retrying cannot help and risks duplicate transfers. */
 const assertOk = (res, json, label) => {
   if (res.ok && json?.status !== false) return;
