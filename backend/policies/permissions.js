@@ -25,6 +25,10 @@ export const ROLE_PERMISSIONS = Object.freeze({
   CUSTOM: [],
 });
 
+const roleHierarchy = { SUPER_ADMIN: ['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'], ADMIN: ['HR', 'ACCOUNTANT', 'EMPLOYEE'], HR: ['EMPLOYEE'], ACCOUNTANT: ['EMPLOYEE'], EMPLOYEE: [], CUSTOM: [] };
+
+export const hasRoleAccess = (role, allowedRoles) => [role, ...(roleHierarchy[role] || [])].some((candidate) => allowedRoles.includes(candidate));
+
 export const hasPermission = (role, permission) => {
   const grants = ROLE_PERMISSIONS[role] || [];
   return grants.includes('*') || grants.includes(permission);
