@@ -21,7 +21,7 @@ import authMiddlewareGraphQL from './middleware/authMiddlewareGraphQL.js';
 import errorHandler, { notFoundHandler } from './middleware/errorHandler.js';
 import { verifyAccessToken, extractBearerToken } from './utils/authTokens.js';
 import { AppError } from './utils/appError.js';
-import { createLoaders } from './graphql/resolvers.js';
+import { createLoaders } from './graphql/loaders.js';
 
 import authRouter from './routes/auth.js';
 import payrollRoutes from './routes/payroll.js';
