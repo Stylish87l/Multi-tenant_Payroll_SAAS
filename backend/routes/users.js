@@ -8,6 +8,7 @@ import logger from '../config/logger.js';
 import { sendInviteEmail } from '../services/emailService.js';
 import { inviteSchema, acceptInviteSchema } from '../schemas/authSchema.js';
 import { writeAudit, actorFromReq } from '../services/auditService.js';
+import { linkEmployeeProfileToUser } from '../services/employeeIdentityService.js';
 import { badInput, forbidden, notFound } from '../utils/appError.js';
 
 const router = express.Router();
@@ -158,19 +159,11 @@ router.post('/accept-invite', async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(password, 12);
     await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: invite.userId }, data: { password: hashedPassword, status: 'ACTIVE' } });
-      // Only employee identities own employee profiles. Never bind an ADMIN/HR/
-      // ACCOUNTANT login to an employee record merely because the emails match.
+      // Only EMPLOYEE invitations may own an employee profile.
       if (invite.role === 'EMPLOYEE') {
-        const employee = await tx.employee.findFirst({
-          where: { email: invite.email, companyId: invite.companyId, deletedAt: null },
-          select: { id: true, userId: true },
+        await linkEmployeeProfileToUser(tx, {
+          email: invite.email, companyId: invite.companyId, userId: invite.userId,
         });
-        if (employee?.userId && employee.userId !== invite.userId) {
-          throw badInput('This employee profile is already linked to another account.');
-        }
-        if (employee && !employee.userId) {
-          await tx.employee.update({ where: { id: employee.id }, data: { userId: invite.userId } });
-        }
       }
       await tx.invite.delete({ where: { id: invite.id } });
       await writeAudit(tx, {
