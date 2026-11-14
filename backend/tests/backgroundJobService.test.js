@@ -1,5 +1,7 @@
 import { describe, test, expect, jest } from '@jest/globals';
-import { enqueueBackgroundJob } from '../services/backgroundJobService.js';
+
+jest.unstable_mockModule('../config/db.js', () => ({ default: {} }));
+const { enqueueBackgroundJob } = await import('../services/backgroundJobService.js');
 
 describe('transactional background job outbox', () => {
   test('writes a notification job through the caller transaction', async () => {
