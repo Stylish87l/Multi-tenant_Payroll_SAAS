@@ -13,9 +13,8 @@ const HUBTEL_CLIENT_SECRET = process.env.HUBTEL_CLIENT_SECRET || null;
 const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
 
 /**
- * Simulation mode fabricates a "SENT" result without moving money. It is now OPT-IN in
- * production (ALLOW_PAYMENT_SIMULATION=true). Previously a production deploy without provider
- * credentials silently "paid" everyone - the payslips said SENT and no money moved.
+ * Simulation is restricted to development/test. Live transfers require an explicit
+ * global opt-in plus provider-specific verification (see utils/paymentConfiguration.js).
  */
 
 /** 4xx responses are deterministic: retrying cannot help and risks duplicate transfers. */
