@@ -194,7 +194,22 @@ router.post('/', async (req, res) => {
     if (duplicate) return res.status(400).json({ error: 'Email already registered in this target tenant company.' });
 
     const employee = await prisma.$transaction(async (tx) => {
-      const created = await tx.employee.create({ data: { ...data, companyId: targetCompanyId } });
+      // If an employee login was activated before the employee profile was
+      // created, attach the profile here. This preserves the same relationship
+      // used by the employee-only payslip endpoint.
+      const employeeUser = await tx.user.findFirst({
+        where: {
+          email: data.email,
+          companyId: targetCompanyId,
+          role: 'EMPLOYEE',
+          status: { in: ['PENDING', 'ACTIVE'] },
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      const created = await tx.employee.create({
+        data: { ...data, companyId: targetCompanyId, ...(employeeUser ? { userId: employeeUser.id } : {}) },
+      });
       await writeAudit(tx, {
         actor: actorFromReq(req),
         companyId: targetCompanyId,
