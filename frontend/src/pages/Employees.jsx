@@ -4,7 +4,7 @@ import { useQuery, useMutation } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Search, Edit2, ShieldCheck, Mail, Landmark, Users as UsersIcon, Wallet } from 'lucide-react';
 
-import { GET_EMPLOYEES } from '../graphql/queries';
+import { GET_EMPLOYEES, GET_COMPANIES } from '../graphql/queries';
 import { CREATE_EMPLOYEE, UPDATE_EMPLOYEE } from '../graphql/mutations';
 import Card from '../components/Card';
 import Modal from '../components/Modal';
@@ -54,7 +54,7 @@ const Employees = () => {
     fetchPolicy: 'cache-and-network',
     nextFetchPolicy: 'cache-first',
     notifyOnNetworkStatusChange: true,
-    skip: !companyId && user?.role !== 'SUPER_ADMIN',
+    skip: !companyId,
   });
 
   const [createEmployee] = useMutation(CREATE_EMPLOYEE);
@@ -140,7 +140,7 @@ const Employees = () => {
         await updateEmployee({ variables: { id: editingId, input } });
       } else {
         await createEmployee({
-          variables: { input },
+          variables: { input: { ...input, ...(isSuperAdmin ? { companyId } : {}) } },
           update: (cache, { data: result }) => {
             try {
               const existing = cache.readQuery({ query: GET_EMPLOYEES, variables: queryVars });
@@ -169,7 +169,7 @@ const Employees = () => {
     } finally {
       setSaving(false);
     }
-  }, [createEmployee, updateEmployee, editingId, formData, closeModal, queryVars, refetch]);
+  }, [createEmployee, updateEmployee, editingId, formData, closeModal, queryVars, refetch, isSuperAdmin, companyId]);
 
   const loadNextPage = useCallback(() => {
     const nextPage = (data?.employees?.page ?? 1) + 1;
@@ -205,11 +205,13 @@ const Employees = () => {
         </div>
       </div>
 
+      {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
+
       {userError && !showModal && (
         <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>
       )}
 
-      <div className="grid grid-cols-1 gap-4">
+      {companyId && <div className="grid grid-cols-1 gap-4">
         <AnimatePresence>
           {employees.length === 0 && !loading ? (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -264,7 +266,7 @@ const Employees = () => {
         </div>
       )}
 
-      <Modal isOpen={showModal} onClose={closeModal} title={editingId ? 'Update staff profile' : 'Register new staff'} size="lg">
+      <Modal isOpen={showModal && !!companyId} onClose={closeModal} title={editingId ? 'Update staff profile' : 'Register new staff'} size="lg">
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           {userError && <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>}
 
