@@ -15,6 +15,17 @@ jest.unstable_mockModule('../services/auditService.js', () => ({
 
 const { generatePayslipPDF } = await import('../routes/payslips.js');
 
+const extractPdfText = (pdf) => {
+  const source = pdf.toString('latin1');
+  const stream = source.match(/stream\\r?\\n([\\s\\S]*?)\\r?\\nendstream/);
+  if (!stream) return '';
+  return [...stream[1].matchAll(/<([0-9a-f]+)>/gi)]
+    .map(([, hex]) => Buffer.from(hex, 'hex').toString('latin1'))
+    .join('')
+    .replace(/\\s+/g, '')
+    .toLowerCase();
+};
+
 const render = async (item) => {
   const doc = new PDFDocument({ margin: 48, size: 'A4', compress: false });
   const chunks = [];
@@ -55,13 +66,13 @@ describe('employee payslip PDF', () => {
     const pdf = await render(fixture);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.length).toBeGreaterThan(1000);
-    const content = pdf.toString('latin1');
+    const content = extractPdfText(pdf);
     for (const label of [
       'EXAMPLE GROUP', 'EMPLOYEE PAYSLIP', 'Basic salary', 'Gross earnings',
       'Employee SSNIT contribution', 'PAYE income tax', 'Employer SSNIT contribution',
       'NET PAY', 'Payment reference', 'PAY-123',
     ]) {
-      expect(content).toContain(label);
+      expect(content).toContain(label.replace(/\\s/g, '').toLowerCase());
     }
   });
 
@@ -75,6 +86,6 @@ describe('employee payslip PDF', () => {
     };
     const pdf = await render(legacy);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(pdf.toString('latin1')).toContain('Historical earnings split is unavailable for this legacy payroll record.');
+    expect(extractPdfText(pdf)).toContain('Historical earnings split is unavailable for this legacy payroll record.'.replace(/\\s/g, '').toLowerCase());
   });
 });
