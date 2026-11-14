@@ -41,7 +41,6 @@ const Employees = () => {
   const companyId = isSuperAdmin ? selectedCompanyId : user?.companyId;
   const { data: companiesData } = useQuery(GET_COMPANIES, { skip: !isSuperAdmin });
   const companies = companiesData?.companies ?? [];
-  const companyId = user?.companyId;
 
   const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
   useEffect(() => {
