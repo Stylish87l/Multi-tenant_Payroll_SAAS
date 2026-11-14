@@ -45,6 +45,20 @@ async function provisionUser(req, res, next, action) {
           data: { email, name, role, companyId: targetCompanyId, status: 'PENDING', password: placeholderHash },
         });
       }
+      // Keep the one-to-one employee identity link consistent regardless of whether
+      // the employee profile or login account was created first.
+      if (role === 'EMPLOYEE') {
+        const employee = await tx.employee.findFirst({
+          where: { email, companyId: targetCompanyId, deletedAt: null },
+          select: { id: true, userId: true },
+        });
+        if (employee?.userId && employee.userId !== user.id) {
+          throw badInput('This employee profile is already linked to another account.');
+        }
+        if (employee && !employee.userId) {
+          await tx.employee.update({ where: { id: employee.id }, data: { userId: user.id } });
+        }
+      }
       await tx.invite.create({ data: { token: hashActivationToken(token), email, role, expiresAt, companyId: targetCompanyId, userId: user.id } });
       await writeAudit(tx, {
         actor: actorFromReq(req), companyId: targetCompanyId, action,
@@ -144,10 +158,20 @@ router.post('/accept-invite', async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(password, 12);
     await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: invite.userId }, data: { password: hashedPassword, status: 'ACTIVE' } });
-      await tx.employee.updateMany({
-        where: { email: invite.email, companyId: invite.companyId, userId: null },
-        data: { userId: invite.userId },
-      });
+      // Only employee identities own employee profiles. Never bind an ADMIN/HR/
+      // ACCOUNTANT login to an employee record merely because the emails match.
+      if (invite.role === 'EMPLOYEE') {
+        const employee = await tx.employee.findFirst({
+          where: { email: invite.email, companyId: invite.companyId, deletedAt: null },
+          select: { id: true, userId: true },
+        });
+        if (employee?.userId && employee.userId !== invite.userId) {
+          throw badInput('This employee profile is already linked to another account.');
+        }
+        if (employee && !employee.userId) {
+          await tx.employee.update({ where: { id: employee.id }, data: { userId: invite.userId } });
+        }
+      }
       await tx.invite.delete({ where: { id: invite.id } });
       await writeAudit(tx, {
         actor: { userId: invite.userId, companyId: invite.companyId, ip: req.ip, userAgent: req.get('User-Agent') },
