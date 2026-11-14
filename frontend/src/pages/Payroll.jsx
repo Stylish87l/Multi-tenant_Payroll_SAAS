@@ -28,6 +28,11 @@ const errMsg = (err, fallback) => err?.graphQLErrors?.[0]?.message || fallback;
 
 const Payroll = () => {
   const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const companyId = isSuperAdmin ? selectedCompanyId : user?.companyId;
+  const { data: companiesData } = useQuery(GET_COMPANIES, { skip: !isSuperAdmin });
+  const companies = companiesData?.companies ?? [];
   const [actionError, setActionError] = useState(null);
   const [busyRunId, setBusyRunId] = useState(null);
 
