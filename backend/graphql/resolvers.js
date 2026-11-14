@@ -672,13 +672,13 @@ const resolvers = {
 
 export const createLoaders = ({ companyId = null, userRole = null } = {}) => ({
   company: new DataLoader(async (ids) => {
-    const companies = await prisma.company.findMany({ where: { id: { in: [...new Set(ids)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { id: companyId } : {}) } });
+    const companies = await prisma.company.findMany({ where: { AND: [{ id: { in: [...new Set(ids)] } }, ...(userRole === 'SUPER_ADMIN' ? [] : [{ id: companyId || '__unauthenticated__' }])] } });
     const map = new Map(companies.map((c) => [c.id, c]));
     return ids.map((id) => map.get(id) || null);
   }),
 
   payrollRunLoader: new DataLoader(async (runIds) => {
-    const runs = await prisma.payrollRun.findMany({ where: { id: { in: [...new Set(runIds)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { companyId } : {}) } });
+    const runs = await prisma.payrollRun.findMany({ where: { id: { in: [...new Set(runIds)] }, ...(userRole === 'SUPER_ADMIN' ? {} : { companyId: companyId || '__unauthenticated__' }) } });
     const map = new Map(runs.map((r) => [r.id, r]));
     return runIds.map((id) => map.get(id) || null);
   }),
@@ -686,7 +686,7 @@ export const createLoaders = ({ companyId = null, userRole = null } = {}) => ({
   payrollRunTotalLoader: new DataLoader(async (runIds) => {
     const rows = await prisma.payrollItem.groupBy({
       by: ['payrollRunId'],
-      where: { payrollRunId: { in: [...new Set(runIds)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { payrollRun: { companyId } } : {}) },
+      where: { payrollRunId: { in: [...new Set(runIds)] }, ...(userRole === 'SUPER_ADMIN' ? {} : { payrollRun: { companyId: companyId || '__unauthenticated__' } }) },
       _sum: { netPay: true },
     });
     const map = new Map(rows.map((r) => [r.payrollRunId, r._sum.netPay]));
