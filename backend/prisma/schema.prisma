@@ -74,6 +74,7 @@ model Employee {
   isDisabled          Boolean       @default(false)
   agedDependentsCount Int           @default(0)
   bankName            String?
+  bankCode            String?
   bankAccount         String?
   ssnitNumber         String?
   ghanaCardPin        String?
