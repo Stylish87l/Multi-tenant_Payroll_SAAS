@@ -26,7 +26,7 @@ The PostgreSQL `background_jobs` table is the transactional outbox. Producers wr
 ### Render worker configuration
 Create a separate Background Worker service from the same repository and deployment branch:
 - Root directory: `backend`
-- Build command: `npm install && npm run build`
+- Build command: `npm ci --legacy-peer-deps && npm run build`
 - Start command: `npm run worker`
 - Environment: the same `DATABASE_URL`, `NODE_ENV=production`, and required service configuration as the API (never commit secrets).
 
