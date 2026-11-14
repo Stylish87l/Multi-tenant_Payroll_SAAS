@@ -114,7 +114,7 @@ const Payroll = () => {
         </div>
 
         {canRun && (
-          <button onClick={handleRun} disabled={isRunning} aria-disabled={isRunning}
+          <button onClick={handleRun} disabled={isRunning || !companyId} aria-disabled={isRunning || !companyId}
             className="group relative flex items-center justify-center space-x-3 overflow-hidden rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 px-8 py-4 font-bold text-white shadow-xl shadow-purple-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50">
             {isRunning ? <Clock className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
             <span>{isRunning ? 'Calculating...' : 'Run monthly payroll'}</span>
