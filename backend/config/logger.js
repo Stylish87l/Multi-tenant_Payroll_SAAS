@@ -48,6 +48,9 @@ const logger = createLogger({
 
 process.on('unhandledRejection', (reason) => {
   logger.error('Unhandled Rejection at Promise', { reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : reason });
+  // The global listener suppresses Node's default fatal behaviour; fail fast rather than
+  // continuing with an unhandled async failure and potentially inconsistent process state.
+  setTimeout(() => process.exit(1), 1000);
 });
 
 process.on('uncaughtException', (err) => {
