@@ -35,6 +35,7 @@ const ITEM_SELECT = {
   },
 };
 
+const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE'];
 const safeName = (name) => String(name || 'employee').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 50) || 'employee';
 const money = (value) => Number(value ?? 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const templateFor = (company) => company.payslipTemplate && typeof company.payslipTemplate === 'object' ? company.payslipTemplate : {};
@@ -182,8 +183,13 @@ router.get('/mine', rbac(['EMPLOYEE']), async (req, res) => {
 });
 
 // Individual PDF: employees can download only their own finalized payslip.
-router.get('/item/:itemId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
+router.get('/item/:itemId/pdf', rbac(INDIVIDUAL_PAYSLIP_ROLES), async (req, res) => {
   const { itemId } = req.params;
+  // RBAC expands hierarchical roles (so HR inherits EMPLOYEE). Payslip access is
+  // intentionally limited to these exact roles; HR must not inherit employee self-service.
+  if (!INDIVIDUAL_PAYSLIP_ROLES.includes(req.userRole)) {
+    return res.status(403).json({ error: 'Access denied: payslip access is not available for this role.' });
+  }
   try {
     const item = await findPayslip(req, itemId);
     if (!item) return res.status(404).json({ error: 'Payslip not found or access denied' });
