@@ -2,9 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Download, Receipt, AlertCircle, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
 import Card from '../components/Card';
 import Loader from '../components/Loader';
+import { getMyPayslips, downloadMyPayslipPdf } from '../services/payslipService';
 
-const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_API_URL || '';
-const REST_BASE = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
 const money = (value) => Number(value ?? 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const MyPayslips = () => {
@@ -17,14 +16,7 @@ const MyPayslips = () => {
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${REST_BASE}/api/payslips/mine`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-        cache: 'no-store',
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body?.error || 'Unable to load your payslips.');
-      setPayslips(body.payslips || []);
+      setPayslips(await getMyPayslips());
     } catch (err) {
       setError(err.message || 'Unable to load your payslips.');
     } finally {
@@ -38,16 +30,7 @@ const MyPayslips = () => {
     setDownloading(item.id);
     setError('');
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${REST_BASE}/api/payslips/item/${encodeURIComponent(item.id)}/pdf`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/pdf' },
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body?.error || 'Payslip download failed.');
-      }
-      const blob = await response.blob();
+      const blob = await downloadMyPayslipPdf(item.id);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;

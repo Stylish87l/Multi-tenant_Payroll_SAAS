@@ -10,6 +10,7 @@ import { processPayout as processPayoutService } from '../services/paymentServic
 import { createDraftPayrollRun } from '../services/payrollService.js';
 import { createNotification } from '../services/notificationService.js';
 import { writeAudit, writeAuditSafe, actorFromCtx } from '../services/auditService.js';
+import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
 import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employeeSchema.js';
 import { registerSchema } from '../schemas/authSchema.js';
 import { isLocked, recordFailure, clearFailures } from '../utils/loginThrottle.js';
@@ -385,7 +386,12 @@ const resolvers = {
 
       try {
         const employee = await prisma.$transaction(async (tx) => {
-          const created = await tx.employee.create({ data: { ...data, companyId: targetCompanyId } });
+          // GraphQL is the employee creation path used by the web UI. Link an
+          // existing employee login here just as the REST endpoint does.
+          const employeeUserId = await findEmployeeLoginUserId(tx, { email: data.email, companyId: targetCompanyId });
+          const created = await tx.employee.create({
+            data: { ...data, companyId: targetCompanyId, ...(employeeUserId ? { userId: employeeUserId } : {}) },
+          });
           await writeAudit(tx, {
             actor: actorFromCtx(ctx), companyId: targetCompanyId, action: 'EMPLOYEE_CREATED',
             resourceType: 'Employee', resourceId: created.id,

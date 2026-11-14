@@ -8,6 +8,7 @@ import logger from '../config/logger.js';
 import { sendInviteEmail } from '../services/emailService.js';
 import { inviteSchema, acceptInviteSchema } from '../schemas/authSchema.js';
 import { writeAudit, actorFromReq } from '../services/auditService.js';
+import { linkEmployeeProfileToUser } from '../services/employeeIdentityService.js';
 import { badInput, forbidden, notFound } from '../utils/appError.js';
 
 const router = express.Router();
@@ -44,6 +45,20 @@ async function provisionUser(req, res, next, action) {
         user = await tx.user.create({
           data: { email, name, role, companyId: targetCompanyId, status: 'PENDING', password: placeholderHash },
         });
+      }
+      // Keep the one-to-one employee identity link consistent regardless of whether
+      // the employee profile or login account was created first.
+      if (role === 'EMPLOYEE') {
+        const employee = await tx.employee.findFirst({
+          where: { email, companyId: targetCompanyId, deletedAt: null },
+          select: { id: true, userId: true },
+        });
+        if (employee?.userId && employee.userId !== user.id) {
+          throw badInput('This employee profile is already linked to another account.');
+        }
+        if (employee && !employee.userId) {
+          await tx.employee.update({ where: { id: employee.id }, data: { userId: user.id } });
+        }
       }
       await tx.invite.create({ data: { token: hashActivationToken(token), email, role, expiresAt, companyId: targetCompanyId, userId: user.id } });
       await writeAudit(tx, {
@@ -144,10 +159,12 @@ router.post('/accept-invite', async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(password, 12);
     await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: invite.userId }, data: { password: hashedPassword, status: 'ACTIVE' } });
-      await tx.employee.updateMany({
-        where: { email: invite.email, companyId: invite.companyId, userId: null },
-        data: { userId: invite.userId },
-      });
+      // Only EMPLOYEE invitations may own an employee profile.
+      if (invite.role === 'EMPLOYEE') {
+        await linkEmployeeProfileToUser(tx, {
+          email: invite.email, companyId: invite.companyId, userId: invite.userId,
+        });
+      }
       await tx.invite.delete({ where: { id: invite.id } });
       await writeAudit(tx, {
         actor: { userId: invite.userId, companyId: invite.companyId, ip: req.ip, userAgent: req.get('User-Agent') },

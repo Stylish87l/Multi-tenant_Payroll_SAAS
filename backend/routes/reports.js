@@ -11,9 +11,15 @@ const router = express.Router();
 router.use(authMiddleware);
 
 const tenantRun = (req) => (req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {});
+const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE'];
 
 /** 1. Individual payslip data - scoped by tenant; employees see only their own FINALIZED payslips. */
-router.get('/payslip/:itemId', rbac(['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
+router.get('/payslip/:itemId', rbac(INDIVIDUAL_PAYSLIP_ROLES), async (req, res) => {
+  // RBAC is hierarchical: HR inherits EMPLOYEE. Financial payslip access must
+  // use exact roles so HR cannot inherit the employee self-service route.
+  if (!INDIVIDUAL_PAYSLIP_ROLES.includes(req.userRole)) {
+    return res.status(403).json({ error: 'Access denied: payslip access is not available for this role.' });
+  }
   const { itemId } = req.params;
   try {
     const where = { id: itemId, payrollRun: tenantRun(req) };

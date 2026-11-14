@@ -8,6 +8,7 @@ import logger from '../config/logger.js';
 import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employeeSchema.js';
 import { csvLine } from '../utils/csv.js';
 import { writeAudit, actorFromReq } from '../services/auditService.js';
+import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -194,7 +195,10 @@ router.post('/', async (req, res) => {
     if (duplicate) return res.status(400).json({ error: 'Email already registered in this target tenant company.' });
 
     const employee = await prisma.$transaction(async (tx) => {
-      const created = await tx.employee.create({ data: { ...data, companyId: targetCompanyId } });
+      const employeeUserId = await findEmployeeLoginUserId(tx, { email: data.email, companyId: targetCompanyId });
+      const created = await tx.employee.create({
+        data: { ...data, companyId: targetCompanyId, ...(employeeUserId ? { userId: employeeUserId } : {}) },
+      });
       await writeAudit(tx, {
         actor: actorFromReq(req),
         companyId: targetCompanyId,
