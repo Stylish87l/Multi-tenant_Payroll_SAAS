@@ -7,6 +7,13 @@ datasource db {
   
 }
 
+enum BackgroundJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 model Company {
   id              String       @id @default(uuid())
   name            String
@@ -29,6 +36,7 @@ model Company {
   users           User[]
   notifications   Notification[]
   auditLogs        AuditLog[]
+  backgroundJobs   BackgroundJob[]
 
   @@map("companies")
 }
@@ -234,6 +242,27 @@ model Invite {
 
   @@index([token])
   @@map("invites")
+}
+
+model BackgroundJob {
+  id             String             @id @default(uuid())
+  type           String
+  payload        Json
+  companyId      String?
+  idempotencyKey String             @unique
+  status         BackgroundJobStatus @default(PENDING)
+  attempts       Int                @default(0)
+  availableAt    DateTime           @default(now())
+  lockedAt       DateTime?
+  lockToken      String?
+  lastError      String?
+  completedAt    DateTime?
+  createdAt      DateTime           @default(now())
+  company        Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@index([companyId, createdAt])
+  @@map("background_jobs")
 }
 
 model TaxConfig {
