@@ -105,6 +105,7 @@ const employeeSchema = z
 
     // Banking (optional - may be added post-onboarding)
     bankName: z.string().trim().min(2, 'Bank name must be at least 2 characters').optional(),
+    bankCode: z.string().trim().min(2, 'Bank code must be at least 2 characters').max(20).optional(),
     bankAccount: z
       .string()
       .regex(/^\d{5,20}$/, 'Account number must be 5-20 digits')
