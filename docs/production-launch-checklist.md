@@ -24,14 +24,17 @@ Do not enable these flags for a production account until sandbox tests and a sma
 - Approve a set of independently calculated payroll test cases before processing real payroll.
 - Do not run a real payroll using unreviewed seeded tax values.
 
-### 2. Payment provider onboarding
+### 2. Paystack Ghana payout onboarding
 
-- Complete provider business verification/KYC and confirm the account is approved for payroll transfers.
-- Obtain production credentials through the provider dashboard and store them only in Render's secret environment settings.
-- Verify the supported bank/payment-method codes. Populate each employee's separate `bankCode`; do not copy a human-readable bank name into that field.
-- Confirm account-name validation, transfer limits, fees, settlement times, funding requirements, and reversal procedures.
-- Verify signed webhook delivery, retry behavior, and final-state reconciliation in the provider dashboard.
-- Run sandbox payouts first. For the first live run, use a small approved test payroll and reconcile every reference before scaling up.
+Paylio is configured to use Paystack for live employee salary disbursement. The initial payout rail is Ghana bank accounts (GHS/GHIPSS); mobile-money payroll is not part of this first implementation. Follow [the detailed Paystack Ghana payout setup](paystack-ghana-payout-setup.md).
+
+- Complete Paystack registered-business compliance/KYC and obtain explicit approval for the Transfers product for your Ghana business.
+- Store the Paystack TEST and LIVE secret keys only in the matching Render environment; never expose them to Vercel or browser code.
+- Configure the public webhook at `/api/webhooks/paystack` and verify its signature and final transfer events.
+- Fetch bank identifiers from Paystack's Ghana bank list, select GHIPSS bank channels, and exclude Bank of Ghana as instructed by Paystack. Verify each employee's beneficiary name, account number, and bank code.
+- Confirm Paystack's transfer OTP / URL approval settings. The current app does not implement an interactive OTP approval flow, so resolve this with Paystack before live automation.
+- Confirm balance funding, transfer fees, limits, settlement timing, and reversal handling.
+- Run the sandbox acceptance tests and reconcile every transfer reference before requesting approval for live payouts.
 
 ### 3. Email and domain
 
