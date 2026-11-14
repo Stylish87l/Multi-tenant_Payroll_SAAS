@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { hasPermission, canReadEmployeeField, assertEmployeeInputPermissions } from '../policies/permissions.js';
+import { hasPermission, canReadEmployeeField, assertEmployeeInputPermissions, redactEmployeeForRole } from '../policies/permissions.js';
 
 describe('central role permission policy', () => {
   test('does not grant HR compensation or bank account visibility', () => {
@@ -23,4 +23,20 @@ describe('central role permission policy', () => {
     expect(assertEmployeeInputPermissions('HR', { bankAccount: '123' })).toBe(false);
     expect(assertEmployeeInputPermissions('HR', { position: 'Clerk' })).toBe(true);
   });
+});
+
+test('redacts restricted employee fields in REST payloads', () => {
+  const employee = {
+    name: 'Example Employee',
+    basicSalary: '5000',
+    bankAccount: '0000000000',
+    ssnitNumber: 'C000000000000',
+    position: 'Officer',
+  };
+  const safe = redactEmployeeForRole(employee, 'HR');
+  expect(safe.name).toBe('Example Employee');
+  expect(safe.position).toBe('Officer');
+  expect(safe.basicSalary).toBeNull();
+  expect(safe.bankAccount).toBeNull();
+  expect(safe.ssnitNumber).toBe(employee.ssnitNumber);
 });
