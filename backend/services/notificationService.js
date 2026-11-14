@@ -62,6 +62,7 @@ export async function dispatchNotification(notif) {
   } catch (err) {
     logger.error(`Channel Delivery Error [${notif.channel}]`, { id: notif.id, err: err.message, stack: err.stack });
     await setStatus(notif.id, 'FAILED').catch(() => {});
+    throw err;
   }
   return null;
 }
