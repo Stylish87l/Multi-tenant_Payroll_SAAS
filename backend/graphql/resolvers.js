@@ -383,13 +383,15 @@ const resolvers = {
       // Ghana Card PINs, ages of 500 were all accepted. Both paths now share employeeSchema.
       const createInput = { ...input };
       if (ctx.userRole === 'HR') {
-        // HR can create a profile and enter its initial salary (required by payroll onboarding),
-        // but cannot submit bank coordinates during this workflow.
-        delete createInput.bankName;
-        delete createInput.bankCode;
-        delete createInput.bankAccount;
+        // Initial compensation is required by payroll onboarding; bank coordinates remain restricted.
+        for (const field of ['basicSalary', 'housingAllowance', 'transportAllowance', 'otherAllowance', 'allowances']) {
+          delete createInput[field];
+        }
+        if (!assertEmployeeInputPermissions(ctx.userRole, createInput)) {
+          throw forbidden('HR cannot create employee bank details.');
+        }
       }
-      const data = parseWith(employeeSchema, toEmployeePayload(createInput));
+      const data = parseWith(employeeSchema, toEmployeePayload(input));
       const ruleError = validateEmployeeBusinessRules(data);
       if (ruleError) throw badInput(ruleError);
 
