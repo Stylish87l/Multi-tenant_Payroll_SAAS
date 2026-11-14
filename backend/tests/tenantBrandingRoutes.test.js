@@ -59,6 +59,19 @@ describe('tenant branding API authorization and persistence', () => {
     expect(prisma.company.findUnique).not.toHaveBeenCalled();
   });
 
+
+  test('blocks an administrator from modifying another tenant branding', async () => {
+    const response = await request(app)
+      .put('/companies/tenant-b/branding')
+      .set('x-test-role', 'ADMIN')
+      .set('x-test-company', 'tenant-a')
+      .send({ footerNote: 'Changed by another tenant' });
+
+    expect(response.status).toBe(403);
+    expect(prisma.company.findUnique).not.toHaveBeenCalled();
+    expect(prisma.company.update).not.toHaveBeenCalled();
+  });
+
   test('does not grant branding access to employees', async () => {
     const response = await request(app)
       .get('/companies/tenant-a/branding')
