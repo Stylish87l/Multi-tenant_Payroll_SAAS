@@ -4,7 +4,7 @@ import { useQuery, useMutation } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Search, Edit2, ShieldCheck, Mail, Landmark, Users as UsersIcon, Wallet } from 'lucide-react';
 
-import { GET_EMPLOYEES } from '../graphql/queries';
+import { GET_EMPLOYEES, GET_COMPANIES } from '../graphql/queries';
 import { CREATE_EMPLOYEE, UPDATE_EMPLOYEE } from '../graphql/mutations';
 import Card from '../components/Card';
 import Modal from '../components/Modal';
@@ -36,7 +36,11 @@ const Employees = () => {
   const [fieldErrors, setFieldErrors] = useState({});
 
   const { user } = useAuth();
-  const companyId = user?.companyId;
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const companyId = isSuperAdmin ? selectedCompanyId : user?.companyId;
+  const { data: companiesData } = useQuery(GET_COMPANIES, { skip: !isSuperAdmin });
+  const companies = companiesData?.companies ?? [];
 
   const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
   useEffect(() => {
@@ -54,7 +58,7 @@ const Employees = () => {
     fetchPolicy: 'cache-and-network',
     nextFetchPolicy: 'cache-first',
     notifyOnNetworkStatusChange: true,
-    skip: !companyId && user?.role !== 'SUPER_ADMIN',
+    skip: !companyId,
   });
 
   const [createEmployee] = useMutation(CREATE_EMPLOYEE);
@@ -140,7 +144,7 @@ const Employees = () => {
         await updateEmployee({ variables: { id: editingId, input } });
       } else {
         await createEmployee({
-          variables: { input },
+          variables: { input: { ...input, ...(isSuperAdmin ? { companyId } : {}) } },
           update: (cache, { data: result }) => {
             try {
               const existing = cache.readQuery({ query: GET_EMPLOYEES, variables: queryVars });
@@ -169,7 +173,7 @@ const Employees = () => {
     } finally {
       setSaving(false);
     }
-  }, [createEmployee, updateEmployee, editingId, formData, closeModal, queryVars, refetch]);
+  }, [createEmployee, updateEmployee, editingId, formData, closeModal, queryVars, refetch, isSuperAdmin, companyId]);
 
   const loadNextPage = useCallback(() => {
     const nextPage = (data?.employees?.page ?? 1) + 1;
@@ -189,6 +193,7 @@ const Employees = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {isSuperAdmin && <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="max-w-56 rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Select tenant</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors" size={18} aria-hidden="true" />
             <input
@@ -197,7 +202,7 @@ const Employees = () => {
               aria-label="Search staff"
             />
           </div>
-          <button onClick={openCreate} aria-label="Add staff"
+          <button onClick={openCreate} aria-label="Add staff" disabled={isSuperAdmin && !companyId}
             className="flex items-center gap-2 bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-xl font-bold transition-all shadow-lg shadow-primary/20 active:scale-95">
             <Plus size={18} />
             <span className="hidden md:block">Add staff</span>
@@ -205,11 +210,15 @@ const Employees = () => {
         </div>
       </div>
 
+      {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
+
+      {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
+
       {userError && !showModal && (
         <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>
       )}
 
-      <div className="grid grid-cols-1 gap-4">
+      {companyId && <div className="grid grid-cols-1 gap-4">
         <AnimatePresence>
           {employees.length === 0 && !loading ? (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -254,9 +263,9 @@ const Employees = () => {
             ))
           )}
         </AnimatePresence>
-      </div>
+      </div>}
 
-      {hasNextPage && (
+      {companyId && hasNextPage && (
         <div className="flex justify-center mt-4">
           <button onClick={loadNextPage} disabled={loading} className="px-4 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50">
             {loading ? 'Loading...' : 'Load more'}
@@ -264,7 +273,7 @@ const Employees = () => {
         </div>
       )}
 
-      <Modal isOpen={showModal} onClose={closeModal} title={editingId ? 'Update staff profile' : 'Register new staff'} size="lg">
+      <Modal isOpen={showModal && !!companyId} onClose={closeModal} title={editingId ? 'Update staff profile' : 'Register new staff'} size="lg">
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           {userError && <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>}
 

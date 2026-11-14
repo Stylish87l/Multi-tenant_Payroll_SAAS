@@ -4,7 +4,7 @@ import { useQuery, useMutation, useSubscription } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, FileCheck, History, AlertCircle, Clock, CheckCircle2, Trash2, Lock } from 'lucide-react';
 
-import { GET_PAYROLL_RUNS } from '../graphql/queries';
+import { GET_PAYROLL_RUNS, GET_COMPANIES } from '../graphql/queries';
 import { RUN_PAYROLL, FINALIZE_PAYROLL, DISCARD_PAYROLL_DRAFT } from '../graphql/mutations';
 import { PAYROLL_UPDATED_SUB } from '../graphql/subscriptions';
 import Card from '../components/Card';
@@ -28,14 +28,19 @@ const errMsg = (err, fallback) => err?.graphQLErrors?.[0]?.message || fallback;
 
 const Payroll = () => {
   const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const companyId = isSuperAdmin ? selectedCompanyId : user?.companyId;
+  const { data: companiesData } = useQuery(GET_COMPANIES, { skip: !isSuperAdmin });
+  const companies = companiesData?.companies ?? [];
   const [actionError, setActionError] = useState(null);
   const [busyRunId, setBusyRunId] = useState(null);
 
-  const variables = { companyId: user?.companyId, page: 1, limit: 50 };
+  const variables = { companyId, page: 1, limit: 50 };
   const { loading, error, data, refetch } = useQuery(GET_PAYROLL_RUNS, {
     variables,
     fetchPolicy: 'cache-and-network',
-    skip: !user?.companyId,
+    skip: !companyId,
     notifyOnNetworkStatusChange: true,
   });
 
@@ -47,8 +52,8 @@ const Payroll = () => {
 
   // The subscription payload is partial; refetching is simpler and always consistent with the server.
   useSubscription(PAYROLL_UPDATED_SUB, {
-    variables: { companyId: user?.companyId },
-    skip: !user?.companyId,
+    variables: { companyId },
+    skip: !companyId,
     onData: () => { refetch().catch(() => {}); },
   });
 
@@ -56,12 +61,12 @@ const Payroll = () => {
     if (!RUN_ROLES.includes(user?.role)) return;
     setActionError(null);
     try {
-      await runPayroll({ variables: { month: new Date().toISOString().slice(0, 7), companyId: user?.companyId } });
+      await runPayroll({ variables: { month: new Date().toISOString().slice(0, 7), companyId } });
       await refetch();
     } catch (err) {
       setActionError(errMsg(err, 'Payroll could not be run. Please try again.'));
     }
-  }, [runPayroll, user, refetch]);
+  }, [runPayroll, user, companyId, refetch]);
 
   const handleFinalize = useCallback(async (run) => {
     if (!window.confirm(`Finalize payroll for ${run.month.slice(0, 7)}? Finalized runs cannot be edited or discarded.`)) return;
@@ -109,7 +114,7 @@ const Payroll = () => {
         </div>
 
         {canRun && (
-          <button onClick={handleRun} disabled={isRunning} aria-disabled={isRunning}
+          <button onClick={handleRun} disabled={isRunning || !companyId} aria-disabled={isRunning || !companyId}
             className="group relative flex items-center justify-center space-x-3 overflow-hidden rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 px-8 py-4 font-bold text-white shadow-xl shadow-purple-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50">
             {isRunning ? <Clock className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
             <span>{isRunning ? 'Calculating...' : 'Run monthly payroll'}</span>
@@ -117,17 +122,29 @@ const Payroll = () => {
         )}
       </div>
 
+
+      {isSuperAdmin && (
+        <Card className="border-white/5 bg-slate-950/40 p-5">
+          <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-400">Select tenant</label>
+          <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="w-full md:max-w-md rounded-xl border border-white/10 bg-slate-900 p-3 text-white">
+            <option value="">Choose a company</option>
+            {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+          </select>
+        </Card>
+      )}
+      {!companyId && <Card className="p-8 text-center text-slate-400">Select a tenant to view payroll and run a payroll cycle.</Card>}
+
       {actionError && (
         <div role="alert" className="rounded-xl bg-rose-500/10 text-rose-400 p-4 border border-rose-500/20 text-sm flex items-center gap-2">
           <AlertCircle size={16} /> {actionError}
         </div>
       )}
 
-      {runs.length === 0 && !loading && (
+      {companyId && runs.length === 0 && !loading && (
         <Card className="p-12 text-center"><p className="text-slate-400">No payroll runs yet. Start your first run above.</p></Card>
       )}
 
-      <div className="grid grid-cols-1 gap-6">
+      {companyId && <div className="grid grid-cols-1 gap-6">
         <div className="flex items-center space-x-2 text-slate-400">
           <History size={18} />
           <h2 className="text-xs font-bold tracking-widest">Recent runs</h2>
@@ -178,7 +195,7 @@ const Payroll = () => {
             </motion.div>
           ))}
         </AnimatePresence>
-      </div>
+      </div>}
     </div>
   );
 };

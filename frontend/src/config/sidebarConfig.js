@@ -1,5 +1,5 @@
 // src/config/sidebarConfig.js
-import { Home, Users, DollarSign, FileText, Settings, Paintbrush, Receipt } from 'lucide-react';
+import { Home, Users, DollarSign, FileText, Settings, Paintbrush, Receipt, UserCog } from 'lucide-react';
 
 /**
  * Role-based sidebar menu configuration
@@ -17,6 +17,12 @@ export const sidebarMenuItems = [
     path: '/employees',
     icon: Users,
     roles: ['SUPER_ADMIN', 'ADMIN', 'HR'],
+  },
+  {
+    name: 'User Management',
+    path: '/users',
+    icon: UserCog,
+    roles: ['SUPER_ADMIN', 'ADMIN'],
   },
   {
     name: 'Payroll',

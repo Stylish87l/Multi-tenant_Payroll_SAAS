@@ -32,25 +32,81 @@ const signAccessFor = (user) =>
 
 const isUserUsable = (user) => user && user.status === 'ACTIVE' && !user.deletedAt;
 
-const assertTrustedAuthOrigin = (req, res) => {
-  if (process.env.NODE_ENV !== 'production') return true;
-  const origin = req.get('Origin');
-  const allowed = new Set([
-    process.env.FRONTEND_URL,
-    ...(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()),
-  ].filter(Boolean));
-  if (origin && allowed.has(origin)) return true;
-  logger.warn('Blocked cookie-auth request from untrusted origin', { origin: origin || null, path: req.path, ip: req.ip });
-  res.status(403).json({ error: 'Untrusted request origin' });
-  return false;
+// Signed double-submit CSRF token. The random value is stored in an httpOnly cookie;
+// the same value is returned to the trusted SPA and must be echoed in x-csrf-token.
+// HMAC signing prevents an attacker from planting a forged cookie on a shared domain.
+const CSRF_COOKIE_NAME = 'csrf';
+const CSRF_TTL_MS = 2 * 60 * 60 * 1000;
+const csrfSecret = () => process.env.CSRF_SECRET || process.env.JWT_SECRET;
+const signCsrfValue = (value) => crypto.createHmac('sha256', csrfSecret()).update(value).digest('hex');
+const createCsrfToken = () => {
+  const value = `${Date.now()}.${crypto.randomBytes(32).toString('hex')}`;
+  return `${value}.${signCsrfValue(value)}`;
 };
+const isValidCsrfToken = (token) => {
+  if (typeof token !== 'string') return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const [issuedAt, nonce, signature] = parts;
+  if (!/^\d{13}$/.test(issuedAt) || !/^[a-f0-9]{64}$/.test(nonce) || !/^[a-f0-9]{64}$/.test(signature)) return false;
+  const age = Date.now() - Number(issuedAt);
+  if (age < 0 || age > CSRF_TTL_MS) return false;
+  const expected = signCsrfValue(`${issuedAt}.${nonce}`);
+  const actualBuffer = Buffer.from(signature, 'hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+};
+const csrfCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  path: '/api/auth',
+  maxAge: CSRF_TTL_MS,
+});
+const csrfProtection = (req, res, next) => {
+  const cookieToken = req.cookies?.csrf;
+  const headerToken = req.get('x-csrf-token');
+  const tokenMatches = typeof cookieToken === 'string'
+    && typeof headerToken === 'string'
+    && cookieToken.length === headerToken.length
+    && crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken));
+
+  if (!tokenMatches || !isValidCsrfToken(cookieToken)) {
+    logger.warn('Blocked cookie-auth request with invalid CSRF token', { path: req.path, ip: req.ip });
+    return res.status(403).json({ error: 'Invalid CSRF token' });
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    const origin = req.get('Origin');
+    const allowed = new Set([
+      process.env.FRONTEND_URL,
+      ...(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()),
+    ].filter(Boolean));
+    if (!origin || !allowed.has(origin)) {
+      logger.warn('Blocked cookie-auth request from untrusted origin', { origin: origin || null, path: req.path, ip: req.ip });
+      return res.status(403).json({ error: 'Untrusted request origin' });
+    }
+  }
+  return next();
+};
+
+// Safe bootstrap endpoint: issue a token once, then reuse the valid cookie token
+// so parallel tabs do not invalidate each other's in-flight refresh/logout requests.
+router.get('/csrf-token', (req, res) => {
+  let token = req.cookies?.csrf;
+  if (!isValidCsrfToken(token)) {
+    token = createCsrfToken();
+    res.cookie(CSRF_COOKIE_NAME, token, csrfCookieOptions());
+  }
+  res.set('Cache-Control', 'no-store');
+  return res.json({ csrfToken: token });
+});
 
 router.get('/me', authMiddleware, (req, res) => {
   res.json({ user: req.user, companyId: req.companyId, role: req.userRole });
 });
 
-router.post('/refresh', async (req, res) => {
-  if (!assertTrustedAuthOrigin(req, res)) return;
+router.post('/refresh', csrfProtection, async (req, res) => {
   const rawRefresh = req.cookies?.[REFRESH_COOKIE_NAME];
   if (!rawRefresh) {
     logger.warn('Refresh attempt blocked: No refresh cookie present', { origin: req.headers.origin });
@@ -137,8 +193,7 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
-router.post('/logout', async (req, res) => {
-  if (!assertTrustedAuthOrigin(req, res)) return;
+router.post('/logout', csrfProtection, async (req, res) => {
   const rawRefresh = req.cookies?.[REFRESH_COOKIE_NAME];
   if (rawRefresh) {
     try {

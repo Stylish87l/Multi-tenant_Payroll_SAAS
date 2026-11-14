@@ -17,18 +17,39 @@ export const REST_BASE = HTTP_URL.replace(/\/graphql\/?$/, '');
 export const TOKEN_KEY = 'token';
 export const USER_KEY = 'user';
 
-// --- Refresh singleton: concurrent callers share one in-flight request ---
+// --- CSRF bootstrap + refresh singleton ---
 let refreshPromise = null;
+let csrfTokenPromise = null;
+
+const getCsrfToken = async () => {
+  if (!csrfTokenPromise) {
+    csrfTokenPromise = fetch(`${REST_BASE}/api/auth/csrf-token`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`Unable to obtain CSRF token (${response.status})`);
+      const payload = await response.json();
+      if (!payload.csrfToken) throw new Error('CSRF token missing from server response');
+      return payload.csrfToken;
+    }).finally(() => {
+      csrfTokenPromise = null;
+    });
+  }
+  return csrfTokenPromise;
+};
 
 export const doRefresh = async () => {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
     try {
+      const csrfToken = await getCsrfToken();
       const res = await fetch(`${REST_BASE}/api/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
       });
 
       if (res.status === 401) throw new Error('EXPIRED');
@@ -51,12 +72,15 @@ export const doRefresh = async () => {
 
 /**
  * Revokes the refresh token server-side and clears the cookie.
- * FIXED: logout previously only cleared client state, so the httpOnly cookie stayed valid and the
- * next page load silently logged the user straight back in.
  */
 export const doLogout = async () => {
   try {
-    await fetch(`${REST_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    const csrfToken = await getCsrfToken();
+    await fetch(`${REST_BASE}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': csrfToken },
+    });
   } catch (err) {
     console.warn('Logout request failed', err);
   }
