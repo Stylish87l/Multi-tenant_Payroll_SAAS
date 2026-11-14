@@ -36,6 +36,11 @@ const Employees = () => {
   const [fieldErrors, setFieldErrors] = useState({});
 
   const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const companyId = isSuperAdmin ? selectedCompanyId : user?.companyId;
+  const { data: companiesData } = useQuery(GET_COMPANIES, { skip: !isSuperAdmin });
+  const companies = companiesData?.companies ?? [];
   const companyId = user?.companyId;
 
   const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
@@ -189,6 +194,7 @@ const Employees = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {isSuperAdmin && <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="max-w-56 rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Select tenant</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors" size={18} aria-hidden="true" />
             <input
@@ -204,6 +210,8 @@ const Employees = () => {
           </button>
         </div>
       </div>
+
+      {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
 
       {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
 
