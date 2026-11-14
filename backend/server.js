@@ -21,7 +21,7 @@ import authMiddlewareGraphQL from './middleware/authMiddlewareGraphQL.js';
 import errorHandler, { notFoundHandler } from './middleware/errorHandler.js';
 import { verifyAccessToken, extractBearerToken } from './utils/authTokens.js';
 import { AppError } from './utils/appError.js';
-import { createLoaders } from './graphql/resolvers.js';
+import { createLoaders } from './graphql/loaders.js';
 
 import authRouter from './routes/auth.js';
 import payrollRoutes from './routes/payroll.js';
@@ -170,6 +170,7 @@ const serverCleanup = useServer(
           userRole: payload.role,
           isSuperAdmin: isSuper,
           authError: null,
+          loaders: createLoaders({ companyId: isSuper ? null : payload.companyId, userRole: payload.role }),
         };
       } catch (err) {
         return { ...base, authError: err.code || 'TOKEN_INVALID' };
@@ -232,13 +233,10 @@ const startMaintenance = () => {
       '/graphql',
       gqlLimiter,
       expressMiddleware(apolloServer, {
-        context: async ({ req, res }) => ({
-          ...authMiddlewareGraphQL(req),
-          prisma,
-          loaders: createLoaders(),
-          req,
-          res,
-        }),
+        context: async ({ req, res }) => {
+          const auth = authMiddlewareGraphQL(req);
+          return { ...auth, prisma, loaders: createLoaders(auth), req, res };
+        },
       })
     );
 

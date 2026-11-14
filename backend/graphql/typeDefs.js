@@ -56,7 +56,7 @@ const typeDefs = gql`
     ghanaCardPIN: String @deprecated(reason: "Unified standard migrated to camelCase 'ghanaCardPin'.")
     ghanaCardPin: String
     ssnitNumber: String
-    basicSalary: Decimal!
+    basicSalary: Decimal
 
     housingAllowance: Decimal
     transportAllowance: Decimal

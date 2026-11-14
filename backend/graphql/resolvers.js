@@ -1,5 +1,4 @@
 import { PubSub, withFilter } from 'graphql-subscriptions';
-import DataLoader from 'dataloader';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import prisma, { Prisma } from '../config/db.js';
@@ -11,6 +10,7 @@ import { createDraftPayrollRun } from '../services/payrollService.js';
 import { createNotification } from '../services/notificationService.js';
 import { writeAudit, writeAuditSafe, actorFromCtx } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
+import { canReadEmployeeField, assertEmployeeInputPermissions } from '../policies/permissions.js';
 import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employeeSchema.js';
 import { registerSchema } from '../schemas/authSchema.js';
 import { isLocked, recordFailure, clearFailures } from '../utils/loginThrottle.js';
@@ -380,6 +380,16 @@ const resolvers = {
 
       // FIXED: GraphQL had NO server-side validation (REST had Zod): negative salaries, malformed
       // Ghana Card PINs, ages of 500 were all accepted. Both paths now share employeeSchema.
+      const createInput = { ...input };
+      if (ctx.userRole === 'HR') {
+        // Initial compensation is required by payroll onboarding; bank coordinates remain restricted.
+        for (const field of ['basicSalary', 'housingAllowance', 'transportAllowance', 'otherAllowance', 'allowances']) {
+          delete createInput[field];
+        }
+        if (!assertEmployeeInputPermissions(ctx.userRole, createInput)) {
+          throw forbidden('HR cannot create employee bank details.');
+        }
+      }
       const data = parseWith(employeeSchema, toEmployeePayload(input));
       const ruleError = validateEmployeeBusinessRules(data);
       if (ruleError) throw badInput(ruleError);
@@ -415,6 +425,12 @@ const resolvers = {
       if (!existing) throw notFound('Employee not found');
 
       const data = parseWith(employeeSchema.partial(), toEmployeePayload(input));
+      const changedFields = Object.fromEntries(
+        Object.entries(data).filter(([field, value]) => String(value ?? '') !== String(existing[field] ?? ''))
+      );
+      if (!assertEmployeeInputPermissions(ctx.userRole, changedFields)) {
+        throw forbidden('You do not have permission to change one or more sensitive employee fields.');
+      }
       const ruleError = validateEmployeeBusinessRules(data, existing);
       if (ruleError) throw badInput(ruleError);
 
@@ -623,12 +639,25 @@ const resolvers = {
   },
 
   Employee: {
-    ghanaCardPIN: (parent) => parent.ghanaCardPin,
-    ghanaCardPin: (parent) => parent.ghanaCardPin,
-    allowances: (parent) =>
-      new Prisma.Decimal(parent.housingAllowance || 0)
-        .plus(parent.transportAllowance || 0)
-        .plus(parent.otherAllowance || 0),
+    ghanaCardPIN: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'ghanaCardPIN') ? parent.ghanaCardPin : null,
+    ghanaCardPin: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'ghanaCardPin') ? parent.ghanaCardPin : null,
+    ssnitNumber: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'ssnitNumber') ? parent.ssnitNumber : null,
+    basicSalary: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'basicSalary') ? parent.basicSalary : null,
+    housingAllowance: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'housingAllowance') ? parent.housingAllowance : null,
+    transportAllowance: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'transportAllowance') ? parent.transportAllowance : null,
+    otherAllowance: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'otherAllowance') ? parent.otherAllowance : null,
+    bankName: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'bankName') ? parent.bankName : null,
+    bankCode: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'bankCode') ? parent.bankCode : null,
+    bankAccount: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'bankAccount') ? parent.bankAccount : null,
+    age: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'age') ? parent.age : null,
+    isMarried: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'isMarried') ? parent.isMarried : null,
+    hasResponsibility: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'hasResponsibility') ? parent.hasResponsibility : null,
+    childrenCount: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'childrenCount') ? parent.childrenCount : null,
+    isDisabled: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'isDisabled') ? parent.isDisabled : null,
+    agedDependentsCount: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'agedDependentsCount') ? parent.agedDependentsCount : null,
+    allowances: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'allowances')
+      ? new Prisma.Decimal(parent.housingAllowance || 0).plus(parent.transportAllowance || 0).plus(parent.otherAllowance || 0)
+      : null,
 
     company: async (parent, _, { loaders, companyId, userRole }) => {
       if (userRole !== 'SUPER_ADMIN' && parent.companyId !== companyId) {
@@ -639,42 +668,5 @@ const resolvers = {
     },
   },
 };
-
-export const createLoaders = () => ({
-  company: new DataLoader(async (ids) => {
-    const companies = await prisma.company.findMany({ where: { id: { in: [...new Set(ids)] } } });
-    const map = new Map(companies.map((c) => [c.id, c]));
-    return ids.map((id) => map.get(id) || null);
-  }),
-
-  payrollRunLoader: new DataLoader(async (runIds) => {
-    const runs = await prisma.payrollRun.findMany({ where: { id: { in: [...new Set(runIds)] } } });
-    const map = new Map(runs.map((r) => [r.id, r]));
-    return runIds.map((id) => map.get(id) || null);
-  }),
-
-  payrollRunTotalLoader: new DataLoader(async (runIds) => {
-    const rows = await prisma.payrollItem.groupBy({
-      by: ['payrollRunId'],
-      where: { payrollRunId: { in: [...new Set(runIds)] } },
-      _sum: { netPay: true },
-    });
-    const map = new Map(rows.map((r) => [r.payrollRunId, r._sum.netPay]));
-    return runIds.map((id) => map.get(id) ?? new Prisma.Decimal(0));
-  }),
-
-  payrollItemsByRunLoader: new DataLoader(async (runIds) => {
-    const items = await prisma.payrollItem.findMany({
-      where: { payrollRunId: { in: [...new Set(runIds)] } },
-      include: { employee: true },
-    });
-    const map = new Map();
-    for (const item of items) {
-      if (!map.has(item.payrollRunId)) map.set(item.payrollRunId, []);
-      map.get(item.payrollRunId).push(item);
-    }
-    return runIds.map((id) => map.get(id) || []);
-  }),
-});
 
 export default resolvers;

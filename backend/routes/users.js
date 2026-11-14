@@ -49,16 +49,7 @@ async function provisionUser(req, res, next, action) {
       // Keep the one-to-one employee identity link consistent regardless of whether
       // the employee profile or login account was created first.
       if (role === 'EMPLOYEE') {
-        const employee = await tx.employee.findFirst({
-          where: { email, companyId: targetCompanyId, deletedAt: null },
-          select: { id: true, userId: true },
-        });
-        if (employee?.userId && employee.userId !== user.id) {
-          throw badInput('This employee profile is already linked to another account.');
-        }
-        if (employee && !employee.userId) {
-          await tx.employee.update({ where: { id: employee.id }, data: { userId: user.id } });
-        }
+        await linkEmployeeProfileToUser(tx, { email, companyId: targetCompanyId, userId: user.id });
       }
       await tx.invite.create({ data: { token: hashActivationToken(token), email, role, expiresAt, companyId: targetCompanyId, userId: user.id } });
       await writeAudit(tx, {

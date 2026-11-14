@@ -9,6 +9,7 @@ import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employ
 import { csvLine } from '../utils/csv.js';
 import { writeAudit, actorFromReq } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
+import { canReadEmployeeField, assertEmployeeInputPermissions, redactEmployeeForRole } from '../policies/permissions.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -68,7 +69,7 @@ router.get('/', async (req, res) => {
       }),
     };
 
-    const validSortFields = ['name', 'email', 'basicSalary', 'createdAt'];
+    const validSortFields = ['name', 'email', 'createdAt', ...(canReadEmployeeField(req.userRole, 'basicSalary') ? ['basicSalary'] : [])];
     const orderBy = validSortFields.includes(sortBy)
       ? { [sortBy]: sortOrder === 'desc' ? 'desc' : 'asc' }
       : { name: 'asc' };
@@ -84,7 +85,7 @@ router.get('/', async (req, res) => {
       prisma.employee.count({ where }),
     ]);
 
-    res.json({ employees, total, page, limit: take });
+    res.json({ employees: employees.map((employee) => redactEmployeeForRole(employee, req.userRole)), total, page, limit: take });
   } catch (error) {
     logger.error('Employee List Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     res.status(500).json({ error: 'Failed to list employees' });
@@ -92,14 +93,18 @@ router.get('/', async (req, res) => {
 });
 
 // 2. Export - genuinely streamed in chunks (the previous "chunking" accumulated every row in memory anyway)
-async function* employeeChunks(where) {
+async function* employeeChunks(where, role) {
   let cursor;
   for (;;) {
     const chunk = await prisma.employee.findMany({
       where,
       take: EXPORT_CHUNK,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      select: { id: true, name: true, email: true, basicSalary: true, ssnitNumber: true, position: true },
+      select: {
+        id: true, name: true, email: true, position: true,
+        ...(canReadEmployeeField(role, 'basicSalary') ? { basicSalary: true } : {}),
+        ...(canReadEmployeeField(role, 'ssnitNumber') ? { ssnitNumber: true } : {}),
+      },
       orderBy: { id: 'asc' },
     });
     if (!chunk.length) return;
@@ -127,11 +132,11 @@ router.get('/export', async (req, res) => {
       }).catch((e) => logger.error('AUDIT_WRITE_FAILED', { action: 'EMPLOYEES_EXPORTED', message: e.message }));
 
     if (format === 'csv') {
-      const fields = ['name', 'email', 'position', 'basicSalary', 'ssnitNumber'];
+      const fields = ['name', 'email', 'position', ...(canReadEmployeeField(req.userRole, 'basicSalary') ? ['basicSalary'] : []), ...(canReadEmployeeField(req.userRole, 'ssnitNumber') ? ['ssnitNumber'] : [])];
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.attachment(`employees_${filePrefix}_${stamp}.csv`);
       res.write(csvLine(fields));
-      for await (const chunk of employeeChunks(where)) {
+      for await (const chunk of employeeChunks(where, req.userRole)) {
         for (const row of chunk) res.write(csvLine(fields.map((f) => (f === 'basicSalary' ? String(row[f]) : row[f]))));
         exported += chunk.length;
       }
@@ -151,8 +156,8 @@ router.get('/export', async (req, res) => {
         { header: 'Basic Salary', key: 'basicSalary', width: 15 },
         { header: 'SSNIT Number', key: 'ssnitNumber', width: 20 },
       ];
-      for await (const chunk of employeeChunks(where)) {
-        for (const row of chunk) sheet.addRow({ ...row, basicSalary: Number(row.basicSalary) }).commit();
+      for await (const chunk of employeeChunks(where, req.userRole)) {
+        for (const row of chunk) sheet.addRow({ ...row, ...(row.basicSalary !== undefined ? { basicSalary: Number(row.basicSalary) } : {}) }).commit();
         exported += chunk.length;
       }
       sheet.commit();
@@ -162,7 +167,7 @@ router.get('/export', async (req, res) => {
     }
 
     const all = [];
-    for await (const chunk of employeeChunks(where)) {
+    for await (const chunk of employeeChunks(where, req.userRole)) {
       all.push(...chunk);
       if (all.length > MAX_JSON_EXPORT_ROWS) {
         return res.status(413).json({ error: `JSON export is limited to ${MAX_JSON_EXPORT_ROWS} rows. Use format=csv or format=excel.` });
@@ -170,7 +175,7 @@ router.get('/export', async (req, res) => {
     }
     exported = all.length;
     await audit();
-    return res.json(all.map((employee) => Object.fromEntries(Object.entries(employee).filter(([key]) => key !== 'id'))));
+    return res.json(all.map((employee) => Object.fromEntries(Object.entries(redactEmployeeForRole(employee, req.userRole)).filter(([key]) => key !== 'id'))));
   } catch (error) {
     logger.error('Employee Export Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     if (!res.headersSent) return res.status(500).json({ error: 'Export failed' });
@@ -182,6 +187,11 @@ router.get('/export', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const data = employeeSchema.parse(req.body);
+    if (req.userRole === 'HR') {
+      const fields = { ...req.body };
+      for (const field of ['basicSalary', 'housingAllowance', 'transportAllowance', 'otherAllowance', 'allowances']) delete fields[field];
+      if (!assertEmployeeInputPermissions(req.userRole, fields)) return res.status(403).json({ error: 'HR cannot create employee bank details.' });
+    }
 
     const businessRuleError = validateEmployeeBusinessRules(data);
     if (businessRuleError) return res.status(400).json({ errors: { isDisabled: businessRuleError } });
@@ -211,7 +221,7 @@ router.post('/', async (req, res) => {
     });
 
     logger.info(`Employee created: ${employee.id}`, { by: req.userId, role: req.userRole, targetCompanyId });
-    res.status(201).json(employee);
+    res.status(201).json(redactEmployeeForRole(employee, req.userRole));
   } catch (error) {
     if (handleKnownErrors(error, res)) return;
     logger.error('Employee Create Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
@@ -228,6 +238,9 @@ router.put('/:id', async (req, res) => {
 
     const existing = await prisma.employee.findFirst({ where: { id, ...tenantCondition } });
     if (!existing) return res.status(404).json({ error: 'Employee profile not found or access denied.' });
+
+    const changedFields = Object.fromEntries(Object.entries(data).filter(([field, value]) => String(value ?? '') !== String(existing[field] ?? '')));
+    if (!assertEmployeeInputPermissions(req.userRole, changedFields)) return res.status(403).json({ error: 'You do not have permission to change one or more sensitive employee fields.' });
 
     const businessRuleError = validateEmployeeBusinessRules(data, existing);
     if (businessRuleError) return res.status(400).json({ errors: { isDisabled: businessRuleError } });
@@ -252,7 +265,7 @@ router.put('/:id', async (req, res) => {
     });
 
     logger.info(`Employee updated: ${id}`, { by: req.userId, role: req.userRole });
-    res.json(employee);
+    res.json(redactEmployeeForRole(employee, req.userRole));
   } catch (error) {
     if (handleKnownErrors(error, res)) return;
     logger.error('Employee Update Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
