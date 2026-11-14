@@ -34,6 +34,7 @@ export const EMPLOYEE_RELIEF_FIELDS = gql`
     isDisabled
     agedDependentsCount
     bankName
+    bankCode
     bankAccount
   }
 `;

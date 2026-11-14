@@ -27,6 +27,7 @@ export const employeeFormSchema = z.object({
   ssnitNumber: z.preprocess(upperOrUndefined, z.string().length(13, 'SSNIT must be exactly 13 characters').optional()),
   ghanaCardPin: z.preprocess(upperOrUndefined, z.string().regex(/^GHA-\d{9}-\d$/, 'Invalid Ghana Card PIN (GHA-XXXXXXXXX-X)').optional()),
   bankName: z.preprocess(emptyToUndefined, z.string().trim().min(2, 'Bank name must be at least 2 characters').optional()),
+  bankCode: z.preprocess(emptyToUndefined, z.string().trim().min(2, 'Bank code must be at least 2 characters').max(20).optional()),
   bankAccount: z.preprocess(emptyToUndefined, z.string().regex(/^\d{5,20}$/, 'Account number must be 5-20 digits').optional()),
   age: z.preprocess(toNumber, z.number().int().min(18, 'Age must be between 18 and 70').max(70, 'Age must be between 18 and 70').default(30)),
   childrenCount: z.preprocess(toNumber, z.number().int().min(0).max(3, 'Child relief is capped at 3 (GRA)').default(0)),

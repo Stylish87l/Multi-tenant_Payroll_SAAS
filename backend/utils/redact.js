@@ -10,6 +10,7 @@ const SENSITIVE_KEYS = new Set([
   'password', 'newpassword', 'currentpassword',
   'token', 'accesstoken', 'refreshtoken', 'authorization', 'cookie', 'set-cookie',
   'secret', 'apikey', 'api_key',
+  'email', 'to', 'recipient', 'invitelink', 'resetlink', 'phone', 'phonenumber',
   'bankaccount', 'bankname', 'ghanacardpin', 'ssnitnumber',
   'x-paystack-signature', 'x-hubtel-webhook-secret',
 ]);

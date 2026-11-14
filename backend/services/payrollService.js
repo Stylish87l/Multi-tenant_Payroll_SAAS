@@ -3,7 +3,7 @@ import logger from '../config/logger.js';
 import { calculateSSNIT } from '../utils/ssnitCalculator.js';
 import { calculatePAYE } from '../utils/payeCalculator.js';
 import { writeAudit } from './auditService.js';
-import { badInput, conflict } from '../utils/appError.js';
+import { badInput, conflict, notFound } from '../utils/appError.js';
 
 /**
  * Single implementation of "create a DRAFT payroll run".
@@ -29,6 +29,9 @@ export const normalizeMonth = (month) => {
 export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
   if (!companyId) throw badInput('companyId is required to run payroll.');
 
+  const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null }, select: { id: true } });
+  if (!company) throw notFound('Company not found or inactive.');
+
   const normalizedMonth = normalizeMonth(month);
   const [year, monthIndex] = normalizedMonth.split('-').map(Number);
   const now = new Date();
@@ -40,7 +43,7 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
   if (existing) throw conflict(`Payroll for ${normalizedMonth.slice(0, 7)} already exists for this company.`);
 
   const employees = await prisma.employee.findMany({
-    where: { companyId, isActive: true },
+    where: { companyId, isActive: true, deletedAt: null },
     select: {
       id: true, basicSalary: true, housingAllowance: true, transportAllowance: true, otherAllowance: true,
       isMarried: true, hasResponsibility: true, childrenCount: true, isDisabled: true, age: true, agedDependentsCount: true,
