@@ -119,11 +119,11 @@ const Dashboard = () => {
       });
     }
     stats.push({
-      label: 'Unread notifications',
+      label: 'Pending notifications',
       value: data?.notificationsCount ?? (loading ? '…' : '—'),
       icon: Bell,
       tone: 'rose',
-      detail: 'Notifications for your account',
+      detail: 'Notifications awaiting delivery',
     });
     return stats;
   }, [role, data, loading]);
@@ -196,11 +196,11 @@ const Dashboard = () => {
               detail="Finalized payroll statements"
             />
             <MetricCard
-              label="Unread notifications"
+              label="Pending notifications"
               value={notificationsCount}
               icon={Bell}
               tone="rose"
-              detail="Personal account notifications"
+              detail="Notifications awaiting delivery"
             />
           </section>
 
