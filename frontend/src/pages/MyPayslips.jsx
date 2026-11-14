@@ -4,8 +4,6 @@ import Card from '../components/Card';
 import Loader from '../components/Loader';
 import { getMyPayslips, downloadMyPayslipPdf } from '../services/payslipService';
 
-const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_API_URL || '';
-const REST_BASE = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
 const money = (value) => Number(value ?? 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const MyPayslips = () => {
