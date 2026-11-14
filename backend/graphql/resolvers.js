@@ -1,5 +1,4 @@
 import { PubSub, withFilter } from 'graphql-subscriptions';
-import DataLoader from 'dataloader';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import prisma, { Prisma } from '../config/db.js';
@@ -12,6 +11,7 @@ import { createNotification } from '../services/notificationService.js';
 import { writeAudit, writeAuditSafe, actorFromCtx } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
 import { canReadEmployeeField, assertEmployeeInputPermissions } from '../policies/permissions.js';
+import { createLoaders } from './loaders.js';
 import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employeeSchema.js';
 import { registerSchema } from '../schemas/authSchema.js';
 import { isLocked, recordFailure, clearFailures } from '../utils/loginThrottle.js';
@@ -669,42 +669,5 @@ const resolvers = {
     },
   },
 };
-
-export const createLoaders = ({ companyId = null, userRole = null } = {}) => ({
-  company: new DataLoader(async (ids) => {
-    const companies = await prisma.company.findMany({ where: { AND: [{ id: { in: [...new Set(ids)] } }, ...(userRole === 'SUPER_ADMIN' ? [] : [{ id: companyId || '__unauthenticated__' }])] } });
-    const map = new Map(companies.map((c) => [c.id, c]));
-    return ids.map((id) => map.get(id) || null);
-  }),
-
-  payrollRunLoader: new DataLoader(async (runIds) => {
-    const runs = await prisma.payrollRun.findMany({ where: { id: { in: [...new Set(runIds)] }, ...(userRole === 'SUPER_ADMIN' ? {} : { companyId: companyId || '__unauthenticated__' }) } });
-    const map = new Map(runs.map((r) => [r.id, r]));
-    return runIds.map((id) => map.get(id) || null);
-  }),
-
-  payrollRunTotalLoader: new DataLoader(async (runIds) => {
-    const rows = await prisma.payrollItem.groupBy({
-      by: ['payrollRunId'],
-      where: { payrollRunId: { in: [...new Set(runIds)] }, ...(userRole === 'SUPER_ADMIN' ? {} : { payrollRun: { companyId: companyId || '__unauthenticated__' } }) },
-      _sum: { netPay: true },
-    });
-    const map = new Map(rows.map((r) => [r.payrollRunId, r._sum.netPay]));
-    return runIds.map((id) => map.get(id) ?? new Prisma.Decimal(0));
-  }),
-
-  payrollItemsByRunLoader: new DataLoader(async (runIds) => {
-    const items = await prisma.payrollItem.findMany({
-      where: { payrollRunId: { in: [...new Set(runIds)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { payrollRun: { companyId } } : {}) },
-      include: { employee: true },
-    });
-    const map = new Map();
-    for (const item of items) {
-      if (!map.has(item.payrollRunId)) map.set(item.payrollRunId, []);
-      map.get(item.payrollRunId).push(item);
-    }
-    return runIds.map((id) => map.get(id) || []);
-  }),
-});
 
 export default resolvers;
