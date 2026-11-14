@@ -415,6 +415,7 @@ const resolvers = {
       });
       if (!existing) throw notFound('Employee not found');
 
+      if (!assertEmployeeInputPermissions(ctx.userRole, input)) throw forbidden('You do not have permission to update one or more sensitive employee fields.');
       const data = parseWith(employeeSchema.partial(), toEmployeePayload(input));
       const ruleError = validateEmployeeBusinessRules(data, existing);
       if (ruleError) throw badInput(ruleError);
@@ -624,12 +625,25 @@ const resolvers = {
   },
 
   Employee: {
-    ghanaCardPIN: (parent) => parent.ghanaCardPin,
-    ghanaCardPin: (parent) => parent.ghanaCardPin,
-    allowances: (parent) =>
-      new Prisma.Decimal(parent.housingAllowance || 0)
-        .plus(parent.transportAllowance || 0)
-        .plus(parent.otherAllowance || 0),
+    ghanaCardPIN: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'ghanaCardPIN') ? parent.ghanaCardPin : null,
+    ghanaCardPin: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'ghanaCardPin') ? parent.ghanaCardPin : null,
+    ssnitNumber: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'ssnitNumber') ? parent.ssnitNumber : null,
+    basicSalary: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'basicSalary') ? parent.basicSalary : null,
+    housingAllowance: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'housingAllowance') ? parent.housingAllowance : null,
+    transportAllowance: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'transportAllowance') ? parent.transportAllowance : null,
+    otherAllowance: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'otherAllowance') ? parent.otherAllowance : null,
+    bankName: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'bankName') ? parent.bankName : null,
+    bankCode: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'bankCode') ? parent.bankCode : null,
+    bankAccount: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'bankAccount') ? parent.bankAccount : null,
+    age: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'age') ? parent.age : null,
+    isMarried: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'isMarried') ? parent.isMarried : null,
+    hasResponsibility: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'hasResponsibility') ? parent.hasResponsibility : null,
+    childrenCount: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'childrenCount') ? parent.childrenCount : null,
+    isDisabled: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'isDisabled') ? parent.isDisabled : null,
+    agedDependentsCount: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'agedDependentsCount') ? parent.agedDependentsCount : null,
+    allowances: (parent, _, ctx) => canReadEmployeeField(ctx.userRole, 'allowances')
+      ? new Prisma.Decimal(parent.housingAllowance || 0).plus(parent.transportAllowance || 0).plus(parent.otherAllowance || 0)
+      : null,
 
     company: async (parent, _, { loaders, companyId, userRole }) => {
       if (userRole !== 'SUPER_ADMIN' && parent.companyId !== companyId) {
@@ -641,7 +655,7 @@ const resolvers = {
   },
 };
 
-export const createLoaders = () => ({
+export const createLoaders = ({ companyId = null, userRole = null } = {}) => ({
   company: new DataLoader(async (ids) => {
     const companies = await prisma.company.findMany({ where: { id: { in: [...new Set(ids)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { id: companyId } : {}) } });
     const map = new Map(companies.map((c) => [c.id, c]));
@@ -666,7 +680,7 @@ export const createLoaders = () => ({
 
   payrollItemsByRunLoader: new DataLoader(async (runIds) => {
     const items = await prisma.payrollItem.findMany({
-      where: { payrollRunId: { in: [...new Set(runIds)] } },
+      where: { payrollRunId: { in: [...new Set(runIds)] }, ...(userRole !== 'SUPER_ADMIN' && companyId ? { payrollRun: { companyId } } : {}) },
       include: { employee: true },
     });
     const map = new Map();
