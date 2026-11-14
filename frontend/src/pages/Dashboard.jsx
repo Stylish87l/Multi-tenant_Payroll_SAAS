@@ -66,7 +66,7 @@ const Dashboard = () => {
   // payroll objects into Apollo's normalized cache.
   useSubscription(PAYROLL_UPDATED_SUB, {
     variables: { companyId: user?.companyId },
-    skip: isEmployee || !user?.companyId,
+    skip: !['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'].includes(role) || !user?.companyId,
     onData: () => { refetch().catch(() => {}); },
   });
 
@@ -95,7 +95,7 @@ const Dashboard = () => {
   }, [isEmployee, loadMyPayslips]);
 
   const latestPayslip = myPayslips[0] || null;
-  const notificationsCount = data?.notificationsCount ?? 0;
+  const notificationsCount = data?.notificationsCount ?? (loading ? '…' : '—');
 
   const organizationMetrics = useMemo(() => {
     const stats = [];
@@ -168,6 +168,11 @@ const Dashboard = () => {
 
       {isEmployee ? (
         <>
+          {error && !data && (
+            <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
+              Unable to load your notifications: {error.message}
+            </div>
+          )}
           {payslipsError && (
             <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
               {payslipsError}
