@@ -381,7 +381,15 @@ const resolvers = {
 
       // FIXED: GraphQL had NO server-side validation (REST had Zod): negative salaries, malformed
       // Ghana Card PINs, ages of 500 were all accepted. Both paths now share employeeSchema.
-      const data = parseWith(employeeSchema, toEmployeePayload(input));
+      const createInput = { ...input };
+      if (ctx.userRole === 'HR') {
+        // HR can create a profile and enter its initial salary (required by payroll onboarding),
+        // but cannot submit bank coordinates during this workflow.
+        delete createInput.bankName;
+        delete createInput.bankCode;
+        delete createInput.bankAccount;
+      }
+      const data = parseWith(employeeSchema, toEmployeePayload(createInput));
       const ruleError = validateEmployeeBusinessRules(data);
       if (ruleError) throw badInput(ruleError);
 
@@ -415,8 +423,13 @@ const resolvers = {
       });
       if (!existing) throw notFound('Employee not found');
 
-      if (!assertEmployeeInputPermissions(ctx.userRole, input)) throw forbidden('You do not have permission to update one or more sensitive employee fields.');
       const data = parseWith(employeeSchema.partial(), toEmployeePayload(input));
+      const changedFields = Object.fromEntries(
+        Object.entries(data).filter(([field, value]) => String(value ?? '') !== String(existing[field] ?? ''))
+      );
+      if (!assertEmployeeInputPermissions(ctx.userRole, changedFields)) {
+        throw forbidden('You do not have permission to change one or more sensitive employee fields.');
+      }
       const ruleError = validateEmployeeBusinessRules(data, existing);
       if (ruleError) throw badInput(ruleError);
 
