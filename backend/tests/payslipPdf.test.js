@@ -47,7 +47,7 @@ const fixture = {
   employee: {
     id: 'employee-1', name: 'Test Employee', email: 'employee@example.test',
     position: 'Accountant', companyId: 'tenant-1', userId: 'user-1',
-    ghanaCardPin: null, ssnitNumber: 'SSNIT-1',
+    ghanaCardPin: null, ssnitNumber: 'SSNIT-1', bankName: 'Example Bank', bankAccount: '1234567890',
   },
   payrollRun: {
     id: 'run-1', month: '2026-10-01', companyId: 'tenant-1',
@@ -70,7 +70,7 @@ describe('employee payslip PDF', () => {
     for (const label of [
       'EXAMPLE GROUP', 'EMPLOYEE PAYSLIP', 'Basic salary', 'Gross earnings',
       'Employee SSNIT contribution', 'PAYE income tax', 'Employer SSNIT contribution',
-      'NET PAY', 'Payment reference', 'PAY-123',
+      'NET PAY', 'Bank name', 'Example Bank', 'Account number', '******7890', 'Payment reference', 'PAY-123',
     ]) {
       expect(content).toContain(label.replace(/\s/g, '').toLowerCase());
     }
