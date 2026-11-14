@@ -24,7 +24,7 @@ const ITEM_SELECT = {
   employee: {
     select: {
       id: true, companyId: true, name: true, email: true, position: true,
-      ghanaCardPin: true, ssnitNumber: true, userId: true,
+      ghanaCardPin: true, ssnitNumber: true, bankName: true, bankAccount: true, userId: true,
     },
   },
   payrollRun: {
@@ -38,6 +38,11 @@ const ITEM_SELECT = {
 const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE'];
 const safeName = (name) => String(name || 'employee').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 50) || 'employee';
 const money = (value) => Number(value ?? 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const maskAccountNumber = (value) => {
+  const account = String(value || '').replace(/\\s+/g, '');
+  if (!account) return null;
+  return `${'*'.repeat(Math.max(4, Math.min(8, account.length - 4)))}${account.slice(-4)}`;
+};
 const templateFor = (company) => company.payslipTemplate && typeof company.payslipTemplate === 'object' ? company.payslipTemplate : {};
 
 const addSection = (doc, title) => {
@@ -134,6 +139,8 @@ export const generatePayslipPDF = (doc, item, logo) => {
   doc.y += 61;
 
   addSection(doc, 'Payment information');
+  addTextRow(doc, 'Bank name', employee.bankName);
+  addTextRow(doc, 'Account number', maskAccountNumber(employee.bankAccount));
   addTextRow(doc, 'Payment status', String(item.paymentStatus || 'PENDING').replaceAll('_', ' '));
   addTextRow(doc, 'Payment reference', item.paymentRef);
   addTextRow(doc, 'Payroll finalized', payrollRun.processedAt ? new Date(payrollRun.processedAt).toLocaleDateString('en-GH') : 'Not finalized');
