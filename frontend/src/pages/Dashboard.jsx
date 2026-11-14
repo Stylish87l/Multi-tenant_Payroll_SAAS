@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { GET_DASHBOARD_DATA } from '../graphql/queries';
 import { PAYROLL_UPDATED_SUB } from '../graphql/subscriptions';
-import { REST_BASE, TOKEN_KEY } from '../lib/apolloClient';
+import { getMyPayslips } from '../services/payslipService';
 import Card from '../components/Card';
 import Loader from '../components/Loader';
 import { useAuth } from '../context/AuthContext';
@@ -79,18 +79,7 @@ const Dashboard = () => {
     setPayslipsLoading(true);
     setPayslipsError('');
     try {
-      const token = localStorage.getItem(TOKEN_KEY);
-      const response = await fetch(`${REST_BASE}/api/payslips/mine`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          Accept: 'application/json',
-        },
-        cache: 'no-store',
-        signal,
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body?.error || 'Unable to load your payroll summary.');
-      setMyPayslips(Array.isArray(body.payslips) ? body.payslips : []);
+      setMyPayslips(await getMyPayslips({ signal }));
     } catch (err) {
       if (err.name !== 'AbortError') setPayslipsError(err.message || 'Unable to load your payroll summary.');
     } finally {
