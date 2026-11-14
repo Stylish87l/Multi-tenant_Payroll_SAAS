@@ -385,7 +385,12 @@ const resolvers = {
 
       try {
         const employee = await prisma.$transaction(async (tx) => {
-          const created = await tx.employee.create({ data: { ...data, companyId: targetCompanyId } });
+          // GraphQL is the employee creation path used by the web UI. Link an
+          // existing employee login here just as the REST endpoint does.
+          const employeeUserId = await findEmployeeLoginUserId(tx, { email: data.email, companyId: targetCompanyId });
+          const created = await tx.employee.create({
+            data: { ...data, companyId: targetCompanyId, ...(employeeUserId ? { userId: employeeUserId } : {}) },
+          });
           await writeAudit(tx, {
             actor: actorFromCtx(ctx), companyId: targetCompanyId, action: 'EMPLOYEE_CREATED',
             resourceType: 'Employee', resourceId: created.id,
