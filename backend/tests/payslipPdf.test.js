@@ -70,7 +70,8 @@ describe('employee payslip PDF', () => {
     for (const label of [
       'EXAMPLE GROUP', 'EMPLOYEE PAYSLIP', 'Basic salary', 'Gross earnings',
       'Employee SSNIT contribution', 'PAYE income tax', 'Employer SSNIT contribution',
-      'NET PAY', 'Bank name', 'Example Bank', 'Account number', '******7890', 'Payment reference', 'PAY-123',
+      'NET PAY', 'Bank on file', 'Example Bank', 'Account on file', '******7890',
+      'current employee profile', 'actual payout destination is not stored', 'Payment reference', 'PAY-123',
     ]) {
       expect(content).toContain(label.replace(/\s/g, '').toLowerCase());
     }
