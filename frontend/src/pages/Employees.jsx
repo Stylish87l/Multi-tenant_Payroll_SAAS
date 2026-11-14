@@ -202,7 +202,7 @@ const Employees = () => {
               aria-label="Search staff"
             />
           </div>
-          <button onClick={openCreate} aria-label="Add staff"
+          <button onClick={openCreate} aria-label="Add staff" disabled={isSuperAdmin && !companyId}
             className="flex items-center gap-2 bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-xl font-bold transition-all shadow-lg shadow-primary/20 active:scale-95">
             <Plus size={18} />
             <span className="hidden md:block">Add staff</span>
