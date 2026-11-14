@@ -48,7 +48,7 @@ const Payroll = () => {
   // The subscription payload is partial; refetching is simpler and always consistent with the server.
   useSubscription(PAYROLL_UPDATED_SUB, {
     variables: { companyId },
-    skip: !user?.companyId,
+    skip: !companyId,
     onData: () => { refetch().catch(() => {}); },
   });
 
@@ -56,7 +56,7 @@ const Payroll = () => {
     if (!RUN_ROLES.includes(user?.role)) return;
     setActionError(null);
     try {
-      await runPayroll({ variables: { month: new Date().toISOString().slice(0, 7), companyId: user?.companyId } });
+      await runPayroll({ variables: { month: new Date().toISOString().slice(0, 7), companyId } });
       await refetch();
     } catch (err) {
       setActionError(errMsg(err, 'Payroll could not be run. Please try again.'));
@@ -116,6 +116,18 @@ const Payroll = () => {
           </button>
         )}
       </div>
+
+
+      {isSuperAdmin && (
+        <Card className="border-white/5 bg-slate-950/40 p-5">
+          <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-400">Select tenant</label>
+          <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="w-full md:max-w-md rounded-xl border border-white/10 bg-slate-900 p-3 text-white">
+            <option value="">Choose a company</option>
+            {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+          </select>
+        </Card>
+      )}
+      {!companyId && <Card className="p-8 text-center text-slate-400">Select a tenant to view payroll and run a payroll cycle.</Card>}
 
       {actionError && (
         <div role="alert" className="rounded-xl bg-rose-500/10 text-rose-400 p-4 border border-rose-500/20 text-sm flex items-center gap-2">
