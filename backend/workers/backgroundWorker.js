@@ -90,8 +90,17 @@ const run = async () => {
   await enqueueEmployeeReconciliation();
   logger.info('Paylio background worker started');
   let lastReconcileHour = new Date().toISOString().slice(0, 13);
+  let lastHealthReport = 0;
   while (!shuttingDown) {
     try {
+      if (Date.now() - lastHealthReport >= 5 * 60 * 1000) {
+        const grouped = await prisma.backgroundJob.groupBy({ by: ['status'], _count: { _all: true } });
+        const counts = Object.fromEntries(grouped.map((row) => [row.status.toLowerCase(), row._count._all]));
+        const health = { pending: counts.pending || 0, running: counts.running || 0, completed: counts.completed || 0, failed: counts.failed || 0 };
+        if (health.failed > 0 || health.pending > 50) logger.warn('Background job queue requires attention', health);
+        else logger.info('Background job queue health', health);
+        lastHealthReport = Date.now();
+      }
       const hour = new Date().toISOString().slice(0, 13);
       if (hour !== lastReconcileHour) {
         await enqueueEmployeeReconciliation();
