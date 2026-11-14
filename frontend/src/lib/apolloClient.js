@@ -28,7 +28,7 @@ export const doRefresh = async () => {
       const res = await fetch(`${REST_BASE}/api/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-csrf-protection': '1' },
       });
 
       if (res.status === 401) throw new Error('EXPIRED');
@@ -56,7 +56,7 @@ export const doRefresh = async () => {
  */
 export const doLogout = async () => {
   try {
-    await fetch(`${REST_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    await fetch(`${REST_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include', headers: { 'x-csrf-protection': '1' } });
   } catch (err) {
     console.warn('Logout request failed', err);
   }
