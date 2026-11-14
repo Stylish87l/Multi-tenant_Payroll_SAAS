@@ -276,8 +276,4 @@ const Dashboard = () => {
   );
 };
 
-MetricCard.propTypes = {
-  label: React.PropTypes?.string,
-};
-
 export default Dashboard;
