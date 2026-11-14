@@ -24,7 +24,7 @@ const ITEM_SELECT = {
   employee: {
     select: {
       id: true, companyId: true, name: true, email: true, position: true,
-      ghanaCardPin: true, ssnitNumber: true, userId: true,
+      ghanaCardPin: true, ssnitNumber: true, bankName: true, bankAccount: true, userId: true,
     },
   },
   payrollRun: {
@@ -35,8 +35,14 @@ const ITEM_SELECT = {
   },
 };
 
+const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE'];
 const safeName = (name) => String(name || 'employee').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 50) || 'employee';
 const money = (value) => Number(value ?? 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const maskAccountNumber = (value) => {
+  const account = String(value || '').replace(/\s+/g, '');
+  if (!account) return null;
+  return `${'*'.repeat(Math.max(4, Math.min(8, account.length - 4)))}${account.slice(-4)}`;
+};
 const templateFor = (company) => company.payslipTemplate && typeof company.payslipTemplate === 'object' ? company.payslipTemplate : {};
 
 const addSection = (doc, title) => {
@@ -133,6 +139,13 @@ export const generatePayslipPDF = (doc, item, logo) => {
   doc.y += 61;
 
   addSection(doc, 'Payment information');
+  addTextRow(doc, 'Bank on file', employee.bankName);
+  addTextRow(doc, 'Account on file', maskAccountNumber(employee.bankAccount));
+  if (employee.bankName || employee.bankAccount) {
+    doc.font('Helvetica-Oblique').fontSize(7).fillColor('#64748b')
+      .text('Bank details are from the current employee profile; the actual payout destination is not stored on this historical payroll record.', 50, doc.y, { width: 495 });
+    doc.moveDown(0.25);
+  }
   addTextRow(doc, 'Payment status', String(item.paymentStatus || 'PENDING').replaceAll('_', ' '));
   addTextRow(doc, 'Payment reference', item.paymentRef);
   addTextRow(doc, 'Payroll finalized', payrollRun.processedAt ? new Date(payrollRun.processedAt).toLocaleDateString('en-GH') : 'Not finalized');
@@ -182,8 +195,13 @@ router.get('/mine', rbac(['EMPLOYEE']), async (req, res) => {
 });
 
 // Individual PDF: employees can download only their own finalized payslip.
-router.get('/item/:itemId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE']), async (req, res) => {
+router.get('/item/:itemId/pdf', rbac(INDIVIDUAL_PAYSLIP_ROLES), async (req, res) => {
   const { itemId } = req.params;
+  // RBAC expands hierarchical roles (so HR inherits EMPLOYEE). Payslip access is
+  // intentionally limited to these exact roles; HR must not inherit employee self-service.
+  if (!INDIVIDUAL_PAYSLIP_ROLES.includes(req.userRole)) {
+    return res.status(403).json({ error: 'Access denied: payslip access is not available for this role.' });
+  }
   try {
     const item = await findPayslip(req, itemId);
     if (!item) return res.status(404).json({ error: 'Payslip not found or access denied' });

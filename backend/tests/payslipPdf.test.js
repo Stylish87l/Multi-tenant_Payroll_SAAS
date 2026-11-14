@@ -15,8 +15,19 @@ jest.unstable_mockModule('../services/auditService.js', () => ({
 
 const { generatePayslipPDF } = await import('../routes/payslips.js');
 
+const extractPdfText = (pdf) => {
+  const source = pdf.toString('latin1');
+  const stream = source.match(/stream\r?\n([\s\S]*?)\r?\nendstream/);
+  if (!stream) return '';
+  return [...stream[1].matchAll(/<([0-9a-f]+)>/gi)]
+    .map(([, hex]) => Buffer.from(hex, 'hex').toString('latin1'))
+    .join('')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+};
+
 const render = async (item) => {
-  const doc = new PDFDocument({ margin: 48, size: 'A4' });
+  const doc = new PDFDocument({ margin: 48, size: 'A4', compress: false });
   const chunks = [];
   doc.on('data', (chunk) => chunks.push(chunk));
   const done = new Promise((resolve, reject) => {
@@ -36,7 +47,7 @@ const fixture = {
   employee: {
     id: 'employee-1', name: 'Test Employee', email: 'employee@example.test',
     position: 'Accountant', companyId: 'tenant-1', userId: 'user-1',
-    ghanaCardPin: null, ssnitNumber: 'SSNIT-1',
+    ghanaCardPin: null, ssnitNumber: 'SSNIT-1', bankName: 'Example Bank', bankAccount: '1234567890',
   },
   payrollRun: {
     id: 'run-1', month: '2026-10-01', companyId: 'tenant-1',
@@ -55,6 +66,15 @@ describe('employee payslip PDF', () => {
     const pdf = await render(fixture);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.length).toBeGreaterThan(1000);
+    const content = extractPdfText(pdf);
+    for (const label of [
+      'EXAMPLE GROUP', 'EMPLOYEE PAYSLIP', 'Basic salary', 'Gross earnings',
+      'Employee SSNIT contribution', 'PAYE income tax', 'Employer SSNIT contribution',
+      'NET PAY', 'Bank on file', 'Example Bank', 'Account on file', '******7890',
+      'current employee profile', 'actual payout destination is not stored', 'Payment reference', 'PAY-123',
+    ]) {
+      expect(content).toContain(label.replace(/\s/g, '').toLowerCase());
+    }
   });
 
   test('renders legacy payroll records without reading current employee salary fields', async () => {
@@ -67,5 +87,6 @@ describe('employee payslip PDF', () => {
     };
     const pdf = await render(legacy);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(extractPdfText(pdf)).toContain('Historical earnings split is unavailable for this legacy payroll record.'.replace(/\s/g, '').toLowerCase());
   });
 });
