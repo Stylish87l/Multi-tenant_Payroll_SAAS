@@ -25,14 +25,14 @@ This matrix records the current application policy implemented across the React 
 
 - SUPER_ADMIN is the platform operator. Tenant-specific actions require a selected/explicit tenant where appropriate; platform-level directory and tenant creation are restricted to this role.
 - ADMIN has broad operational access inside one tenant, including user administration, payroll approval, financial reports, payouts, employee management, audit logs and branding.
-- HR manages employee profiles and can export employee records. The current employee GraphQL model includes salary, statutory identifiers and bank fields, so HR's employee-management access is broader than basic contact information. Review whether bank account details and statutory identifiers should be field-restricted further.
-- ACCOUNTANT has payroll and disbursement access, but cannot manage users, edit the employee directory, change branding or view audit logs. Payroll run GraphQL data includes nested employee fields needed by payroll workflows; those fields should be reviewed for least-privilege exposure.
+- HR manages employee profiles and can export employee records. Salary and allowance values are masked in REST and GraphQL reads; HR cannot change compensation after creation or submit bank details. HR can enter initial compensation during employee creation because the payroll onboarding model requires it. HR can access statutory identifiers and tax/dependent profile fields needed for employee administration.
+- ACCOUNTANT has payroll and disbursement access, including compensation, bank, statutory identity and tax fields required for payroll workflows, but cannot manage users, edit the employee directory, change branding or view audit logs.
 - EMPLOYEE can access only their own notifications/preferences and their own finalized payslip data/PDF. No company-wide payroll or employee directory access is intended.
 - CUSTOM exists in the database/GraphQL role enum but is not an invitable role and has no sidebar/route permission profile. It is not a configurable custom-role system today.
 
 ## Enforcement details
 
-- Express RBAC has hierarchical inheritance (for example, HR inherits the EMPLOYEE permission label). Sensitive routes that must not inherit access use an additional exact-role check.
+- Express RBAC hierarchy is centralized in the permission policy. Sensitive GraphQL fields and REST employee payloads/exports use explicit field-level permissions and are redacted when the caller lacks access. HR cannot inherit individual payslip report access.
 - Tenant-scoped lookups use the authenticated tenant from the verified access token; only SUPER_ADMIN may explicitly target other tenants.
 - Employee payslip reads must bind to the authenticated user and tenant and require a FINALIZED payroll run.
 - Notification creation validates that the recipient belongs to the actor's tenant unless the actor is SUPER_ADMIN.
@@ -40,8 +40,8 @@ This matrix records the current application policy implemented across the React 
 
 ## Follow-up architecture work
 
-1. Add field-level GraphQL authorization for bank account, Ghana Card, SSNIT, family/dependent and compensation fields based on approved business need.
-2. Introduce a central permission policy (role-to-capability map) shared by REST, GraphQL and frontend route metadata to reduce policy drift.
-3. Add tenant-isolation integration tests for every read/write/export path, including nested GraphQL fields.
-4. Move notification and PDF work to a durable queue/outbox worker once the deployment environment includes a persistent job runner.
-5. Add idempotency keys and reconciliation for payout provider callbacks and bulk payout requests.
+1. Extend the central permission policy to all remaining REST/GraphQL operations and frontend route metadata so role definitions cannot drift.
+2. Expand tenant-isolation integration coverage to every route and nested field, especially bulk exports and payout callbacks.
+3. Move PDF generation and other long-running report jobs onto the transactional outbox worker; notification delivery and employee-account reconciliation now use the worker.
+4. Add provider-level idempotency and reconciliation for payout callbacks and bulk payout requests.
+5. Add alerting/retention dashboards for failed jobs, audit anomalies and repeated authorization denials.
