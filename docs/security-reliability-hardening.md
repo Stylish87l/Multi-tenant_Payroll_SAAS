@@ -6,7 +6,8 @@
 | Data group | Roles |
 |---|---|
 | Employee directory | SUPER_ADMIN, ADMIN, HR |
-| Compensation | SUPER_ADMIN, ADMIN, ACCOUNTANT |
+| Compensation reads and subsequent changes | SUPER_ADMIN, ADMIN, ACCOUNTANT |
+| Initial compensation entry during employee creation | SUPER_ADMIN, ADMIN, HR (HR cannot read or later change it) |
 | Bank details | SUPER_ADMIN, ADMIN, ACCOUNTANT |
 | Ghana Card / SSNIT identifiers | SUPER_ADMIN, ADMIN, HR, ACCOUNTANT |
 | Tax/dependent profile | SUPER_ADMIN, ADMIN, HR, ACCOUNTANT |
@@ -14,7 +15,7 @@
 | Audit and user administration | SUPER_ADMIN, ADMIN |
 
 ## Tenant isolation
-Tenant IDs are derived from authenticated context for tenant roles. DataLoader instances are request-scoped and apply the same tenant predicate when resolving companies, payroll runs and payroll items. Add integration tests for every new route/resolver that accepts a record ID: cross-tenant records should be indistinguishable from missing records.
+Tenant IDs are derived from authenticated context for tenant roles. Request-scoped GraphQL DataLoaders fail closed without tenant context and apply tenant predicates when resolving companies, payroll runs, payroll totals and payroll items. REST employee list, update and export paths apply field-level redaction and write restrictions. Add integration tests for every new route/resolver that accepts a record ID: cross-tenant records should be indistinguishable from missing records.
 
 ## Employee-account reconciliation
 Employee profiles and login accounts are matched by normalized email AND company ID. Only EMPLOYEE accounts in ACTIVE/PENDING state are eligible. Existing links are never reassigned; concurrent updates use a conditional update. The hourly reconciliation job reports scanned, linked, unmatched and conflict counts without logging employee PII.
