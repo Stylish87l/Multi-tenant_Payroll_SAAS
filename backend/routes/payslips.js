@@ -39,7 +39,7 @@ const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYE
 const safeName = (name) => String(name || 'employee').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 50) || 'employee';
 const money = (value) => Number(value ?? 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const maskAccountNumber = (value) => {
-  const account = String(value || '').replace(/\\s+/g, '');
+  const account = String(value || '').replace(/\s+/g, '');
   if (!account) return null;
   return `${'*'.repeat(Math.max(4, Math.min(8, account.length - 4)))}${account.slice(-4)}`;
 };
