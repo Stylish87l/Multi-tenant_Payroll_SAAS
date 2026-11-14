@@ -116,13 +116,8 @@ export const sendInviteEmail = async (to, name, inviteLink) => {
   const t = getTransporter();
 
   if (!t) {
-    // Degrade gracefully: log the link so it's recoverable from logs in
-    // dev/staging, but don't throw - the caller (routes/users.js) already
-    // catches and logs mail errors without failing the whole invite flow.
-    logger.warn('sendInviteEmail: no transporter configured, skipping send', {
-      to,
-      inviteLink,
-    });
+    // Never log invitation links: the query token is a one-time bearer credential.
+    logger.warn('sendInviteEmail: no transporter configured, skipping send', { to });
     return { skipped: true };
   }
 

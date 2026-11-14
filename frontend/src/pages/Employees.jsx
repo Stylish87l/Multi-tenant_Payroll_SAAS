@@ -84,6 +84,7 @@ const Employees = () => {
       ghanaCardPin: employee.ghanaCardPin ?? '',
       position: employee.position ?? 'Staff',
       bankName: employee.bankName ?? '',
+      bankCode: employee.bankCode ?? '',
       bankAccount: employee.bankAccount ?? '',
       age: employee.age ?? DEFAULT_RELIEF_VALUES.age,
       isMarried: employee.isMarried ?? false,
@@ -324,6 +325,11 @@ const Employees = () => {
                 <label htmlFor="emp-bank" className={labelClass}>Bank name</label>
                 <input id="emp-bank" type="text" value={formData.bankName || ''} onChange={(e) => setField('bankName', e.target.value)} className={inputClass} placeholder="e.g. GCB Bank" />
                 {fieldError('bankName')}
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="emp-bank-code" className={labelClass}>Bank code (required for Paystack)</label>
+                <input id="emp-bank-code" type="text" value={formData.bankCode || ''} onChange={(e) => setField('bankCode', e.target.value)} className={inputClass} placeholder="Provider bank code" />
+                {fieldError('bankCode')}
               </div>
               <div className="space-y-1">
                 <label htmlFor="emp-account" className={labelClass}>Account number</label>

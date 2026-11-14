@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import prisma, { Prisma } from '../config/db.js';
 import logger from '../config/logger.js';
+import { PayoutStateError, resolvePayoutMode } from '../utils/paymentConfiguration.js';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || null;
 const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET || PAYSTACK_SECRET_KEY;
@@ -12,16 +13,9 @@ const HUBTEL_CLIENT_SECRET = process.env.HUBTEL_CLIENT_SECRET || null;
 const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
 
 /**
- * Simulation mode fabricates a "SENT" result without moving money. It is now OPT-IN in
- * production (ALLOW_PAYMENT_SIMULATION=true). Previously a production deploy without provider
- * credentials silently "paid" everyone - the payslips said SENT and no money moved.
+ * Simulation is restricted to development/test. Live transfers require an explicit
+ * global opt-in plus provider-specific verification (see utils/paymentConfiguration.js).
  */
-const ALLOW_SIMULATION = ['development', 'test'].includes(process.env.NODE_ENV);
-
-/** Thrown for "this item may not be paid right now". Must NEVER flip the item to FAILED. */
-class PayoutStateError extends Error {
-  constructor(message) { super(message); this.name = 'PayoutStateError'; this.expose = true; }
-}
 
 /** 4xx responses are deterministic: retrying cannot help and risks duplicate transfers. */
 const assertOk = (res, json, label) => {
@@ -45,7 +39,7 @@ const callPaystackTransfer = async ({ employee, amountInSubunit, reference }) =>
     signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
       type: 'nuban', name: employee.name, account_number: employee.bankAccount,
-      bank_code: employee.bankName, currency: 'GHS',
+      bank_code: employee.bankCode, currency: 'GHS',
     }),
   });
   const recipientJson = await recipientRes.json().catch(() => ({}));
@@ -63,7 +57,7 @@ const callPaystackTransfer = async ({ employee, amountInSubunit, reference }) =>
   const transferJson = await transferRes.json().catch(() => ({}));
   assertOk(transferRes, transferJson, 'Paystack transfer');
 
-  return { status: 'SENT', reference, providerTransferCode: transferJson.data?.transfer_code };
+  return { status: 'PROCESSING', reference, providerTransferCode: transferJson.data?.transfer_code, providerStatus: transferJson.data?.status || 'pending' };
 };
 
 /** VERIFY against your Hubtel merchant contract/docs: request shape varies by account type. */
@@ -107,7 +101,7 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
     try {
       const item = await prisma.payrollItem.findUnique({
         where: { id: payrollItemId },
-        include: { employee: { select: { bankAccount: true, bankName: true, name: true } }, payrollRun: { select: { status: true } } },
+        include: { employee: { select: { bankAccount: true, bankName: true, bankCode: true, name: true } }, payrollRun: { select: { status: true } } },
       });
 
       if (!item) throw new PayoutStateError('Payroll item not found.');
@@ -125,13 +119,8 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
         throw new PayoutStateError(`Cannot disburse: ${item.employee?.name || item.employeeId} has no bank account on file.`);
       }
 
-      const isLive = provider === 'paystack' ? !!PAYSTACK_SECRET_KEY : !!(HUBTEL_CLIENT_ID && HUBTEL_CLIENT_SECRET && HUBTEL_MERCHANT_ACCOUNT);
-      if (!isLive && !ALLOW_SIMULATION) {
-        throw new PayoutStateError(`Payment provider "${provider}" is not configured; refusing to simulate in production.`);
-      }
-      if (provider !== 'hubtel' && provider !== 'paystack') {
-        throw new PayoutStateError(`Unsupported payment provider: ${provider}`);
-      }
+      const payoutMode = resolvePayoutMode({ provider, employee: item.employee });
+      const isLive = payoutMode === 'LIVE';
 
       // Atomic claim. @updatedAt changes on every write, so a concurrent claimer's `updatedAt` filter fails.
       const idempotencyKey = item.paymentRef || `pay_${item.id}_${uuidv4().substring(0, 8)}`;
@@ -161,15 +150,18 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       providerSucceeded = true;
 
       // A webhook can arrive before the provider request returns. Never overwrite its final state.
+      // Paystack transfer acceptance is not proof that the employee has received funds.
+      // Keep the item PROCESSING until transfer.success / transfer.failed / transfer.reversed.
+      const finalizationStatus = provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT';
       await prisma.payrollItem.updateMany({
         where: { id: payrollItemId, paymentStatus: 'PROCESSING' },
-        data: { paymentStatus: 'SENT' },
+        data: { paymentStatus: finalizationStatus },
       });
 
       if (netPay > 100000) logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPay });
 
       span.setAttributes({
-        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': 'SENT',
+        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT',
         'payout.reference': idempotencyKey, 'payout.simulated': !isLive,
       });
       return gatewayResult;
