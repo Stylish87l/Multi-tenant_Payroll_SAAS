@@ -114,8 +114,8 @@ const Branding = () => {
       } catch { errs.logoUrl = 'Must be a valid URL'; }
     }
     if (form.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail)) errs.contactEmail = 'Enter a valid email address.';
-    if (form.footerNote && form.footerNote.length > 300) {
-      errs.footerNote = 'Must be 300 characters or fewer';
+    if (form.footerNote && form.footerNote.length > 500) {
+      errs.footerNote = 'Must be 500 characters or fewer';
     }
     return errs;
   }, [form]);
