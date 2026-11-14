@@ -16,7 +16,7 @@ jest.unstable_mockModule('../services/auditService.js', () => ({
 const { generatePayslipPDF } = await import('../routes/payslips.js');
 
 const render = async (item) => {
-  const doc = new PDFDocument({ margin: 48, size: 'A4' });
+  const doc = new PDFDocument({ margin: 48, size: 'A4', compress: false });
   const chunks = [];
   doc.on('data', (chunk) => chunks.push(chunk));
   const done = new Promise((resolve, reject) => {
@@ -55,6 +55,14 @@ describe('employee payslip PDF', () => {
     const pdf = await render(fixture);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.length).toBeGreaterThan(1000);
+    const content = pdf.toString('latin1');
+    for (const label of [
+      'EXAMPLE GROUP', 'EMPLOYEE PAYSLIP', 'Basic salary', 'Gross earnings',
+      'Employee SSNIT contribution', 'PAYE income tax', 'Employer SSNIT contribution',
+      'NET PAY', 'Payment reference', 'PAY-123',
+    ]) {
+      expect(content).toContain(label);
+    }
   });
 
   test('renders legacy payroll records without reading current employee salary fields', async () => {
@@ -67,5 +75,6 @@ describe('employee payslip PDF', () => {
     };
     const pdf = await render(legacy);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pdf.toString('latin1')).toContain('Historical earnings split is unavailable for this legacy payroll record.');
   });
 });
