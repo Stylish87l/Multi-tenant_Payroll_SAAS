@@ -32,25 +32,41 @@ const signAccessFor = (user) =>
 
 const isUserUsable = (user) => user && user.status === 'ACTIVE' && !user.deletedAt;
 
-const assertTrustedAuthOrigin = (req, res) => {
-  if (process.env.NODE_ENV !== 'production') return true;
-  const origin = req.get('Origin');
-  const allowed = new Set([
-    process.env.FRONTEND_URL,
-    ...(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()),
-  ].filter(Boolean));
-  if (origin && allowed.has(origin)) return true;
-  logger.warn('Blocked cookie-auth request from untrusted origin', { origin: origin || null, path: req.path, ip: req.ip });
-  res.status(403).json({ error: 'Untrusted request origin' });
-  return false;
+// CSRF defence for endpoints authenticated by the httpOnly refresh cookie.
+// The custom header cannot be attached by a cross-origin HTML form; browsers require
+// a CORS preflight for cross-origin fetches, and only trusted origins are allow-listed.
+const csrfProtection = (req, res, next) => {
+  if (req.get('x-csrf-protection') !== '1') {
+    logger.warn('Blocked cookie-auth request without CSRF header', { path: req.path, ip: req.ip });
+    return res.status(403).json({ error: 'CSRF protection header required' });
+  }
+
+  const fetchSite = req.get('Sec-Fetch-Site');
+  if (fetchSite === 'cross-site') {
+    logger.warn('Blocked cross-site cookie-auth request', { path: req.path, ip: req.ip });
+    return res.status(403).json({ error: 'Cross-site request blocked' });
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    const origin = req.get('Origin');
+    const allowed = new Set([
+      process.env.FRONTEND_URL,
+      ...(process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()),
+    ].filter(Boolean));
+    if (!origin || !allowed.has(origin)) {
+      logger.warn('Blocked cookie-auth request from untrusted origin', { origin: origin || null, path: req.path, ip: req.ip });
+      return res.status(403).json({ error: 'Untrusted request origin' });
+    }
+  }
+
+  return next();
 };
 
 router.get('/me', authMiddleware, (req, res) => {
   res.json({ user: req.user, companyId: req.companyId, role: req.userRole });
 });
 
-router.post('/refresh', async (req, res) => {
-  if (!assertTrustedAuthOrigin(req, res)) return;
+router.post('/refresh', csrfProtection, async (req, res) => {
   const rawRefresh = req.cookies?.[REFRESH_COOKIE_NAME];
   if (!rawRefresh) {
     logger.warn('Refresh attempt blocked: No refresh cookie present', { origin: req.headers.origin });
@@ -137,8 +153,7 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
-router.post('/logout', async (req, res) => {
-  if (!assertTrustedAuthOrigin(req, res)) return;
+router.post('/logout', csrfProtection, async (req, res) => {
   const rawRefresh = req.cookies?.[REFRESH_COOKIE_NAME];
   if (rawRefresh) {
     try {
