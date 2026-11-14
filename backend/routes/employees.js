@@ -156,7 +156,7 @@ router.get('/export', async (req, res) => {
         { header: 'Basic Salary', key: 'basicSalary', width: 15 },
         { header: 'SSNIT Number', key: 'ssnitNumber', width: 20 },
       ];
-      for await (const chunk of employeeChunks(where)) {
+      for await (const chunk of employeeChunks(where, req.userRole)) {
         for (const row of chunk) sheet.addRow({ ...row, ...(row.basicSalary !== undefined ? { basicSalary: Number(row.basicSalary) } : {}) }).commit();
         exported += chunk.length;
       }
@@ -167,7 +167,7 @@ router.get('/export', async (req, res) => {
     }
 
     const all = [];
-    for await (const chunk of employeeChunks(where)) {
+    for await (const chunk of employeeChunks(where, req.userRole)) {
       all.push(...chunk);
       if (all.length > MAX_JSON_EXPORT_ROWS) {
         return res.status(413).json({ error: `JSON export is limited to ${MAX_JSON_EXPORT_ROWS} rows. Use format=csv or format=excel.` });
