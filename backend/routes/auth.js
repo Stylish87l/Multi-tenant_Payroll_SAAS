@@ -48,7 +48,7 @@ const isValidCsrfToken = (token) => {
   const parts = token.split('.');
   if (parts.length !== 3) return false;
   const [issuedAt, nonce, signature] = parts;
-  if (!/^\\d{13}$/.test(issuedAt) || !/^[a-f0-9]{64}$/.test(nonce) || !/^[a-f0-9]{64}$/.test(signature)) return false;
+  if (!/^\d{13}$/.test(issuedAt) || !/^[a-f0-9]{64}$/.test(nonce) || !/^[a-f0-9]{64}$/.test(signature)) return false;
   const age = Date.now() - Number(issuedAt);
   if (age < 0 || age > CSRF_TTL_MS) return false;
   const expected = signCsrfValue(`${issuedAt}.${nonce}`);
