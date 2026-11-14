@@ -41,12 +41,6 @@ const csrfProtection = (req, res, next) => {
     return res.status(403).json({ error: 'CSRF protection header required' });
   }
 
-  const fetchSite = req.get('Sec-Fetch-Site');
-  if (fetchSite === 'cross-site') {
-    logger.warn('Blocked cross-site cookie-auth request', { path: req.path, ip: req.ip });
-    return res.status(403).json({ error: 'Cross-site request blocked' });
-  }
-
   if (process.env.NODE_ENV === 'production') {
     const origin = req.get('Origin');
     const allowed = new Set([
