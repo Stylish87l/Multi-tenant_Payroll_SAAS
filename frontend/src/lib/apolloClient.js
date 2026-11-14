@@ -33,9 +33,8 @@ const getCsrfToken = async () => {
       const payload = await response.json();
       if (!payload.csrfToken) throw new Error('CSRF token missing from server response');
       return payload.csrfToken;
-    }).catch((error) => {
+    }).finally(() => {
       csrfTokenPromise = null;
-      throw error;
     });
   }
   return csrfTokenPromise;
