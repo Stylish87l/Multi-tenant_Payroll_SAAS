@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import crypto from 'node:crypto';
 import prisma, { disconnectDb } from '../config/db.js';
 import logger from '../config/logger.js';
