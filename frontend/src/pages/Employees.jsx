@@ -273,7 +273,7 @@ const Employees = () => {
         </div>
       )}
 
-      <Modal isOpen={showModal && !!companyId} onClose={closeModal} title={editingId ? 'Update staff profile' : 'Register new staff'} size="lg">
+      <Modal isOpen={showModal && !!companyId} onClose={closeModal} title={editingId ? 'Update staff profile' : 'Register new staff'} size="xl">
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           {userError && <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>}
 
