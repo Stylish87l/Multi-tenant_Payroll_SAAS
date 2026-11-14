@@ -104,7 +104,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight', 'x-apollo-operation-name', 'x-csrf-token'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight', 'x-apollo-operation-name', 'x-csrf-token', 'x-csrf-protection'],
   exposedHeaders: ['Content-Disposition'],
 }));
 
