@@ -28,6 +28,12 @@ describe('REST tenant isolation middleware', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  test('fails closed when a tenant role has no company context', () => {
+    const { res, next } = invoke('ADMIN', null, undefined);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   test('does not let HR pass an ADMIN-only route through role inheritance', () => {
     const { res, next } = invoke('HR', 'tenant-a', undefined);
     expect(res.status).toHaveBeenCalledWith(403);
