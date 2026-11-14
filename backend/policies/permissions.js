@@ -72,3 +72,17 @@ export const assertEmployeeInputPermissions = (role, input = {}) => {
   }
   return true;
 };
+
+/** Redact sensitive fields at REST serialization boundaries as well as GraphQL fields. */
+export const redactEmployeeForRole = (employee, role) => {
+  if (!employee) return employee;
+  const safe = { ...employee };
+  for (const field of [
+    'basicSalary', 'housingAllowance', 'transportAllowance', 'otherAllowance',
+    'bankName', 'bankCode', 'bankAccount', 'ssnitNumber', 'ghanaCardPin',
+    'age', 'isMarried', 'hasResponsibility', 'childrenCount', 'isDisabled', 'agedDependentsCount',
+  ]) {
+    if (!canReadEmployeeField(role, field)) safe[field] = null;
+  }
+  return safe;
+};
