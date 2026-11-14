@@ -4,7 +4,7 @@ import { useQuery, useMutation, useSubscription } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, FileCheck, History, AlertCircle, Clock, CheckCircle2, Trash2, Lock } from 'lucide-react';
 
-import { GET_PAYROLL_RUNS } from '../graphql/queries';
+import { GET_PAYROLL_RUNS, GET_COMPANIES } from '../graphql/queries';
 import { RUN_PAYROLL, FINALIZE_PAYROLL, DISCARD_PAYROLL_DRAFT } from '../graphql/mutations';
 import { PAYROLL_UPDATED_SUB } from '../graphql/subscriptions';
 import Card from '../components/Card';
@@ -31,11 +31,11 @@ const Payroll = () => {
   const [actionError, setActionError] = useState(null);
   const [busyRunId, setBusyRunId] = useState(null);
 
-  const variables = { companyId: user?.companyId, page: 1, limit: 50 };
+  const variables = { companyId, page: 1, limit: 50 };
   const { loading, error, data, refetch } = useQuery(GET_PAYROLL_RUNS, {
     variables,
     fetchPolicy: 'cache-and-network',
-    skip: !user?.companyId,
+    skip: !companyId,
     notifyOnNetworkStatusChange: true,
   });
 
@@ -47,7 +47,7 @@ const Payroll = () => {
 
   // The subscription payload is partial; refetching is simpler and always consistent with the server.
   useSubscription(PAYROLL_UPDATED_SUB, {
-    variables: { companyId: user?.companyId },
+    variables: { companyId },
     skip: !user?.companyId,
     onData: () => { refetch().catch(() => {}); },
   });
@@ -61,7 +61,7 @@ const Payroll = () => {
     } catch (err) {
       setActionError(errMsg(err, 'Payroll could not be run. Please try again.'));
     }
-  }, [runPayroll, user, refetch]);
+  }, [runPayroll, user, companyId, refetch]);
 
   const handleFinalize = useCallback(async (run) => {
     if (!window.confirm(`Finalize payroll for ${run.month.slice(0, 7)}? Finalized runs cannot be edited or discarded.`)) return;
@@ -123,11 +123,11 @@ const Payroll = () => {
         </div>
       )}
 
-      {runs.length === 0 && !loading && (
+      {companyId && runs.length === 0 && !loading && (
         <Card className="p-12 text-center"><p className="text-slate-400">No payroll runs yet. Start your first run above.</p></Card>
       )}
 
-      <div className="grid grid-cols-1 gap-6">
+      {companyId && <div className="grid grid-cols-1 gap-6">
         <div className="flex items-center space-x-2 text-slate-400">
           <History size={18} />
           <h2 className="text-xs font-bold tracking-widest">Recent runs</h2>
