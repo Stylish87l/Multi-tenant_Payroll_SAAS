@@ -69,7 +69,7 @@ router.get('/', async (req, res) => {
       }),
     };
 
-    const validSortFields = ['name', 'email', 'basicSalary', 'createdAt'];
+    const validSortFields = ['name', 'email', 'createdAt', ...(canReadEmployeeField(req.userRole, 'basicSalary') ? ['basicSalary'] : [])];
     const orderBy = validSortFields.includes(sortBy)
       ? { [sortBy]: sortOrder === 'desc' ? 'desc' : 'asc' }
       : { name: 'asc' };
