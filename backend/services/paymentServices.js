@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import prisma, { Prisma } from '../config/db.js';
 import logger from '../config/logger.js';
+import { PayoutStateError, resolvePayoutMode } from '../utils/paymentConfiguration.js';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || null;
 const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET || PAYSTACK_SECRET_KEY;
@@ -16,13 +17,8 @@ const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
  * production (ALLOW_PAYMENT_SIMULATION=true). Previously a production deploy without provider
  * credentials silently "paid" everyone - the payslips said SENT and no money moved.
  */
-const ALLOW_SIMULATION = ['development', 'test'].includes(process.env.NODE_ENV);
 
 /** Thrown for "this item may not be paid right now". Must NEVER flip the item to FAILED. */
-class PayoutStateError extends Error {
-  constructor(message) { super(message); this.name = 'PayoutStateError'; this.expose = true; }
-}
-
 /** 4xx responses are deterministic: retrying cannot help and risks duplicate transfers. */
 const assertOk = (res, json, label) => {
   if (res.ok && json?.status !== false) return;
@@ -45,7 +41,7 @@ const callPaystackTransfer = async ({ employee, amountInSubunit, reference }) =>
     signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
       type: 'nuban', name: employee.name, account_number: employee.bankAccount,
-      bank_code: employee.bankName, currency: 'GHS',
+      bank_code: employee.bankCode, currency: 'GHS',
     }),
   });
   const recipientJson = await recipientRes.json().catch(() => ({}));
@@ -107,7 +103,7 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
     try {
       const item = await prisma.payrollItem.findUnique({
         where: { id: payrollItemId },
-        include: { employee: { select: { bankAccount: true, bankName: true, name: true } }, payrollRun: { select: { status: true } } },
+        include: { employee: { select: { bankAccount: true, bankName: true, bankCode: true, name: true } }, payrollRun: { select: { status: true } } },
       });
 
       if (!item) throw new PayoutStateError('Payroll item not found.');
@@ -125,13 +121,8 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
         throw new PayoutStateError(`Cannot disburse: ${item.employee?.name || item.employeeId} has no bank account on file.`);
       }
 
-      const isLive = provider === 'paystack' ? !!PAYSTACK_SECRET_KEY : !!(HUBTEL_CLIENT_ID && HUBTEL_CLIENT_SECRET && HUBTEL_MERCHANT_ACCOUNT);
-      if (!isLive && !ALLOW_SIMULATION) {
-        throw new PayoutStateError(`Payment provider "${provider}" is not configured; refusing to simulate in production.`);
-      }
-      if (provider !== 'hubtel' && provider !== 'paystack') {
-        throw new PayoutStateError(`Unsupported payment provider: ${provider}`);
-      }
+      const payoutMode = resolvePayoutMode({ provider, employee: item.employee });
+      const isLive = payoutMode === 'LIVE';
 
       // Atomic claim. @updatedAt changes on every write, so a concurrent claimer's `updatedAt` filter fails.
       const idempotencyKey = item.paymentRef || `pay_${item.id}_${uuidv4().substring(0, 8)}`;
