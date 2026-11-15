@@ -57,7 +57,7 @@ const addRow = (doc, label, amount, emphasis = false) => {
   doc.font(emphasis ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#1e293b');
   doc.text(label, 50, y, { width: 340 });
   doc.text(money(amount), 405, y, { width: 140, align: 'right' });
-  doc.y = y + 17;
+  doc.y = y + 15;
 };
 const addTextRow = (doc, label, value) => {
   const y = doc.y;
@@ -79,10 +79,10 @@ export const generatePayslipPDF = (doc, item, logo) => {
   const formatDate = (value) => value ? new Date(value).toLocaleDateString('en-GH', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
   const maskIdentifier = (value) => {
     const raw = String(value || '').replace(/\s+/g, '');
-    return raw.length > 4 ? '*'.repeat(Math.max(4, raw.length - 4)) + raw.slice(-4) : (raw || '—');
+    return raw ? '*'.repeat(Math.max(4, raw.length - 4)) + raw.slice(-4) : '—';
   };
   const addSection = (title, subtitle = '') => {
-    doc.moveDown(0.7);
+    doc.moveDown(0.35);
     const y = doc.y;
     doc.roundedRect(pageLeft, y, contentWidth, 22, 4).fill('#F1F5F9');
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#334155').text(title.toUpperCase(), pageLeft + 10, y + 7, { width: subtitle ? 300 : contentWidth - 20 });
@@ -131,10 +131,10 @@ export const generatePayslipPDF = (doc, item, logo) => {
   const infoY = doc.y;
   addInfoRow('Employee name', employee.name, pageLeft + 10, infoY);
   addInfoRow('Employee number', employee.id, pageLeft + 260, infoY);
-  addInfoRow('Position', employee.position, pageLeft + 10, infoY + 37);
-  addInfoRow('Email', employee.email, pageLeft + 260, infoY + 37);
-  addInfoRow('SSNIT number', maskIdentifier(employee.ssnitNumber), pageLeft + 10, infoY + 74);
-  doc.y = infoY + 105;
+  addInfoRow('Position', employee.position, pageLeft + 10, infoY + 31);
+  addInfoRow('Email', employee.email, pageLeft + 260, infoY + 31);
+  addInfoRow('SSNIT number', maskIdentifier(employee.ssnitNumber), pageLeft + 10, infoY + 62);
+  doc.y = infoY + 88;
 
   addSection('Earnings', 'AMOUNTS IN GHS');
   const snapshotsAvailable = item.basicSalarySnapshot !== null && item.basicSalarySnapshot !== undefined;
@@ -168,13 +168,13 @@ export const generatePayslipPDF = (doc, item, logo) => {
   const paymentY = doc.y;
   addInfoRow('Payment status', String(item.paymentStatus || 'PENDING').replaceAll('_', ' '), pageLeft + 10, paymentY);
   addInfoRow('Payment reference', item.paymentRef, pageLeft + 260, paymentY);
-  addInfoRow('Bank', employee.bankName, pageLeft + 10, paymentY + 37);
-  addInfoRow('Account ending', maskIdentifier(employee.bankAccount), pageLeft + 260, paymentY + 37);
-  doc.y = paymentY + 74;
-  doc.font('Helvetica-Oblique').fontSize(7).fillColor('#64748B').text('Bank information is masked and reflects the employee profile on file; it may not represent the actual payout destination for this historical run.', pageLeft + 10, doc.y, { width: contentWidth - 20 });
-  doc.y += 18;
+  addInfoRow('Bank', employee.bankName, pageLeft + 10, paymentY + 31);
+  addInfoRow('Account ending', maskIdentifier(employee.bankAccount), pageLeft + 260, paymentY + 31);
+  doc.y = paymentY + 62;
+  doc.font('Helvetica-Oblique').fontSize(6.5).fillColor('#64748B').text('Masked bank details reflect the current employee profile, not necessarily the historical payout destination.', pageLeft + 10, doc.y, { width: contentWidth - 20 });
+  doc.y += 13;
   doc.font('Helvetica').fontSize(7).fillColor('#64748B').text('Payroll finalized: ' + formatDate(payrollRun.processedAt), pageLeft + 10, doc.y);
-  doc.y += 14;
+  doc.y += 10;
 
   if (template.showFooter !== false) {
     const footer = company.footerNote || 'This is an electronically generated payslip and does not require a signature.';
