@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ArrowLeft, ArrowRight, BriefcaseBusiness, Check, CreditCard, Landmark,
+  ArrowLeft, ArrowRight, Briefcase, Check, CreditCard, Landmark,
   ShieldCheck, UserRound, Wallet,
 } from 'lucide-react';
 
@@ -78,7 +78,7 @@ const EmployeeFormWizard = ({
               {field('position', 'Job title', { type: 'text', required: true, placeholder: 'e.g. Finance Officer' })}
             </div>
             {field('email', 'Work email address', { type: 'email', autoComplete: 'email', required: true, placeholder: 'name@company.com' }, 'Used to match the employee profile to their Paylio login.')}
-            <div className="rounded-xl border border-sky-400/15 bg-sky-400/5 p-3 text-xs leading-5 text-slate-300"><BriefcaseBusiness size={15} className="mr-2 inline text-sky-300"/>Use the employee’s official name and work email. The email should match their account email if they already have a Paylio login.</div>
+            <div className="rounded-xl border border-sky-400/15 bg-sky-400/5 p-3 text-xs leading-5 text-slate-300"><Briefcase size={15} className="mr-2 inline text-sky-300"/>Use the employee’s official name and work email. The email should match their account email if they already have a Paylio login.</div>
           </>
         )}
 
