@@ -126,8 +126,22 @@ const Employees = () => {
     e.preventDefault();
     setUserError(null);
 
-    // Zod validation (mirrors the backend schema). Replaces the old ad-hoc checks and the unused validateForm util.
-    const { valid, errors, data: clean } = await validateForm(employeeFormSchema, formData);
+    // HR may update permitted profile/statutory fields but cannot change existing compensation
+    // or bank details. Those values are omitted before validation and mutation because the API
+    // intentionally redacts them from HR reads.
+    const isHrEdit = user?.role === 'HR' && Boolean(editingId);
+    const validationInput = { ...formData };
+    if (isHrEdit) {
+      ['basicSalary', 'housingAllowance', 'transportAllowance', 'otherAllowance', 'bankName', 'bankCode', 'bankAccount']
+        .forEach((key) => delete validationInput[key]);
+    }
+    const validationSchema = isHrEdit
+      ? employeeFormSchema.omit({
+        basicSalary: true, housingAllowance: true, transportAllowance: true, otherAllowance: true,
+        bankName: true, bankCode: true, bankAccount: true,
+      }).partial()
+      : employeeFormSchema;
+    const { valid, errors, data: clean } = await validateForm(validationSchema, validationInput);
     setFieldErrors(errors);
     if (!valid) {
       setUserError(Object.values(errors)[0]);
@@ -174,7 +188,7 @@ const Employees = () => {
     } finally {
       setSaving(false);
     }
-  }, [createEmployee, updateEmployee, editingId, formData, closeModal, queryVars, refetch, isSuperAdmin, companyId]);
+  }, [createEmployee, updateEmployee, editingId, formData, closeModal, queryVars, refetch, isSuperAdmin, companyId, user?.role]);
 
   const loadNextPage = useCallback(() => {
     const nextPage = (data?.employees?.page ?? 1) + 1;
@@ -211,9 +225,7 @@ const Employees = () => {
         </div>
       </div>
 
-      {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
-
-      {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
+      {isSuperAdmin && !companyId && <Card className="border-dashed border-white/10 bg-slate-950/30 p-8 text-center text-slate-400">Select an organisation before adding or viewing staff.</Card>}
 
       {userError && !showModal && (
         <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>
@@ -249,10 +261,17 @@ const Employees = () => {
                     </div>
 
                     <div className="flex items-center justify-between md:justify-end gap-6 border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
-                      <div className="text-left md:text-right">
-                        <p className="text-[10px] font-bold text-slate-500 tracking-widest">Basic salary</p>
-                        <p className="text-lg font-bold text-emerald-400 font-mono">{formatGHS(emp.basicSalary)}</p>
-                      </div>
+                      {['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'].includes(user?.role) ? (
+                        <div className="text-left md:text-right">
+                          <p className="text-[10px] font-bold text-slate-500 tracking-widest">Basic salary</p>
+                          <p className="text-lg font-bold text-emerald-400 font-mono">{formatGHS(emp.basicSalary)}</p>
+                        </div>
+                      ) : (
+                        <div className="text-left md:text-right">
+                          <p className="text-[10px] font-bold text-slate-500 tracking-widest">Compensation</p>
+                          <p className="text-xs font-medium text-slate-500">Restricted by role</p>
+                        </div>
+                      )}
                       <button onClick={() => handleEdit(emp)} aria-label={`Edit ${emp.name}`}
                         className="p-3 bg-white/5 hover:bg-primary/20 text-slate-300 hover:text-primary rounded-xl transition-all active:scale-90">
                         <Edit2 size={18} />
