@@ -304,6 +304,7 @@ const Employees = () => {
           editingId={editingId}
           role={user?.role}
           onSubmit={handleSubmit}
+          onCancel={closeModal}
         />
       </Modal>
     </div>
