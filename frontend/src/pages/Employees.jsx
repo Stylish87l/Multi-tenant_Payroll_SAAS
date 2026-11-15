@@ -22,8 +22,6 @@ const DEFAULT_RELIEF_VALUES = {
 const DEFAULT_ALLOWANCES = { housingAllowance: 0, transportAllowance: 0, otherAllowance: 0 };
 
 const LIMIT = 50;
-const inputClass = 'w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary';
-const labelClass = 'text-xs font-bold text-slate-500 ml-1';
 
 const mutationMessage = (err, fallback) => err?.graphQLErrors?.[0]?.message || fallback;
 
