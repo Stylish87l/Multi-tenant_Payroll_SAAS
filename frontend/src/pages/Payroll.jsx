@@ -109,8 +109,9 @@ const Payroll = () => {
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Payroll</h1>
-          <p className="text-slate-400 text-sm">Run, review and approve monthly payroll</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Payroll operations</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Payroll</h1>
+          <p className="mt-2 text-sm text-slate-400">Prepare, review and approve monthly payroll with a clear audit trail.</p>
         </div>
 
         {canRun && (
@@ -122,6 +123,26 @@ const Payroll = () => {
         )}
       </div>
 
+
+      <section aria-label="Payroll workflow" className="rounded-2xl border border-white/10 bg-slate-950/35 p-4 sm:p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-white">Payroll workflow</h2>
+          <span className="text-[11px] text-slate-500">Drafts are not final payroll</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            ['01', 'Prepare', 'Generate a draft from active employee records.'],
+            ['02', 'Review', 'Check totals and resolve any payroll issues.'],
+            ['03', 'Finalize', 'An administrator approves and locks the payroll run.'],
+          ].map(([number, title, description], index) => (
+            <div key={number} className="flex items-start gap-3 rounded-xl bg-white/[0.025] p-3">
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold ${index === 2 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-primary/10 text-primary'}`}>{number}</span>
+              <div><p className="text-xs font-semibold text-slate-200">{title}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">{description}</p></div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] leading-5 text-slate-500">Accountants can prepare payroll runs. Finalization is restricted to administrators to support separation of duties.</p>
+      </section>
 
       {isSuperAdmin && (
         <Card className="border-white/5 bg-slate-950/40 p-5">

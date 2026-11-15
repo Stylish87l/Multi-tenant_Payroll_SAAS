@@ -11,6 +11,7 @@ const MyPayslips = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState('');
+  const latestPayslip = payslips[0] || null;
 
   const loadPayslips = useCallback(async () => {
     setLoading(true);
@@ -52,8 +53,9 @@ const MyPayslips = () => {
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">My Payslips</h1>
-          <p className="text-sm text-slate-400 mt-1">Download your finalized monthly payroll statements.</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Your payroll</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">My payslips</h1>
+          <p className="mt-2 text-sm text-slate-400">Your finalized monthly statements, ready to review and download.</p>
         </div>
         <button type="button" onClick={loadPayslips} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-50">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
@@ -62,10 +64,17 @@ const MyPayslips = () => {
 
       {error && <div role="alert" className="flex items-center gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300"><AlertCircle size={16} />{error}</div>}
 
+      {payslips.length > 0 && (
+        <section className="grid gap-3 sm:grid-cols-2" aria-label="Payslip summary">
+          <Card className="border-white/5 bg-slate-950/40 p-4"><p className="text-xs font-medium text-slate-400">Available statements</p><p className="mt-2 text-2xl font-semibold tabular-nums text-white">{payslips.length}</p><p className="mt-1 text-[11px] text-slate-500">Finalized payslips in your account</p></Card>
+          <Card className="border-white/5 bg-slate-950/40 p-4"><p className="text-xs font-medium text-slate-400">Latest net pay</p><p className="mt-2 text-2xl font-semibold tabular-nums text-white">{latestPayslip ? `GHS ${money(latestPayslip.netPay)}` : '—'}</p><p className="mt-1 text-[11px] text-slate-500">{latestPayslip ? `Pay period ${String(latestPayslip.month).slice(0, 7)}` : 'No finalized statement yet'}</p></Card>
+        </section>
+      )}
+
       {payslips.length === 0 && !loading ? (
         <Card className="p-10 text-center">
           <Receipt size={32} className="mx-auto text-slate-500 mb-3" />
-          <h2 className="font-semibold text-white">No finalized payslips yet</h2>
+          <h2 className="font-semibold text-white">No payslips available yet</h2>
           <p className="text-sm text-slate-400 mt-1">Your payslip will appear here after your company&apos;s payroll is finalized.</p>
         </Card>
       ) : (

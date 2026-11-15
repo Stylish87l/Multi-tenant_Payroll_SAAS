@@ -2,7 +2,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, Edit2, ShieldCheck, Mail, Landmark, Users as UsersIcon, Wallet } from 'lucide-react';
+import { Plus, Search, Edit2, ShieldCheck, Mail } from 'lucide-react';
+import EmployeeFormWizard from '../components/EmployeeFormWizard';
 
 import { GET_EMPLOYEES, GET_COMPANIES } from '../graphql/queries';
 import { CREATE_EMPLOYEE, UPDATE_EMPLOYEE } from '../graphql/mutations';
@@ -21,8 +22,6 @@ const DEFAULT_RELIEF_VALUES = {
 const DEFAULT_ALLOWANCES = { housingAllowance: 0, transportAllowance: 0, otherAllowance: 0 };
 
 const LIMIT = 50;
-const inputClass = 'w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary';
-const labelClass = 'text-xs font-bold text-slate-500 ml-1';
 
 const mutationMessage = (err, fallback) => err?.graphQLErrors?.[0]?.message || fallback;
 
@@ -125,8 +124,22 @@ const Employees = () => {
     e.preventDefault();
     setUserError(null);
 
-    // Zod validation (mirrors the backend schema). Replaces the old ad-hoc checks and the unused validateForm util.
-    const { valid, errors, data: clean } = await validateForm(employeeFormSchema, formData);
+    // HR may update permitted profile/statutory fields but cannot change existing compensation
+    // or bank details. Those values are omitted before validation and mutation because the API
+    // intentionally redacts them from HR reads.
+    const isHrEdit = user?.role === 'HR' && Boolean(editingId);
+    const validationInput = { ...formData };
+    if (isHrEdit) {
+      ['basicSalary', 'housingAllowance', 'transportAllowance', 'otherAllowance', 'bankName', 'bankCode', 'bankAccount']
+        .forEach((key) => delete validationInput[key]);
+    }
+    const validationSchema = isHrEdit
+      ? employeeFormSchema.omit({
+        basicSalary: true, housingAllowance: true, transportAllowance: true, otherAllowance: true,
+        bankName: true, bankCode: true, bankAccount: true,
+      }).partial()
+      : employeeFormSchema;
+    const { valid, errors, data: clean } = await validateForm(validationSchema, validationInput);
     setFieldErrors(errors);
     if (!valid) {
       setUserError(Object.values(errors)[0]);
@@ -173,7 +186,7 @@ const Employees = () => {
     } finally {
       setSaving(false);
     }
-  }, [createEmployee, updateEmployee, editingId, formData, closeModal, queryVars, refetch, isSuperAdmin, companyId]);
+  }, [createEmployee, updateEmployee, editingId, formData, closeModal, queryVars, refetch, isSuperAdmin, companyId, user?.role]);
 
   const loadNextPage = useCallback(() => {
     const nextPage = (data?.employees?.page ?? 1) + 1;
@@ -210,9 +223,7 @@ const Employees = () => {
         </div>
       </div>
 
-      {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
-
-      {isSuperAdmin && !companyId && <Card className="p-6 text-center text-slate-400">Select a tenant before adding or viewing staff.</Card>}
+      {isSuperAdmin && !companyId && <Card className="border-dashed border-white/10 bg-slate-950/30 p-8 text-center text-slate-400">Select an organisation before adding or viewing staff.</Card>}
 
       {userError && !showModal && (
         <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>
@@ -248,10 +259,17 @@ const Employees = () => {
                     </div>
 
                     <div className="flex items-center justify-between md:justify-end gap-6 border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
-                      <div className="text-left md:text-right">
-                        <p className="text-[10px] font-bold text-slate-500 tracking-widest">Basic salary</p>
-                        <p className="text-lg font-bold text-emerald-400 font-mono">{formatGHS(emp.basicSalary)}</p>
-                      </div>
+                      {['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'].includes(user?.role) ? (
+                        <div className="text-left md:text-right">
+                          <p className="text-[10px] font-bold text-slate-500 tracking-widest">Basic salary</p>
+                          <p className="text-lg font-bold text-emerald-400 font-mono">{formatGHS(emp.basicSalary)}</p>
+                        </div>
+                      ) : (
+                        <div className="text-left md:text-right">
+                          <p className="text-[10px] font-bold text-slate-500 tracking-widest">Compensation</p>
+                          <p className="text-xs font-medium text-slate-500">Restricted by role</p>
+                        </div>
+                      )}
                       <button onClick={() => handleEdit(emp)} aria-label={`Edit ${emp.name}`}
                         className="p-3 bg-white/5 hover:bg-primary/20 text-slate-300 hover:text-primary rounded-xl transition-all active:scale-90">
                         <Edit2 size={18} />
@@ -273,119 +291,19 @@ const Employees = () => {
         </div>
       )}
 
-      <Modal isOpen={showModal && !!companyId} onClose={closeModal} title={editingId ? 'Update staff profile' : 'Register new staff'} size="xl">
-        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-          {userError && <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2 space-y-1">
-              <label htmlFor="emp-name" className={labelClass}>Full name</label>
-              <input id="emp-name" type="text" value={formData.name || ''} onChange={(e) => setField('name', e.target.value)} className={inputClass} required />
-              {fieldError('name')}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="emp-position" className={labelClass}>Job title</label>
-              <input id="emp-position" type="text" value={formData.position || ''} onChange={(e) => setField('position', e.target.value)} className={inputClass} placeholder="e.g. Engineer" required />
-              {fieldError('position')}
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="emp-email" className={labelClass}>Email address</label>
-            <input id="emp-email" type="email" value={formData.email || ''} onChange={(e) => setField('email', e.target.value)} className={inputClass} required />
-            {fieldError('email')}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-1">
-              <label htmlFor="emp-salary" className={labelClass}>Basic salary (GHS)</label>
-              <input id="emp-salary" type="number" min="0" step="0.01" value={formData.basicSalary ?? ''} onChange={(e) => setField('basicSalary', e.target.value)} className={inputClass} required />
-              {fieldError('basicSalary')}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="emp-ssnit" className={labelClass}>SSNIT number</label>
-              <input id="emp-ssnit" type="text" value={formData.ssnitNumber || ''} onChange={(e) => setField('ssnitNumber', e.target.value)} className={inputClass} placeholder="S123456789012" />
-              {fieldError('ssnitNumber')}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="emp-card" className={labelClass}>Ghana Card PIN</label>
-              <input id="emp-card" type="text" value={formData.ghanaCardPin || ''} onChange={(e) => setField('ghanaCardPin', e.target.value)} className={inputClass} placeholder="GHA-000000000-0" />
-              {fieldError('ghanaCardPin')}
-            </div>
-          </div>
-
-          <div className="space-y-3 border-t border-white/5 pt-5">
-            <div className="flex items-center gap-2 text-slate-400"><Wallet size={16} /><h3 className="text-xs font-bold tracking-widest">Monthly allowances (GHS)</h3></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[['housingAllowance', 'Housing'], ['transportAllowance', 'Transport'], ['otherAllowance', 'Other']].map(([key, label]) => (
-                <div key={key} className="space-y-1">
-                  <label htmlFor={`emp-${key}`} className={labelClass}>{label}</label>
-                  <input id={`emp-${key}`} type="number" min="0" step="0.01" value={formData[key] ?? 0} onChange={(e) => setField(key, e.target.value)} className={inputClass} />
-                  {fieldError(key)}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-3 border-t border-white/5 pt-5">
-            <div className="flex items-center gap-2 text-slate-400"><Landmark size={16} /><h3 className="text-xs font-bold tracking-widest">Banking details</h3></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label htmlFor="emp-bank" className={labelClass}>Bank name</label>
-                <input id="emp-bank" type="text" value={formData.bankName || ''} onChange={(e) => setField('bankName', e.target.value)} className={inputClass} placeholder="e.g. GCB Bank" />
-                {fieldError('bankName')}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="emp-bank-code" className={labelClass}>Bank code (required for Paystack)</label>
-                <input id="emp-bank-code" type="text" value={formData.bankCode || ''} onChange={(e) => setField('bankCode', e.target.value)} className={inputClass} placeholder="Provider bank code" />
-                {fieldError('bankCode')}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="emp-account" className={labelClass}>Account number</label>
-                <input id="emp-account" type="text" inputMode="numeric" value={formData.bankAccount || ''} onChange={(e) => setField('bankAccount', e.target.value)} className={inputClass} placeholder="5-20 digits" />
-                {fieldError('bankAccount')}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3 border-t border-white/5 pt-5">
-            <div className="flex items-center gap-2 text-slate-400"><UsersIcon size={16} /><h3 className="text-xs font-bold tracking-widest">GRA tax relief details</h3></div>
-            <p className="text-xs text-slate-500 -mt-2">These directly affect PAYE relief on every payroll run. Confirm with the employee instead of leaving defaults if any don&apos;t apply.</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label htmlFor="emp-age" className={labelClass}>Age</label>
-                <input id="emp-age" type="number" min="18" max="70" value={formData.age ?? DEFAULT_RELIEF_VALUES.age} onChange={(e) => setField('age', e.target.value)} className={inputClass} />
-                <p className="text-[10px] text-slate-600 ml-1">60+ qualifies for old-age relief</p>
-                {fieldError('age')}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="emp-children" className={labelClass}>Children (relief, max 3)</label>
-                <input id="emp-children" type="number" min="0" max="3" value={formData.childrenCount ?? 0} onChange={(e) => setField('childrenCount', e.target.value)} className={inputClass} />
-                {fieldError('childrenCount')}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="emp-aged" className={labelClass}>Aged dependents (max 2)</label>
-                <input id="emp-aged" type="number" min="0" max="2" value={formData.agedDependentsCount ?? 0} onChange={(e) => setField('agedDependentsCount', e.target.value)} className={inputClass} />
-                {fieldError('agedDependentsCount')}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-              {[['isMarried', 'Married'], ['hasResponsibility', 'Responsible for a dependent spouse'], ['isDisabled', 'Registered disability']].map(([key, label]) => (
-                <label key={key} className="flex items-center gap-3 bg-slate-950 border border-white/10 rounded-xl p-3 cursor-pointer hover:border-primary/40 transition-colors">
-                  <input type="checkbox" checked={!!formData[key]} onChange={(e) => setField(key, e.target.checked)} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-primary focus:ring-primary/50" />
-                  <span className="text-sm text-slate-300">{label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <button type="submit" disabled={saving}
-            className="w-full mt-2 py-4 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-60">
-            {saving ? 'Saving...' : editingId ? 'Save changes' : 'Register staff'}
-          </button>
-        </form>
+      <Modal isOpen={showModal && !!companyId} onClose={closeModal} title={editingId ? 'Update employee profile' : 'Add a new employee'} size="xl">
+        <EmployeeFormWizard
+          key={editingId || 'new-employee'}
+          formData={formData}
+          setField={setField}
+          fieldError={fieldError}
+          userError={userError}
+          saving={saving}
+          editingId={editingId}
+          role={user?.role}
+          onSubmit={handleSubmit}
+          onCancel={closeModal}
+        />
       </Modal>
     </div>
   );
