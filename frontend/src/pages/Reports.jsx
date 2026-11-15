@@ -32,6 +32,7 @@ const Reports = () => {
   });
 
   const runs = useMemo(() => runsData?.payrollRuns?.items ?? [], [runsData]);
+  const selectedRun = useMemo(() => runs.find((run) => run.id === selectedRunId) || null, [runs, selectedRunId]);
 
   // Handle auto-selection of the latest active payroll run once data streams in
   useEffect(() => {
@@ -176,15 +177,18 @@ const Reports = () => {
   return (
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">
       <header>
-        <h1 className="text-3xl font-bold text-white tracking-tight">Compliance Center</h1>
-        <p className="text-slate-400 text-sm mt-1">Download official schedules for Ghanaian regulatory bodies.</p>
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Reporting & compliance</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Reports & exports</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Prepare payroll schedules and employee payslip exports for the payroll period you select.</p>
       </header>
 
       <Card className="border-white/5 bg-slate-950/40 p-6">
-        <div className="space-y-2">
-          <label htmlFor="payroll-run-select" className="text-xs font-bold uppercase tracking-widest text-slate-500 block">
-            Target Payroll Target Period
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-2">
+          <label htmlFor="payroll-run-select" className="block text-xs font-semibold text-slate-300">
+            Payroll period
           </label>
+          <p className="text-xs text-slate-500">Choose the payroll run to use for each export.</p>
           {runs.length === 0 ? (
             <p className="text-sm text-slate-400 bg-slate-900/40 p-3 border border-white/5 rounded-xl">
               No closed or active payroll runs found. Finalize a payroll calculation within the engine to pull files.
@@ -203,22 +207,24 @@ const Reports = () => {
               ))}
             </select>
           )}
+          </div>
+          {selectedRun && <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-wider text-primary">Selected run</p><p className="mt-1 text-sm font-semibold text-white">{String(selectedRun.month).slice(0, 7)}</p><p className="mt-0.5 text-[11px] text-slate-400">Status: {String(selectedRun.status).toLowerCase()}</p></div>}
         </div>
       </Card>
 
       {errorMsg && (
-        <div role="status" aria-live="polite" className="rounded-xl bg-rose-500/10 text-rose-400 p-4 border border-rose-500/20 text-sm shadow-sm">
+        <div role="alert" aria-live="polite" className="rounded-xl bg-rose-500/10 text-rose-400 p-4 border border-rose-500/20 text-sm shadow-sm">
           {errorMsg}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {reportCards.map((report) => {
           const downloading = isDownloading === report.id;
           const dynamicDisabled = !!isDownloading || !selectedRunId || runs.length === 0;
           
           return (
-            <Card key={report.id} className="group relative border-white/5 bg-slate-950/40 p-6 transition-all hover:border-white/15">
+            <Card key={report.id} className="group relative border-white/5 bg-slate-950/40 p-5 transition-all hover:border-primary/25" >
               <div className="flex items-start space-x-5">
                 <div className={`p-4 rounded-2xl bg-white/5 ${report.color} group-hover:scale-105 transition-transform duration-200`} aria-hidden="true">
                   <report.icon size={28} />
@@ -246,22 +252,17 @@ const Reports = () => {
                 </div>
               </div>
 
-              {runs.length > 0 && selectedRunId && (
-                <div className="absolute top-4 right-4 flex items-center space-x-2 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Compiling</span>
-                </div>
-              )}
+              <div className="mt-4 border-t border-white/5 pt-3 text-[11px] text-slate-500" aria-live="polite">
+                {downloading ? 'Preparing your export…' : selectedRun ? `Ready for ${String(selectedRun.month).slice(0, 7)}` : 'Select a payroll period to continue'}
+              </div>
             </Card>
           );
         })}
       </div>
 
-      <div className="rounded-2xl border border-dashed border-white/10 p-5 flex items-center justify-between text-slate-500 bg-slate-950/20">
-        <div className="flex items-center space-x-3">
-          <ShieldCheck size={18} className="text-slate-400" />
-          <p className="text-xs italic tracking-wide">All scheduled ledger exports are matching current GRA and SSNIT legislative models.</p>
-        </div>
+      <div className="flex items-start gap-3 rounded-2xl border border-sky-400/10 bg-sky-400/[0.04] p-4 text-xs leading-5 text-slate-400">
+        <ShieldCheck size={17} className="mt-0.5 shrink-0 text-sky-300" />
+        <p>Review exported schedules before submission. Confirm employee details and statutory amounts against the applicable requirements for the selected payroll period.</p>
       </div>
     </div>
   );
