@@ -9,7 +9,7 @@ const labelClass = 'block text-xs font-semibold text-slate-300';
 const helpClass = 'mt-1 text-[11px] leading-4 text-slate-500';
 
 const EmployeeFormWizard = ({
-  formData, setField, fieldError, userError, saving, editingId, role, onSubmit,
+  formData, setField, fieldError, userError, saving, editingId, role, onSubmit, onCancel,
 }) => {
   const [step, setStep] = useState(0);
   const isHr = role === 'HR';
@@ -140,8 +140,12 @@ const EmployeeFormWizard = ({
       </section>
 
       <div className="sticky bottom-0 -mx-5 flex items-center justify-between gap-3 border-t border-white/10 bg-slate-900/95 px-5 py-4 backdrop-blur sm:-mx-6 sm:px-6">
-        <button type="button" onClick={() => setStep((value) => Math.max(0, value - 1))} disabled={step === 0 || saving}
-          className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"><ArrowLeft size={15}/> Back</button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setStep((value) => Math.max(0, value - 1))} disabled={step === 0 || saving}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"><ArrowLeft size={15}/> Back</button>
+          <button type="button" onClick={onCancel} disabled={saving}
+            className="rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white disabled:opacity-40">Cancel</button>
+        </div>
         {step < steps.length - 1 ? (
           <button type="button" onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/15 transition hover:brightness-110">Continue <ArrowRight size={15}/></button>
