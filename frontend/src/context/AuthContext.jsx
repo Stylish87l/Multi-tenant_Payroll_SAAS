@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { useMutation, useApolloClient } from '@apollo/client';
 import { useNavigate } from 'react-router-dom';
 import { LOGIN_MUTATION } from '../graphql/mutations';
-import { doRefresh, doLogout, TOKEN_KEY, USER_KEY } from '../lib/apolloClient';
+import { doRefresh, doLogout, resetLogoutState, TOKEN_KEY, USER_KEY } from '../lib/apolloClient';
 
 const AuthContext = createContext(null);
 
@@ -52,16 +52,26 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(async () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     hasAuthenticatedRef.current = false;
+
+    // Start the logout lock synchronously so Apollo errors cannot refresh the session
+    // while the server is revoking the cookie-backed refresh token.
+    const logoutRequest = doLogout();
     setUser(null);
+    clearAuthStorage();
     navigate('/login', { replace: true });
 
-    await doLogout(); // revoke the refresh token server-side BEFORE dropping local state
+    const result = await logoutRequest;
+    // A refresh already in flight may have completed while logout was waiting for it.
     clearAuthStorage();
     try {
-      await client.resetStore();
+      await client.clearStore();
     } catch (e) {
-      console.warn('Store reset failed', e);
+      console.warn('Store clear failed', e);
     }
+    if (!result?.success) {
+      console.error('Server logout could not be confirmed. Automatic refresh remains disabled until the next successful login.', result?.error);
+    }
+    return result;
   }, [client, navigate, clearAuthStorage]);
 
   const scheduleRefresh = useCallback((token) => {
@@ -113,6 +123,7 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(async (variables) => {
     try {
       const { data } = await loginMutation({ variables });
+      resetLogoutState();
       const { accessToken, user: rawUser, companyId } = data.login;
       const userData = normalizeUser({ ...rawUser, companyId: rawUser.companyId ?? companyId });
 
