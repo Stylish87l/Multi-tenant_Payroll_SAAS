@@ -8,6 +8,9 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
 
 const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
   const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -20,7 +23,7 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab' || !dialogRef.current) return;
@@ -50,7 +53,7 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
       document.removeEventListener('keydown', handleKeyDown);
       if (previouslyFocused && typeof previouslyFocused.focus === 'function') previouslyFocused.focus();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   const sizeMap = {
     sm: 'max-w-sm',
@@ -89,7 +92,6 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
             <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-slate-900/95 px-5 py-4 backdrop-blur sm:px-6">
               <div className="min-w-0">
                 <h2 id="modal-title" className="truncate text-lg font-semibold tracking-tight text-white sm:text-xl">{title || 'Dialog'}</h2>
-                <p className="mt-0.5 text-[11px] text-slate-500">Your changes are saved securely to your organisation.</p>
               </div>
               <button
                 type="button"
