@@ -337,42 +337,62 @@ const Branding = () => {
               </button>
             </Card>
 
-            {/* Live preview */}
-            <Card className="border-white/5 bg-slate-950/40 p-6">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Payslip Header Preview</h3>
-              <div className="rounded-xl border border-white/10 bg-white p-6">
-                <div className={`flex flex-col ${form.logoAlignment === 'left' ? 'items-start text-left' : form.logoAlignment === 'right' ? 'items-end text-right' : 'items-center text-center'}`}>
-                  {form.logoUrl ? (
-                    <img
-                      src={form.logoUrl}
-                      alt="Company logo preview"
-                      className="h-16 object-contain mb-3"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    />
-                  ) : (
-                    <div className="h-16 w-16 rounded-lg bg-slate-200 mb-3 flex items-center justify-center text-slate-400 text-xs">
-                      No logo
+            {/* Full payslip preview: illustrative figures update with branding controls above. */}
+            <Card className="border-white/5 bg-slate-950/40 p-5 lg:sticky lg:top-6 self-start">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div><h3 className="text-sm font-bold text-white">Live payslip preview</h3><p className="mt-1 text-[11px] text-slate-500">A4 layout · Updates as you edit branding</p></div>
+                <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-primary">Sample data</span>
+              </div>
+              <div className="mx-auto w-full max-w-[620px] overflow-hidden rounded-lg bg-white shadow-2xl" style={{ color: '#172033', aspectRatio: '210 / 297' }}>
+                <div className="h-2" style={{ backgroundColor: previewThemeColor }} />
+                <div className="flex h-full flex-col px-[7%] pb-[5%] pt-[4%] text-[clamp(7px,1vw,11px)]">
+                  <div className={'flex flex-col ' + (form.logoAlignment === 'left' ? 'items-start text-left' : form.logoAlignment === 'right' ? 'items-end text-right' : 'items-center text-center')}>
+                    {form.logoUrl ? <img src={form.logoUrl} alt="Company logo preview" className="mb-2 h-10 max-w-28 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="mb-2 flex h-10 w-10 items-center justify-center rounded bg-slate-100 text-[8px] text-slate-400">LOGO</div>}
+                    <h2 className="text-[clamp(11px,1.7vw,17px)] font-extrabold tracking-tight" style={{ color: previewThemeColor }}>
+                      {form.companyDisplayName || (isSuperAdmin ? companies.find((c) => c.id === selectedCompanyId)?.name : user?.companyName) || 'Your Company'}
+                    </h2>
+                    {form.address && <p className="mt-1 text-slate-500">{form.address}</p>}
+                    {[form.contactEmail, form.contactPhone].filter(Boolean).join(' · ') && <p className="mt-0.5 text-slate-500">{[form.contactEmail, form.contactPhone].filter(Boolean).join(' · ')}</p>}
+                    {form.tagline && <p className="mt-1 italic text-slate-500">{form.tagline}</p>}
+                  </div>
+                  <div className="mt-4 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div><p className="font-extrabold tracking-wide">EMPLOYEE PAYSLIP</p><p className="mt-0.5 text-slate-500">PAY PERIOD · 2026-10</p></div>
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[8px] font-bold text-emerald-700">FINALIZED</span>
+                  </div>
+                  <div className="mt-3">
+                    <p className="border-b border-slate-200 pb-1 font-bold uppercase tracking-wide text-slate-600">Employee details</p>
+                    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+                      <div><p className="text-slate-400">Employee name</p><p className="font-semibold">Ama Mensah</p></div>
+                      <div><p className="text-slate-400">Employee number</p><p className="font-semibold">EMP-00128</p></div>
+                      <div><p className="text-slate-400">Position</p><p className="font-semibold">Finance Officer</p></div>
+                      <div><p className="text-slate-400">SSNIT number</p><p className="font-semibold">•••• 4821</p></div>
                     </div>
-                  )}
-                  <h2
-                    className="text-lg font-bold uppercase tracking-tight"
-                    style={{ color: previewThemeColor }}
-                  >
-                    {isSuperAdmin
-                      ? (form.companyDisplayName || companies.find((c) => c.id === selectedCompanyId)?.name || 'Company Name')
-                      : (form.companyDisplayName || user?.companyName || 'Your Company')}
-                  </h2>
-                  {form.address && <p className="text-xs text-slate-500 mt-1">{form.address}</p>}
-                  {[form.contactEmail, form.contactPhone].filter(Boolean).join(' · ') && <p className="text-xs text-slate-500 mt-1">{[form.contactEmail, form.contactPhone].filter(Boolean).join(' · ')}</p>}
-                  {form.tagline && <p className="text-xs text-slate-500 mt-1 italic">{form.tagline}</p>}
-                  <p className="text-sm text-slate-700 mt-3">EMPLOYEE PAYSLIP · Preview period</p>
-                  <div className="w-full border-t border-slate-200 my-4" />
-                  {form.showFooter && <p className="text-[10px] text-slate-400 italic">{form.footerNote || 'This is an electronically generated payslip and does not require a signature.'}</p>}
+                  </div>
+                  {[
+                    { title: 'Earnings (GHS)', rows: [['Basic salary', '6,000.00'], ['Housing allowance', '500.00'], ['Transport allowance', '300.00'], ['Other allowance', '200.00'], ['Gross earnings', '7,000.00']] },
+                    { title: 'Employee deductions (GHS)', rows: [['Employee SSNIT', '385.00'], ['PAYE income tax', '1,042.50'], ['Total deductions', '1,427.50']] },
+                    { title: 'Employer contributions (GHS)', rows: [['Employer SSNIT', '455.00']] },
+                  ].map((section) => (
+                    <div key={section.title} className="mt-3">
+                      <p className="border-b border-slate-200 pb-1 font-bold uppercase tracking-wide text-slate-600">{section.title}</p>
+                      <div className="mt-1.5 space-y-1">
+                        {section.rows.map(([label, value], index) => <div key={label} className={'flex justify-between gap-3 ' + (index === section.rows.length - 1 ? 'font-bold text-slate-900' : 'text-slate-600')}><span>{label}</span><span className="tabular-nums">{value}</span></div>)}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="mt-3 rounded-md px-3 py-2 text-white" style={{ backgroundColor: previewThemeColor }}>
+                    <div className="flex items-center justify-between"><span className="text-[9px] font-bold uppercase tracking-wide text-white/75">Take-home pay</span><span className="text-[clamp(13px,2vw,20px)] font-extrabold tabular-nums">GHS 5,572.50</span></div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-200 pt-2">
+                    <div><p className="text-slate-400">Payment status</p><p className="font-semibold">PAID</p><p className="mt-1 text-slate-400">Bank account</p><p className="font-semibold">•••• 9012</p></div>
+                    <div><p className="text-slate-400">Payment reference</p><p className="font-semibold">PAY-2026-10-128</p><p className="mt-1 text-slate-400">Finalized</p><p className="font-semibold">31 Oct 2026</p></div>
+                  </div>
+                  <div className="mt-auto border-t border-slate-200 pt-2 text-center text-[8px] italic text-slate-400">
+                    {form.showFooter ? (form.footerNote || 'This is an electronically generated payslip and does not require a signature.') : 'Footer hidden'}
+                  </div>
                 </div>
               </div>
-              <p className="text-[11px] text-slate-600 mt-4">
-                This mirrors the layout used in <code>backend/routes/payslips.js</code>&apos;s PDF generator.
-              </p>
+              <p className="mt-3 text-[11px] leading-5 text-slate-500">The figures and employee shown are fictional examples. Actual PDFs use finalized payroll snapshots; the preview never reads or exposes a real employee’s salary, bank account, or Ghana Card PIN.</p>
             </Card>
           </form>
         )
