@@ -13,6 +13,12 @@ import Modal from '../components/Modal';
 const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_API_URL || '';
 const REST_BASE = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
 const ROLES = ['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'];
+const ROLE_HELP = {
+  ADMIN: 'Broad organisation access, including user administration and payroll approval. Assign only to trusted administrators.',
+  HR: 'Manage employee profiles and statutory details. Existing compensation and bank information remain restricted.',
+  ACCOUNTANT: 'Manage payroll, compensation and banking information, and prepare statutory reports.',
+  EMPLOYEE: 'Access personal payslips and account notifications only.',
+};
 const inputClass = 'mt-1.5 w-full rounded-xl border border-white/10 bg-slate-950/70 px-3.5 py-3 text-sm text-white placeholder:text-slate-600 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/15';
 const statusTone = {
   ACTIVE: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300',
@@ -231,7 +237,7 @@ const UserManagement = () => {
           <form onSubmit={submit} className="space-y-4">
             <div><label htmlFor="new-user-name" className="text-xs font-semibold text-slate-300">Full name <span className="text-rose-400">*</span></label><input id="new-user-name" required minLength={2} maxLength={100} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={inputClass} placeholder="e.g. Kwame Mensah"/></div>
             <div><label htmlFor="new-user-email" className="text-xs font-semibold text-slate-300">Work email address <span className="text-rose-400">*</span></label><input id="new-user-email" required type="email" maxLength={254} autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className={inputClass} placeholder="name@company.com"/></div>
-            <div><label htmlFor="new-user-role" className="text-xs font-semibold text-slate-300">Access role <span className="text-rose-400">*</span></label><select id="new-user-role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} className={inputClass}>{ROLES.map((role) => <option key={role} value={role}>{role.replace('_', ' ')}</option>)}</select><p className="mt-1.5 text-[11px] text-slate-500">Choose the minimum access needed for this person’s responsibilities.</p></div>
+            <div><label htmlFor="new-user-role" className="text-xs font-semibold text-slate-300">Access role <span className="text-rose-400">*</span></label><select id="new-user-role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} className={inputClass}>{ROLES.map((role) => <option key={role} value={role}>{role.replace('_', ' ')}</option>)}</select><p className="mt-1.5 text-[11px] leading-5 text-slate-500">{ROLE_HELP[form.role]}</p></div>
             <div className="rounded-xl border border-white/10 bg-slate-950/50 p-3"><p className="text-xs font-semibold text-white">{mode === 'create' ? 'Create account & send setup link' : 'Send an invitation'}</p><p className="mt-1 text-xs leading-5 text-slate-500">{mode === 'create' ? 'The account is provisioned as pending. The user receives a time-limited link and chooses their password.' : 'An invitation is sent with a secure activation link. The account remains pending until accepted.'}</p></div>
             {error && <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-300">{error}</div>}
             <div className="sticky bottom-0 -mx-5 flex items-center justify-end gap-3 border-t border-white/10 bg-slate-900/95 px-5 py-4 backdrop-blur sm:-mx-6 sm:px-6">
