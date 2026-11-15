@@ -20,6 +20,14 @@ export const USER_KEY = 'user';
 // --- CSRF bootstrap + refresh singleton ---
 let refreshPromise = null;
 let csrfTokenPromise = null;
+let logoutInProgress = false;
+const LOGOUT_PENDING_KEY = 'paylio:logout-pending';
+
+/** Re-enable cookie refresh only after an explicit, successful login. */
+export const resetLogoutState = () => {
+  logoutInProgress = false;
+  localStorage.removeItem(LOGOUT_PENDING_KEY);
+};
 
 const getCsrfToken = async () => {
   if (!csrfTokenPromise) {
@@ -41,6 +49,9 @@ const getCsrfToken = async () => {
 };
 
 export const doRefresh = async () => {
+  if (logoutInProgress || localStorage.getItem(LOGOUT_PENDING_KEY) === 'true') {
+    throw new Error('Logout is in progress; automatic session refresh is disabled.');
+  }
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
@@ -74,15 +85,35 @@ export const doRefresh = async () => {
  * Revokes the refresh token server-side and clears the cookie.
  */
 export const doLogout = async () => {
+  // Persist the intent so a failed server logout cannot silently re-authenticate
+  // this browser on a route remount or page reload. Explicit login clears it.
+  logoutInProgress = true;
+  localStorage.setItem(LOGOUT_PENDING_KEY, 'true');
+
   try {
+    // Let any refresh already in flight finish rotating the cookie before revocation.
+    if (refreshPromise) {
+      try { await refreshPromise; } catch { /* continue and attempt server-side logout */ }
+    }
+
     const csrfToken = await getCsrfToken();
-    await fetch(`${REST_BASE}/api/auth/logout`, {
+    const response = await fetch(`${REST_BASE}/api/auth/logout`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'x-csrf-token': csrfToken },
     });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`Logout request rejected (${response.status})${detail ? `: ${detail.slice(0, 180)}` : ''}`);
+    }
+
+    localStorage.removeItem(LOGOUT_PENDING_KEY);
+    return { success: true };
   } catch (err) {
-    console.warn('Logout request failed', err);
+    // Stay locally signed out and keep automatic refresh blocked until explicit login.
+    console.error('Server logout could not be confirmed:', err);
+    return { success: false, error: err.message };
   }
 };
 
