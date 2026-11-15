@@ -2,7 +2,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, Edit2, ShieldCheck, Mail, Landmark, Users as UsersIcon, Wallet } from 'lucide-react';
+import { Plus, Search, Edit2, ShieldCheck, Mail } from 'lucide-react';
+import EmployeeFormWizard from '../components/EmployeeFormWizard';
 
 import { GET_EMPLOYEES, GET_COMPANIES } from '../graphql/queries';
 import { CREATE_EMPLOYEE, UPDATE_EMPLOYEE } from '../graphql/mutations';
@@ -273,119 +274,18 @@ const Employees = () => {
         </div>
       )}
 
-      <Modal isOpen={showModal && !!companyId} onClose={closeModal} title={editingId ? 'Update staff profile' : 'Register new staff'} size="xl">
-        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-          {userError && <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2 space-y-1">
-              <label htmlFor="emp-name" className={labelClass}>Full name</label>
-              <input id="emp-name" type="text" value={formData.name || ''} onChange={(e) => setField('name', e.target.value)} className={inputClass} required />
-              {fieldError('name')}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="emp-position" className={labelClass}>Job title</label>
-              <input id="emp-position" type="text" value={formData.position || ''} onChange={(e) => setField('position', e.target.value)} className={inputClass} placeholder="e.g. Engineer" required />
-              {fieldError('position')}
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="emp-email" className={labelClass}>Email address</label>
-            <input id="emp-email" type="email" value={formData.email || ''} onChange={(e) => setField('email', e.target.value)} className={inputClass} required />
-            {fieldError('email')}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-1">
-              <label htmlFor="emp-salary" className={labelClass}>Basic salary (GHS)</label>
-              <input id="emp-salary" type="number" min="0" step="0.01" value={formData.basicSalary ?? ''} onChange={(e) => setField('basicSalary', e.target.value)} className={inputClass} required />
-              {fieldError('basicSalary')}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="emp-ssnit" className={labelClass}>SSNIT number</label>
-              <input id="emp-ssnit" type="text" value={formData.ssnitNumber || ''} onChange={(e) => setField('ssnitNumber', e.target.value)} className={inputClass} placeholder="S123456789012" />
-              {fieldError('ssnitNumber')}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="emp-card" className={labelClass}>Ghana Card PIN</label>
-              <input id="emp-card" type="text" value={formData.ghanaCardPin || ''} onChange={(e) => setField('ghanaCardPin', e.target.value)} className={inputClass} placeholder="GHA-000000000-0" />
-              {fieldError('ghanaCardPin')}
-            </div>
-          </div>
-
-          <div className="space-y-3 border-t border-white/5 pt-5">
-            <div className="flex items-center gap-2 text-slate-400"><Wallet size={16} /><h3 className="text-xs font-bold tracking-widest">Monthly allowances (GHS)</h3></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[['housingAllowance', 'Housing'], ['transportAllowance', 'Transport'], ['otherAllowance', 'Other']].map(([key, label]) => (
-                <div key={key} className="space-y-1">
-                  <label htmlFor={`emp-${key}`} className={labelClass}>{label}</label>
-                  <input id={`emp-${key}`} type="number" min="0" step="0.01" value={formData[key] ?? 0} onChange={(e) => setField(key, e.target.value)} className={inputClass} />
-                  {fieldError(key)}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-3 border-t border-white/5 pt-5">
-            <div className="flex items-center gap-2 text-slate-400"><Landmark size={16} /><h3 className="text-xs font-bold tracking-widest">Banking details</h3></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label htmlFor="emp-bank" className={labelClass}>Bank name</label>
-                <input id="emp-bank" type="text" value={formData.bankName || ''} onChange={(e) => setField('bankName', e.target.value)} className={inputClass} placeholder="e.g. GCB Bank" />
-                {fieldError('bankName')}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="emp-bank-code" className={labelClass}>Bank code (required for Paystack)</label>
-                <input id="emp-bank-code" type="text" value={formData.bankCode || ''} onChange={(e) => setField('bankCode', e.target.value)} className={inputClass} placeholder="Provider bank code" />
-                {fieldError('bankCode')}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="emp-account" className={labelClass}>Account number</label>
-                <input id="emp-account" type="text" inputMode="numeric" value={formData.bankAccount || ''} onChange={(e) => setField('bankAccount', e.target.value)} className={inputClass} placeholder="5-20 digits" />
-                {fieldError('bankAccount')}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3 border-t border-white/5 pt-5">
-            <div className="flex items-center gap-2 text-slate-400"><UsersIcon size={16} /><h3 className="text-xs font-bold tracking-widest">GRA tax relief details</h3></div>
-            <p className="text-xs text-slate-500 -mt-2">These directly affect PAYE relief on every payroll run. Confirm with the employee instead of leaving defaults if any don&apos;t apply.</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label htmlFor="emp-age" className={labelClass}>Age</label>
-                <input id="emp-age" type="number" min="18" max="70" value={formData.age ?? DEFAULT_RELIEF_VALUES.age} onChange={(e) => setField('age', e.target.value)} className={inputClass} />
-                <p className="text-[10px] text-slate-600 ml-1">60+ qualifies for old-age relief</p>
-                {fieldError('age')}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="emp-children" className={labelClass}>Children (relief, max 3)</label>
-                <input id="emp-children" type="number" min="0" max="3" value={formData.childrenCount ?? 0} onChange={(e) => setField('childrenCount', e.target.value)} className={inputClass} />
-                {fieldError('childrenCount')}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="emp-aged" className={labelClass}>Aged dependents (max 2)</label>
-                <input id="emp-aged" type="number" min="0" max="2" value={formData.agedDependentsCount ?? 0} onChange={(e) => setField('agedDependentsCount', e.target.value)} className={inputClass} />
-                {fieldError('agedDependentsCount')}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-              {[['isMarried', 'Married'], ['hasResponsibility', 'Responsible for a dependent spouse'], ['isDisabled', 'Registered disability']].map(([key, label]) => (
-                <label key={key} className="flex items-center gap-3 bg-slate-950 border border-white/10 rounded-xl p-3 cursor-pointer hover:border-primary/40 transition-colors">
-                  <input type="checkbox" checked={!!formData[key]} onChange={(e) => setField(key, e.target.checked)} className="h-4 w-4 rounded border-white/20 bg-slate-900 text-primary focus:ring-primary/50" />
-                  <span className="text-sm text-slate-300">{label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <button type="submit" disabled={saving}
-            className="w-full mt-2 py-4 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-60">
-            {saving ? 'Saving...' : editingId ? 'Save changes' : 'Register staff'}
-          </button>
-        </form>
+      <Modal isOpen={showModal && !!companyId} onClose={closeModal} title={editingId ? 'Update employee profile' : 'Add a new employee'} size="xl">
+        <EmployeeFormWizard
+          key={editingId || 'new-employee'}
+          formData={formData}
+          setField={setField}
+          fieldError={fieldError}
+          userError={userError}
+          saving={saving}
+          editingId={editingId}
+          role={user?.role}
+          onSubmit={handleSubmit}
+        />
       </Modal>
     </div>
   );
