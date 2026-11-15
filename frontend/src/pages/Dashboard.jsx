@@ -4,7 +4,7 @@ import { useQuery, useSubscription } from '@apollo/client';
 import { motion } from 'framer-motion';
 import {
   Activity, ArrowRight, Bell, CalendarDays, CheckCircle2, Clock3,
-  CreditCard, FileText, RefreshCw, Users,
+  CreditCard, FileText, RefreshCw, Users, ShieldCheck,
 } from 'lucide-react';
 import { GET_DASHBOARD_DATA } from '../graphql/queries';
 import { PAYROLL_UPDATED_SUB } from '../graphql/subscriptions';
@@ -257,6 +257,36 @@ const Dashboard = () => {
               </motion.div>
             ))}
           </section>
+
+          <section aria-labelledby="quick-actions-title" className="space-y-3">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <h2 id="quick-actions-title" className="text-sm font-semibold text-white">Quick actions</h2>
+                <p className="mt-1 text-xs text-slate-500">Go straight to the work that needs your attention.</p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                ...(['SUPER_ADMIN', 'ADMIN', 'HR'].includes(role) ? [{ to: '/employees', label: 'Staff directory', detail: 'View and onboard employees', icon: Users }] : []),
+                ...(['SUPER_ADMIN', 'ADMIN'].includes(role) ? [{ to: '/users', label: 'Manage access', detail: 'Invite and manage team accounts', icon: ShieldCheck }] : []),
+                ...(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'].includes(role) ? [{ to: '/payroll', label: 'Payroll workspace', detail: 'Run and review payroll', icon: CreditCard }] : []),
+                ...(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'].includes(role) ? [{ to: '/reports', label: 'Reports & exports', detail: 'Prepare statutory schedules', icon: FileText }] : []),
+              ].map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link key={action.to} to={action.to} className="group rounded-2xl border border-white/10 bg-slate-950/35 p-4 transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-slate-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                    <div className="flex items-center justify-between">
+                      <span className="rounded-xl bg-primary/10 p-2.5 text-primary"><Icon size={18}/></span>
+                      <ArrowRight size={16} className="text-slate-600 transition group-hover:translate-x-1 group-hover:text-primary"/>
+                    </div>
+                    <p className="mt-4 text-sm font-semibold text-white">{action.label}</p>
+                    <p className="mt-1 text-xs text-slate-500">{action.detail}</p>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+
           <Card className="border-white/5 bg-slate-950/20">
             <div className="flex items-center gap-3 text-sm text-slate-400">
               <Activity size={18} className="text-primary" />
