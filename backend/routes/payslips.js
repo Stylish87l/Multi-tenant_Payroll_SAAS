@@ -24,7 +24,7 @@ const ITEM_SELECT = {
   employee: {
     select: {
       id: true, companyId: true, name: true, email: true, position: true,
-      ghanaCardPin: true, ssnitNumber: true, bankName: true, bankAccount: true, userId: true,
+      ssnitNumber: true, bankName: true, bankAccount: true, userId: true,
     },
   },
   payrollRun: {
@@ -70,92 +70,117 @@ export const generatePayslipPDF = (doc, item, logo) => {
   const { employee, payrollRun } = item;
   const company = payrollRun.company;
   const template = templateFor(company);
+  const accent = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(company.themeColor || '') ? company.themeColor : '#253B80';
   const displayName = template.companyDisplayName || company.name;
-  const alignment = ['left', 'center', 'right'].includes(template.logoAlignment) ? template.logoAlignment : 'center';
-  const logoX = alignment === 'left' ? 50 : alignment === 'right' ? 445 : (doc.page.width - 100) / 2;
+  const alignment = ['left', 'center', 'right'].includes(template.logoAlignment) ? template.logoAlignment : 'left';
+  const pageLeft = 48;
+  const contentWidth = 499;
+  const right = pageLeft + contentWidth;
+  const formatDate = (value) => value ? new Date(value).toLocaleDateString('en-GH', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const maskIdentifier = (value) => {
+    const raw = String(value || '').replace(/\s+/g, '');
+    return raw.length > 4 ? '*'.repeat(Math.max(4, raw.length - 4)) + raw.slice(-4) : (raw || '—');
+  };
+  const addSection = (title, subtitle = '') => {
+    doc.moveDown(0.7);
+    const y = doc.y;
+    doc.roundedRect(pageLeft, y, contentWidth, 22, 4).fill('#F1F5F9');
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#334155').text(title.toUpperCase(), pageLeft + 10, y + 7, { width: subtitle ? 300 : contentWidth - 20 });
+    if (subtitle) doc.font('Helvetica').fontSize(7).fillColor('#64748B').text(subtitle, pageLeft + 310, y + 7, { width: contentWidth - 320, align: 'right' });
+    doc.y = y + 30;
+  };
+  const addMoneyRow = (label, amount, emphasis = false) => {
+    const y = doc.y;
+    doc.font(emphasis ? 'Helvetica-Bold' : 'Helvetica').fontSize(8.5).fillColor(emphasis ? '#0F172A' : '#334155').text(label, pageLeft + 10, y, { width: 330 });
+    doc.font(emphasis ? 'Helvetica-Bold' : 'Helvetica').fontSize(8.5).fillColor('#0F172A').text(money(amount), pageLeft + 350, y, { width: 139, align: 'right' });
+    doc.y = y + 17;
+  };
+  const addInfoRow = (label, value, x, y, width = 235) => {
+    doc.font('Helvetica').fontSize(7).fillColor('#64748B').text(label.toUpperCase(), x, y, { width });
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#1E293B').text(value || '—', x, y + 11, { width, height: 24, ellipsis: true });
+  };
 
+  doc.roundedRect(pageLeft, 42, contentWidth, 7, 3).fill(accent);
+  let headerY = 62;
   if (logo) {
     try {
-      doc.image(logo, logoX, doc.y, { fit: [100, 48] });
-      doc.y += 56;
+      const logoX = alignment === 'left' ? pageLeft : alignment === 'right' ? right - 92 : pageLeft + (contentWidth - 92) / 2;
+      doc.image(logo, logoX, headerY, { fit: [92, 44] });
+      headerY += 51;
     } catch (error) {
       logger.warn('Payslip logo could not be rendered', { companyId: company.id, error: error.message });
     }
   }
+  doc.font('Helvetica-Bold').fontSize(16).fillColor(accent).text(displayName.toUpperCase(), pageLeft, headerY, { width: contentWidth, align: alignment });
+  headerY = doc.y + 4;
+  doc.font('Helvetica').fontSize(7.5).fillColor('#64748B');
+  if (company.address) { doc.text(company.address, pageLeft, headerY, { width: contentWidth, align: alignment }); headerY = doc.y + 1; }
+  const contacts = [company.contactEmail, company.contactPhone, company.tin ? 'TIN ' + company.tin : null].filter(Boolean).join('  •  ');
+  if (contacts) { doc.text(contacts, pageLeft, headerY, { width: contentWidth, align: alignment }); headerY = doc.y + 1; }
+  if (template.tagline) { doc.font('Helvetica-Oblique').text(template.tagline, pageLeft, headerY, { width: contentWidth, align: alignment }); headerY = doc.y + 1; }
+  doc.y = Math.max(doc.y, headerY) + 12;
 
-  doc.font('Helvetica-Bold').fontSize(17).fillColor(company.themeColor || '#172554')
-    .text(displayName.toUpperCase(), 48, doc.y, { width: 500, align: alignment });
-  doc.moveDown(0.25);
-  doc.font('Helvetica').fontSize(8.5).fillColor('#475569');
-  if (company.address) doc.text(company.address, 48, doc.y, { width: 500, align: alignment });
-  const contacts = [company.contactEmail, company.contactPhone, company.tin ? `TIN: ${company.tin}` : null].filter(Boolean).join('  |  ');
-  if (contacts) doc.text(contacts, 48, doc.y, { width: 500, align: alignment });
-  if (template.tagline) doc.font('Helvetica-Oblique').text(template.tagline, 48, doc.y, { width: 500, align: alignment });
-
-  doc.moveDown(0.8);
-  doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(14).text('EMPLOYEE PAYSLIP', { align: 'center' });
-  doc.font('Helvetica').fontSize(9).fillColor('#64748b')
-    .text(`Pay period: ${String(payrollRun.month).slice(0, 7)}${payrollRun.status === 'DRAFT' ? '  •  DRAFT' : ''}`, { align: 'center' });
-  doc.moveDown(0.8);
-  doc.moveTo(48, doc.y).lineTo(547, doc.y).strokeColor('#cbd5e1').stroke();
-  doc.moveDown(0.55);
-
-  addSection(doc, 'Employee information');
-  addTextRow(doc, 'Employee name', employee.name);
-  addTextRow(doc, 'Employee ID', employee.id);
-  addTextRow(doc, 'Position', employee.position);
-  addTextRow(doc, 'Email', employee.email);
-  addTextRow(doc, 'SSNIT number', employee.ssnitNumber);
-  addTextRow(doc, 'Ghana Card PIN', employee.ghanaCardPin);
-
-  addSection(doc, 'Earnings (GHS)');
-  const snapshotsAvailable = item.basicSalarySnapshot !== null && item.basicSalarySnapshot !== undefined;
-  if (snapshotsAvailable) {
-    addRow(doc, 'Basic salary', item.basicSalarySnapshot);
-    addRow(doc, 'Housing allowance', item.housingAllowanceSnapshot);
-    addRow(doc, 'Transport allowance', item.transportAllowanceSnapshot);
-    addRow(doc, 'Other allowance', item.otherAllowanceSnapshot);
-  } else {
-    // Legacy payroll rows do not contain an immutable allowance breakdown. Never substitute
-    // the employee's current salary/allowances for the values used when this run was calculated.
-    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b').text('Historical earnings split is unavailable for this legacy payroll record.');
-    doc.moveDown(0.35);
-  }
-  addRow(doc, 'Gross earnings', item.grossSalary, true);
-
-  addSection(doc, 'Employee deductions (GHS)');
-  addRow(doc, 'Employee SSNIT contribution', item.ssnitEmployee);
-  addRow(doc, 'PAYE income tax', item.payeTax);
-  addRow(doc, 'Total deductions', Number(item.ssnitEmployee) + Number(item.payeTax), true);
-
-  addSection(doc, 'Employer contributions (not deducted from net pay)');
-  addRow(doc, 'Employer SSNIT contribution', item.ssnitEmployer);
-
-  doc.moveDown(0.4);
-  doc.roundedRect(48, doc.y, 499, 48, 6).fillAndStroke('#eff6ff', '#bfdbfe');
-  const netY = doc.y + 10;
-  doc.fillColor('#1e3a8a').font('Helvetica-Bold').fontSize(10).text('NET PAY', 62, netY);
-  doc.fontSize(16).text(`GHS ${money(item.netPay)}`, 300, netY - 2, { width: 232, align: 'right' });
+  doc.roundedRect(pageLeft, doc.y, contentWidth, 48, 6).fill('#F8FAFC').stroke('#E2E8F0');
+  const titleY = doc.y + 9;
+  doc.font('Helvetica-Bold').fontSize(13).fillColor('#0F172A').text('PAYSLIP', pageLeft + 12, titleY);
+  doc.font('Helvetica').fontSize(8).fillColor('#64748B').text('PAY PERIOD  ' + String(payrollRun.month).slice(0, 7), pageLeft + 12, titleY + 20);
+  doc.font('Helvetica-Bold').fontSize(7).fillColor(payrollRun.status === 'FINALIZED' ? '#047857' : '#B45309').text(payrollRun.status === 'FINALIZED' ? 'FINALIZED' : 'DRAFT', pageLeft + 390, titleY + 8, { width: 96, align: 'right' });
   doc.y += 61;
 
-  addSection(doc, 'Payment information');
-  addTextRow(doc, 'Bank on file', employee.bankName);
-  addTextRow(doc, 'Account on file', maskAccountNumber(employee.bankAccount));
-  if (employee.bankName || employee.bankAccount) {
-    doc.font('Helvetica-Oblique').fontSize(7).fillColor('#64748b')
-      .text('Bank details are from the current employee profile; the actual payout destination is not stored on this historical payroll record.', 50, doc.y, { width: 495 });
-    doc.moveDown(0.25);
+  addSection('Employee details');
+  const infoY = doc.y;
+  addInfoRow('Employee name', employee.name, pageLeft + 10, infoY);
+  addInfoRow('Employee number', employee.id, pageLeft + 260, infoY);
+  addInfoRow('Position', employee.position, pageLeft + 10, infoY + 37);
+  addInfoRow('Email', employee.email, pageLeft + 260, infoY + 37);
+  addInfoRow('SSNIT number', maskIdentifier(employee.ssnitNumber), pageLeft + 10, infoY + 74);
+  doc.y = infoY + 105;
+
+  addSection('Earnings', 'AMOUNTS IN GHS');
+  const snapshotsAvailable = item.basicSalarySnapshot !== null && item.basicSalarySnapshot !== undefined;
+  if (snapshotsAvailable) {
+    addMoneyRow('Basic salary', item.basicSalarySnapshot);
+    addMoneyRow('Housing allowance', item.housingAllowanceSnapshot);
+    addMoneyRow('Transport allowance', item.transportAllowanceSnapshot);
+    addMoneyRow('Other allowance', item.otherAllowanceSnapshot);
+  } else {
+    doc.font('Helvetica-Oblique').fontSize(7.5).fillColor('#64748B').text('Historical earnings breakdown is unavailable for this legacy payroll record.', pageLeft + 10, doc.y);
+    doc.moveDown(0.8);
   }
-  addTextRow(doc, 'Payment status', String(item.paymentStatus || 'PENDING').replaceAll('_', ' '));
-  addTextRow(doc, 'Payment reference', item.paymentRef);
-  addTextRow(doc, 'Payroll finalized', payrollRun.processedAt ? new Date(payrollRun.processedAt).toLocaleDateString('en-GH') : 'Not finalized');
+  addMoneyRow('Gross earnings', item.grossSalary, true);
+
+  addSection('Employee deductions', 'SUBTRACTED FROM GROSS PAY');
+  addMoneyRow('Employee SSNIT contribution', item.ssnitEmployee);
+  addMoneyRow('PAYE income tax', item.payeTax);
+  addMoneyRow('Total deductions', Number(item.ssnitEmployee) + Number(item.payeTax), true);
+
+  addSection('Employer contributions', 'PAID BY EMPLOYER');
+  addMoneyRow('Employer SSNIT contribution', item.ssnitEmployer);
+
+  doc.moveDown(0.45);
+  const netTop = doc.y;
+  doc.roundedRect(pageLeft, netTop, contentWidth, 58, 7).fill(accent);
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#DBEAFE').text('TAKE-HOME PAY', pageLeft + 14, netTop + 11);
+  doc.font('Helvetica-Bold').fontSize(18).fillColor('#FFFFFF').text('GHS ' + money(item.netPay), pageLeft + 14, netTop + 26, { width: contentWidth - 28, align: 'right' });
+  doc.y = netTop + 70;
+
+  addSection('Payment information');
+  const paymentY = doc.y;
+  addInfoRow('Payment status', String(item.paymentStatus || 'PENDING').replaceAll('_', ' '), pageLeft + 10, paymentY);
+  addInfoRow('Payment reference', item.paymentRef, pageLeft + 260, paymentY);
+  addInfoRow('Bank', employee.bankName, pageLeft + 10, paymentY + 37);
+  addInfoRow('Account ending', maskIdentifier(employee.bankAccount), pageLeft + 260, paymentY + 37);
+  doc.y = paymentY + 74;
+  doc.font('Helvetica-Oblique').fontSize(7).fillColor('#64748B').text('Bank information is masked and reflects the employee profile on file; it may not represent the actual payout destination for this historical run.', pageLeft + 10, doc.y, { width: contentWidth - 20 });
+  doc.y += 18;
+  doc.font('Helvetica').fontSize(7).fillColor('#64748B').text('Payroll finalized: ' + formatDate(payrollRun.processedAt), pageLeft + 10, doc.y);
+  doc.y += 14;
 
   if (template.showFooter !== false) {
     const footer = company.footerNote || 'This is an electronically generated payslip and does not require a signature.';
-    const footerY = Math.min(doc.y + 12, doc.page.height - 62);
-    doc.moveTo(48, footerY).lineTo(547, footerY).strokeColor('#cbd5e1').stroke();
-    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b')
-      .text(footer, 48, footerY + 8, { width: 499, align: 'center' });
+    const footerY = Math.min(doc.y + 7, doc.page.height - 54);
+    doc.moveTo(pageLeft, footerY).lineTo(right, footerY).strokeColor('#E2E8F0').lineWidth(0.7).stroke();
+    doc.font('Helvetica-Oblique').fontSize(7.5).fillColor('#64748B').text(footer, pageLeft + 8, footerY + 8, { width: contentWidth - 16, align: 'center' });
   }
 };
 
