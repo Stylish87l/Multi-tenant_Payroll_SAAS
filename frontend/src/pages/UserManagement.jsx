@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@apollo/client';
 import {
   Building2, CheckCircle2, Clock3, Mail, Plus, RefreshCw, Search,
-  ShieldCheck, UserCheck, UserPlus, UserX, Users, X,
+  ShieldCheck, UserCheck, UserPlus, UserX, Users,
 } from 'lucide-react';
 import { GET_COMPANIES } from '../graphql/queries';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +11,7 @@ import Loader from '../components/Loader';
 import Modal from '../components/Modal';
 
 const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_API_URL || '';
-const REST_BASE = GRAPHQL_URL.replace(/\\/graphql\\/?$/, '');
+const REST_BASE = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
 const ROLES = ['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'];
 const inputClass = 'mt-1.5 w-full rounded-xl border border-white/10 bg-slate-950/70 px-3.5 py-3 text-sm text-white placeholder:text-slate-600 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/15';
 const statusTone = {
