@@ -191,7 +191,7 @@ const Reports = () => {
           <p className="text-xs text-slate-500">Choose the payroll run to use for each export.</p>
           {runs.length === 0 ? (
             <p className="text-sm text-slate-400 bg-slate-900/40 p-3 border border-white/5 rounded-xl">
-              No closed or active payroll runs found. Finalize a payroll calculation within the engine to pull files.
+              No payroll runs are available yet. Run payroll and save a draft or finalize it before exporting.
             </p>
           ) : (
             <select
