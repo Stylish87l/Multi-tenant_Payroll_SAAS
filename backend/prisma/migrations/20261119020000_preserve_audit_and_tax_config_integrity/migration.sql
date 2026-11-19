@@ -19,8 +19,18 @@ ALTER TABLE audit_logs
     FOREIGN KEY ("companyId") REFERENCES companies(id) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- A tenant-scoped tax row must never become a global row when its company is deleted.
-ALTER TABLE tax_configs
-  DROP CONSTRAINT IF EXISTS "tax_configs_companyId_fkey";
+DO $
+DECLARE fk_name text;
+BEGIN
+  FOR fk_name IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'tax_configs'::regclass
+      AND contype = 'f'
+      AND confrelid = 'companies'::regclass
+  LOOP
+    EXECUTE format('ALTER TABLE tax_configs DROP CONSTRAINT %I', fk_name);
+  END LOOP;
+END $;
 
 ALTER TABLE tax_configs
   ADD CONSTRAINT "tax_configs_companyId_fkey"
