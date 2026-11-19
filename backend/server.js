@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import http from 'http';
+import { randomUUID } from 'crypto';
 import { WebSocketServer } from 'ws';
 import { ApolloServer } from '@apollo/server';
 import { unwrapResolverError } from '@apollo/server/errors';
@@ -62,6 +63,17 @@ const httpServer = http.createServer(app);
 // and bypass the rate limiters. Trust exactly one proxy hop (Railway/Vercel edge). Override with TRUST_PROXY_HOPS.
 app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);
 app.disable('x-powered-by');
+
+// Give every HTTP request a validated correlation ID for logs and audit records.
+app.use((req, res, next) => {
+  const supplied = req.get('x-request-id');
+  const requestId = typeof supplied === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(supplied)
+    ? supplied
+    : randomUUID();
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  next();
+});
 
 // --- Health (registered first so platform health checks pass while Apollo starts) ---
 app.get('/health', async (req, res) => {
