@@ -173,19 +173,19 @@ const Reports = () => {
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Reporting & compliance</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Reports & exports</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Prepare payroll schedules and employee payslip exports for the payroll period you select.</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Reports & exports</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">Prepare payroll schedules and employee payslip exports for the payroll period you select.</p>
       </header>
 
-      <Card className="border-white/5 bg-slate-950/40 p-6">
+      <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-2">
-          <label htmlFor="payroll-run-select" className="block text-xs font-semibold text-slate-300">
+          <label htmlFor="payroll-run-select" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
             Payroll period
           </label>
           <p className="text-xs text-slate-500">Choose the payroll run to use for each export.</p>
           {runs.length === 0 ? (
-            <p className="text-sm text-slate-400 bg-slate-900/40 p-3 border border-white/5 rounded-xl">
+            <p className="text-sm text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-900/40 p-3 border border-slate-200 dark:border-white/5 rounded-xl">
               No payroll runs are available yet. Run payroll and save a draft or finalize it before exporting.
             </p>
           ) : (
@@ -193,17 +193,17 @@ const Reports = () => {
               id="payroll-run-select"
               value={selectedRunId}
               onChange={(e) => setSelectedRunId(e.target.value)}
-              className="w-full md:w-80 bg-slate-900 border border-white/10 rounded-xl py-3 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer"
+              className="w-full md:w-80 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer"
             >
               {runs.map((run) => (
-                <option key={run.id} value={run.id} className="bg-slate-950 text-white">
+                <option key={run.id} value={run.id} className="bg-white dark:bg-slate-950 text-white">
                   {run.month} — Status: {run.status}
                 </option>
               ))}
             </select>
           )}
           </div>
-          {selectedRun && <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-wider text-primary">Selected run</p><p className="mt-1 text-sm font-semibold text-white">{String(selectedRun.month).slice(0, 7)}</p><p className="mt-0.5 text-[11px] text-slate-400">Status: {String(selectedRun.status).toLowerCase()}</p></div>}
+          {selectedRun && <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-wider text-primary">Selected run</p><p className="mt-1 text-sm font-semibold text-white">{String(selectedRun.month).slice(0, 7)}</p><p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-400">Status: {String(selectedRun.status).toLowerCase()}</p></div>}
         </div>
       </Card>
 
@@ -219,7 +219,7 @@ const Reports = () => {
           const dynamicDisabled = !!isDownloading || !selectedRunId || runs.length === 0;
           
           return (
-            <Card key={report.id} className="group relative border-white/5 bg-slate-950/40 p-5 transition-all hover:border-primary/25" >
+            <Card key={report.id} className="group relative border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-5 transition-all hover:border-primary/25" >
               <div className="flex items-start space-x-5">
                 <div className={`p-4 rounded-2xl bg-white/5 ${report.color} group-hover:scale-105 transition-transform duration-200`} aria-hidden="true">
                   <report.icon size={28} />
@@ -227,14 +227,14 @@ const Reports = () => {
 
                 <div className="flex-1 space-y-4">
                   <div>
-                    <h2 className="text-xl font-bold text-white tracking-wide">{report.title}</h2>
-                    <p className="text-sm text-slate-400 mt-1.5 leading-relaxed pr-8">{report.desc}</p>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-wide">{report.title}</h2>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed pr-8">{report.desc}</p>
                   </div>
 
                   <button
                     disabled={dynamicDisabled}
                     onClick={() => handleExport(report.id, report.extension)}
-                    className="flex items-center space-x-2.5 px-5 py-2.5 bg-white/5 hover:bg-primary/20 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-slate-300 hover:text-white transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
+                    className="flex items-center space-x-2.5 px-5 py-2.5 bg-white/5 hover:bg-primary/20 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
                     aria-label={`Download ${report.title}`}
                   >
                     {downloading ? (
@@ -247,7 +247,7 @@ const Reports = () => {
                 </div>
               </div>
 
-              <div className="mt-4 border-t border-white/5 pt-3 text-[11px] text-slate-500" aria-live="polite">
+              <div className="mt-4 border-t border-slate-200 dark:border-white/5 pt-3 text-[11px] text-slate-500" aria-live="polite">
                 {downloading ? 'Preparing your export…' : selectedRun ? `Ready for ${String(selectedRun.month).slice(0, 7)}` : 'Select a payroll period to continue'}
               </div>
             </Card>
@@ -255,7 +255,7 @@ const Reports = () => {
         })}
       </div>
 
-      <div className="flex items-start gap-3 rounded-2xl border border-sky-400/10 bg-sky-400/[0.04] p-4 text-xs leading-5 text-slate-400">
+      <div className="flex items-start gap-3 rounded-2xl border border-sky-400/10 bg-sky-400/[0.04] p-4 text-xs leading-5 text-slate-600 dark:text-slate-400">
         <ShieldCheck size={17} className="mt-0.5 shrink-0 text-sky-300" />
         <p>Review exported schedules before submission. Confirm employee details and statutory amounts against the applicable requirements for the selected payroll period.</p>
       </div>
