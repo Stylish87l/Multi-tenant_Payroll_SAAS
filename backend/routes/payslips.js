@@ -38,33 +38,7 @@ const ITEM_SELECT = {
 const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE'];
 const safeName = (name) => String(name || 'employee').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 50) || 'employee';
 const money = (value) => Number(value ?? 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const maskAccountNumber = (value) => {
-  const account = String(value || '').replace(/\s+/g, '');
-  if (!account) return null;
-  return `${'*'.repeat(Math.max(4, Math.min(8, account.length - 4)))}${account.slice(-4)}`;
-};
 const templateFor = (company) => company.payslipTemplate && typeof company.payslipTemplate === 'object' ? company.payslipTemplate : {};
-
-const addSection = (doc, title) => {
-  doc.moveDown(0.8);
-  doc.font('Helvetica-Bold').fontSize(10).fillColor('#334155').text(title.toUpperCase());
-  doc.moveDown(0.35);
-  doc.moveTo(48, doc.y).lineTo(547, doc.y).strokeColor('#cbd5e1').lineWidth(0.7).stroke();
-  doc.moveDown(0.35);
-};
-const addRow = (doc, label, amount, emphasis = false) => {
-  const y = doc.y;
-  doc.font(emphasis ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#1e293b');
-  doc.text(label, 50, y, { width: 340 });
-  doc.text(money(amount), 405, y, { width: 140, align: 'right' });
-  doc.y = y + 15;
-};
-const addTextRow = (doc, label, value) => {
-  const y = doc.y;
-  doc.font('Helvetica').fontSize(9).fillColor('#334155').text(label, 50, y, { width: 130 });
-  doc.font('Helvetica-Bold').text(value || '—', 185, y, { width: 350 });
-  doc.y = y + 16;
-};
 
 export const generatePayslipPDF = (doc, item, logo) => {
   const { employee, payrollRun } = item;
