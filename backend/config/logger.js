@@ -2,7 +2,7 @@ import { createLogger, format, transports } from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 import { redact, isSensitiveKey, REDACTED } from '../utils/redact.js';
 
-const { combine, timestamp, errors, json, colorize, printf, simple } = format;
+const { combine, timestamp, errors, json, colorize, printf } = format;
 
 /**
  * Last line of defence: scrub secrets/PII from EVERY log record's metadata,
@@ -27,22 +27,25 @@ const logger = createLogger({
   level: isProd ? 'info' : 'debug',
   format: combine(timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), errors({ stack: true }), redactFormat(), json()),
   transports: [
-    new transports.Console({ format: combine(colorize(), isProd ? simple() : consoleFormat) }),
-    new DailyRotateFile({
-      filename: 'logs/combined-%DATE%.log',
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '14d',
-    }),
-    new DailyRotateFile({
-      filename: 'logs/error-%DATE%.log',
-      datePattern: 'YYYY-MM-DD',
-      level: 'error',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '30d',
-    }),
+    new transports.Console({ format: isProd ? json() : combine(colorize(), consoleFormat) }),
+    // Production platforms collect stdout/stderr; avoid ephemeral file logs in containers.
+    ...(isProd ? [] : [
+      new DailyRotateFile({
+        filename: 'logs/combined-%DATE%.log',
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d',
+      }),
+      new DailyRotateFile({
+        filename: 'logs/error-%DATE%.log',
+        datePattern: 'YYYY-MM-DD',
+        level: 'error',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '30d',
+      }),
+    ]),
   ],
 });
 
