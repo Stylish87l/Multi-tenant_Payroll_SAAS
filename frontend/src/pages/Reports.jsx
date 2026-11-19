@@ -7,6 +7,7 @@ import Card from '../components/Card';
 import Loader from '../components/Loader';
 import { useAuth } from '../context/AuthContext';
 import { GET_PAYROLL_RUNS } from '../graphql/queries';
+import { authFetch } from '../lib/authFetch';
 
 // Derive the REST base endpoint using the verified GraphQL environment key
 const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_API_URL || '';
@@ -91,18 +92,12 @@ const Reports = () => {
     abortRef.current = controller;
 
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('Missing authentication token.');
-
       const url = buildDownloadUrl(reportId, selectedRunId);
       if (!url) throw new Error('Unknown report configuration type.');
 
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method: 'GET',
-        headers: { 
-          Authorization: `Bearer ${token}`, 
-          Accept: '*/*' 
-        },
+        headers: { Accept: '*/*' },
         signal: controller.signal,
       });
 
