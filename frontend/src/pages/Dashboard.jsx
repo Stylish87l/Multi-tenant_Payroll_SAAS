@@ -35,12 +35,12 @@ const MetricCard = ({ label, value, icon: Icon, tone = 'blue', detail }) => {
   };
 
   return (
-    <Card className="group h-full border-white/5 bg-slate-950/40">
+    <Card className="group h-full border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>
-          <p className="mt-3 break-words text-3xl font-bold tracking-tight text-white">{value}</p>
-          {detail && <p className="mt-2 text-xs text-slate-400">{detail}</p>}
+          <p className="mt-3 break-words text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{value}</p>
+          {detail && <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">{detail}</p>}
         </div>
         <div className={`rounded-2xl p-3 ${tones[tone] || tones.blue}`}>
           <Icon size={21} />
@@ -147,10 +147,10 @@ const Dashboard = () => {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-medium text-primary">{isEmployee ? 'Employee workspace' : 'Organisation overview'}</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-white">
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
             {isEmployee ? `Welcome back, ${displayName}` : 'Dashboard'}
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
             {isEmployee
               ? 'Your pay, payslips and account notifications in one place.'
               : `${role === 'SUPER_ADMIN' ? 'Viewing' : 'Organisation'}: ${user?.companyName || '—'}`}
@@ -204,19 +204,19 @@ const Dashboard = () => {
             />
           </section>
 
-          <Card className="border-white/5 bg-slate-950/30">
+          <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/30">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
                 <div className="rounded-xl bg-primary/10 p-3 text-primary"><CalendarDays size={20} /></div>
                 <div>
-                  <h2 className="font-semibold text-white">Latest payslip</h2>
+                  <h2 className="font-semibold text-slate-900 dark:text-white">Latest payslip</h2>
                   {latestPayslip ? (
                     <>
-                      <p className="mt-1 text-sm text-slate-400">{periodLabel(latestPayslip.month)}</p>
-                      <p className="mt-2 text-xl font-bold text-white">GHS {money(latestPayslip.netPay)}</p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{periodLabel(latestPayslip.month)}</p>
+                      <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">GHS {money(latestPayslip.netPay)}</p>
                     </>
                   ) : (
-                    <p className="mt-1 text-sm text-slate-400">
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                       No finalized payslip is available yet. Your statement will appear here after your employer finalizes payroll.
                     </p>
                   )}
@@ -229,15 +229,15 @@ const Dashboard = () => {
                 </span>
               )}
             </div>
-            <div className="mt-5 border-t border-white/5 pt-4">
+            <div className="mt-5 border-t border-slate-200 dark:border-white/5 pt-4">
               <Link to="/payslips" className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80">
                 Open payslip history <ArrowRight size={15} />
               </Link>
             </div>
           </Card>
 
-          <Card className="border-white/5 bg-slate-950/20">
-            <div className="flex items-center gap-3 text-sm text-slate-400">
+          <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/20">
+            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
               <Activity size={18} className="text-primary" />
               <p>Your dashboard only shows your own finalized payroll records and personal notifications.</p>
             </div>
@@ -261,7 +261,7 @@ const Dashboard = () => {
           <section aria-labelledby="quick-actions-title" className="space-y-3">
             <div className="flex items-end justify-between gap-3">
               <div>
-                <h2 id="quick-actions-title" className="text-sm font-semibold text-white">Quick actions</h2>
+                <h2 id="quick-actions-title" className="text-sm font-semibold text-slate-900 dark:text-white">Quick actions</h2>
                 <p className="mt-1 text-xs text-slate-500">Go straight to the work that needs your attention.</p>
               </div>
             </div>
@@ -274,12 +274,12 @@ const Dashboard = () => {
               ].map((action) => {
                 const Icon = action.icon;
                 return (
-                  <Link key={action.to} to={action.to} className="group rounded-2xl border border-white/10 bg-slate-950/35 p-4 transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-slate-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                  <Link key={action.to} to={action.to} className="group rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white dark:bg-slate-950/35 p-4 transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-slate-100 dark:bg-slate-100 dark:bg-slate-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                     <div className="flex items-center justify-between">
                       <span className="rounded-xl bg-primary/10 p-2.5 text-primary"><Icon size={18}/></span>
                       <ArrowRight size={16} className="text-slate-600 transition group-hover:translate-x-1 group-hover:text-primary"/>
                     </div>
-                    <p className="mt-4 text-sm font-semibold text-white">{action.label}</p>
+                    <p className="mt-4 text-sm font-semibold text-slate-900 dark:text-white">{action.label}</p>
                     <p className="mt-1 text-xs text-slate-500">{action.detail}</p>
                   </Link>
                 );
@@ -287,8 +287,8 @@ const Dashboard = () => {
             </div>
           </section>
 
-          <Card className="border-white/5 bg-slate-950/20">
-            <div className="flex items-center gap-3 text-sm text-slate-400">
+          <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/20">
+            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
               <Activity size={18} className="text-primary" />
               <p>Organisation metrics are restricted by your role and scoped to the selected tenant.</p>
               {loading && <RefreshCw size={14} className="ml-auto animate-spin" aria-label="Refreshing" />}
