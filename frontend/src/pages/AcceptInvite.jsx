@@ -59,7 +59,7 @@ const AcceptInvite = () => {
     }
   };
 
-  const inputClass = 'w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all';
+  const inputClass = 'w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all';
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-white dark:bg-slate-950 flex items-center justify-center p-4">
