@@ -179,6 +179,8 @@ const resolvers = {
 
       const p = paginate(page, limit);
       const where = {
+        isActive: true,
+        deletedAt: null,
         AND: [
           tenantId ? { companyId: tenantId } : {}, // SUPER_ADMIN without a tenant sees all
           search ? {
@@ -206,7 +208,7 @@ const resolvers = {
 
       const tenantId = resolveTenant(ctx, argId);
       if (!tenantId && ctx.userRole !== 'SUPER_ADMIN') throw forbidden('No company context');
-      return prisma.employee.count({ where: tenantId ? { companyId: tenantId } : {} });
+      return prisma.employee.count({ where: { ...(tenantId ? { companyId: tenantId } : {}), isActive: true, deletedAt: null } });
     },
 
     recentPayrollRuns: async (_, { companyId: argId, limit = 5 }, ctx) => {
