@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, chore/production-readiness-hardening]
+    branches: [main, chore/production-readiness-hardening, hardening/production-readiness-2026]
 
 permissions:
   contents: read
