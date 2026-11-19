@@ -59,7 +59,7 @@ const UserManagement = () => {
     } finally {
       setLoadingUsers(false);
     }
-  }, [companyId, headers]);
+  }, [companyId]);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
