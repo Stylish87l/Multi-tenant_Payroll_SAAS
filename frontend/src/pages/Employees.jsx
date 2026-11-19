@@ -211,7 +211,7 @@ const Employees = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors" size={18} aria-hidden="true" />
             <input
               type="text" placeholder="Search staff..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white focus:ring-2 focus:ring-primary/50 outline-none w-full md:w-64"
+              className="bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/50 outline-none w-full md:w-64"
               aria-label="Search staff"
             />
           </div>
@@ -285,7 +285,7 @@ const Employees = () => {
 
       {companyId && hasNextPage && (
         <div className="flex justify-center mt-4">
-          <button onClick={loadNextPage} disabled={loading} className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50">
+          <button onClick={loadNextPage} disabled={loading} className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-50">
             {loading ? 'Loading...' : 'Load more'}
           </button>
         </div>
