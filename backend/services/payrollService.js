@@ -39,7 +39,7 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
     throw badInput('Payroll cannot be processed for future months.');
   }
 
-  const existing = await prisma.payrollRun.findFirst({ where: { companyId, month: normalizedMonth } });
+  const existing = await prisma.payrollRun.findFirst({ where: { companyId, month: normalizedMonth, deletedAt: null } });
   if (existing) throw conflict(`Payroll for ${normalizedMonth.slice(0, 7)} already exists for this company.`);
 
   const employees = await prisma.employee.findMany({
