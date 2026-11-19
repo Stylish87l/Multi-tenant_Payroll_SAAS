@@ -111,6 +111,7 @@ model PayrollRun {
   processedById String?
   processedAt   DateTime?
   errorMessage  String?
+  taxConfigSnapshot Json?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -137,6 +138,7 @@ model PayrollItem {
   ssnitTier1    Decimal       @db.Decimal(18, 4)
   ssnitTier2    Decimal       @db.Decimal(18, 4)
   payeTax       Decimal       @db.Decimal(18, 4)
+  reliefInputsSnapshot Json?
   netPay        Decimal       @db.Decimal(18, 4)
   paymentStatus PaymentStatus @default(PENDING)
   paymentRef    String?
