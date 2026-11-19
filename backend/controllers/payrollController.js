@@ -21,7 +21,7 @@ export const getPayrollRuns = async (req, res, next) => {
     const take = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
     const skip = (Math.max(Number(req.query.page) || 1, 1) - 1) * take;
     const runs = await prisma.payrollRun.findMany({
-      where: req.userRole === 'SUPER_ADMIN' ? {} : { companyId: req.companyId },
+      where: req.userRole === 'SUPER_ADMIN' ? { deletedAt: null } : { companyId: req.companyId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       skip,
       take,
