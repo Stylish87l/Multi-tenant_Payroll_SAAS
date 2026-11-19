@@ -21,7 +21,8 @@ const envSchema = z.object({
   EMAIL_PORT: z.coerce.number().optional(),
   EMAIL_USER: z.string().optional(),
   EMAIL_PASS: z.string().optional(),
-  EMAIL_FROM: z.string().email().optional(),
+  // Nodemailer accepts RFC-style display names, e.g. `Paylio <billing@example.com>`.
+  EMAIL_FROM: z.string().trim().min(1).optional(),
 });
 
 const env = envSchema.parse(process.env);
