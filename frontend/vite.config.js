@@ -47,12 +47,14 @@ export default defineConfig(({ mode }) => {
     resolve: { alias: { '@': path.resolve(__dirname, './src') } },
 
     server: {
+      // Keep the development server loopback-only; never expose this Vite 5 server to the network.
+      host: '127.0.0.1',
       port: Number(env.VITE_DEV_PORT || 3000),
       strictPort: true,
       fs: { allow: [path.resolve(__dirname, '..')] },
     },
 
-    preview: { port: Number(env.VITE_PREVIEW_PORT || 4173), strictPort: true },
+    preview: { host: '127.0.0.1', port: Number(env.VITE_PREVIEW_PORT || 4173), strictPort: true },
 
     optimizeDeps: {
       include: ['react', 'react-dom', 'react-router-dom', '@apollo/client', 'graphql'],
