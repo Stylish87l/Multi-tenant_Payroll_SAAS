@@ -433,6 +433,8 @@ const resolvers = {
       if (!assertEmployeeInputPermissions(ctx.userRole, changedFields)) {
         throw forbidden('You do not have permission to change one or more sensitive employee fields.');
       }
+      if (data.isActive === false) data.deletedAt = existing.deletedAt || new Date();
+      if (data.isActive === true) data.deletedAt = null;
       const ruleError = validateEmployeeBusinessRules(data, existing);
       if (ruleError) throw badInput(ruleError);
 
@@ -443,7 +445,7 @@ const resolvers = {
           const updated = await tx.employee.update({ where: { id }, data });
           await writeAudit(tx, {
             actor: actorFromCtx(ctx), companyId: existing.companyId,
-            action: salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
+            action: data.isActive === false && existing.isActive ? 'EMPLOYEE_DEACTIVATED' : data.isActive === true && !existing.isActive ? 'EMPLOYEE_REACTIVATED' : salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
             resourceType: 'Employee', resourceId: id,
             details: {
               employeeId: id, changedFields: Object.keys(data),
