@@ -97,7 +97,7 @@ const Navbar = ({ onMenuClick }) => {
                               role="menuitemradio"
                               aria-checked={t.id === user.companyId}
                               onClick={() => { switchTenant({ id: t.id, name: t.name }); setOpen(false); }}
-                              className={`flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-white/5 hover:text-slate-900 dark:hover:text-white ${t.id === user.companyId ? 'text-white' : 'text-slate-700 dark:text-slate-300'}`}
+                              className={`flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-white/5 hover:text-slate-900 dark:hover:text-white ${t.id === user.companyId ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}
                             >
                               <Building2 size={14} className={t.id === user.companyId ? 'text-primary' : 'text-slate-500'} />
                               <span className="truncate">{t.name}</span>
