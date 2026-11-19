@@ -37,11 +37,11 @@ const Navbar = ({ onMenuClick }) => {
   }, [open]);
 
   return (
-    <nav className="sticky top-0 z-[60] w-full border-b border-slate-200 dark:border-white/10 bg-white/90 dark:bg-white dark:bg-slate-950/60 backdrop-blur-md">
+    <nav className="sticky top-0 z-[60] w-full border-b border-slate-200 dark:border-white/10 bg-white/90 dark:bg-slate-950/60 backdrop-blur-md">
       <div className="w-full flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-2">
           {user && (
-            <button onClick={onMenuClick} className="md:hidden p-2 text-white hover:bg-white/5 rounded-xl transition-colors" aria-label="Open menu">
+            <button onClick={onMenuClick} className="md:hidden p-2 text-slate-700 dark:text-white hover:bg-white/5 rounded-xl transition-colors" aria-label="Open menu">
               <Menu size={20} />
             </button>
           )}
@@ -78,7 +78,7 @@ const Navbar = ({ onMenuClick }) => {
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     role="menu"
                     aria-label="Account menu"
-                    className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-white/95 dark:bg-slate-100 dark:bg-slate-900/95 p-1 shadow-2xl backdrop-blur-xl"
+                    className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 p-1 shadow-2xl backdrop-blur-xl"
                   >
                     <div className="px-3 py-2">
                       <p className="text-xs font-semibold text-slate-200 truncate">{user.name || user.email}</p>
