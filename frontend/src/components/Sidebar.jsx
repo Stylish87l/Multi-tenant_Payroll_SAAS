@@ -17,7 +17,7 @@ const MobileSidebar = ({ isOpen, onClose, user }) => (
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-white/90 dark:bg-white dark:bg-slate-950/60 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-white/90 dark:bg-slate-950/60 backdrop-blur-sm md:hidden"
           aria-hidden="true"
         />
         <motion.aside
