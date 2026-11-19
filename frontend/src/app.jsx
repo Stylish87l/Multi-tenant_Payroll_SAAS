@@ -145,7 +145,8 @@ function Shell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">\n      <GlassPanelReveal />
+    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+      <GlassPanelReveal />
       {isAuthenticated && <Sidebar user={user} isMobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />}
       <div className="flex-1 flex flex-col relative overflow-hidden">
         {isAuthenticated && <Navbar onMenuClick={() => setMobileNavOpen(true)} />}
