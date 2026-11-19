@@ -171,14 +171,16 @@ router.post('/refresh', csrfProtection, async (req, res) => {
       return res.status(401).json({ error: 'Session expired' });
     }
 
-    // Normal rotation
+    // Claim rotation conditionally: only one concurrent request may rotate this token.
     const newTokenId = crypto.randomUUID();
-    await prisma.$transaction([
-      prisma.refreshToken.update({
-        where: { id: record.id },
+    const rotation = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.refreshToken.updateMany({
+        where: { id: record.id, revokedAt: null },
         data: { revokedAt: new Date(), revocationReason: 'rotated', lastUsedAt: new Date() },
-      }),
-      prisma.refreshToken.create({
+      });
+      if (claimed.count !== 1) return { rotated: false };
+
+      await tx.refreshToken.create({
         data: {
           userId: record.userId,
           tokenId: newTokenId,
@@ -186,11 +188,30 @@ router.post('/refresh', csrfProtection, async (req, res) => {
           deviceInfo: req.get('User-Agent') || null,
           ipAddress: req.ip || null,
         },
-      }),
-    ]);
+      });
+      return { rotated: true };
+    });
+
+    if (!rotation.rotated) {
+      // Another request won the rotation race after our initial read.
+      const latest = await prisma.refreshToken.findUnique({ where: { id: record.id } });
+      const age = latest?.revokedAt ? Date.now() - new Date(latest.revokedAt).getTime() : Infinity;
+      if (latest?.revocationReason === 'rotated' && age >= 0 && age < GRACE_PERIOD_MS) {
+        const current = await prisma.refreshToken.findFirst({
+          where: { userId: record.userId, revokedAt: null, expiresAt: { gt: new Date() } },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (current) {
+          res.cookie(REFRESH_COOKIE_NAME, signRefreshToken({ userId: record.userId, tokenId: current.tokenId }), getRefreshCookieOptions());
+          return res.json(buildAuthResponse(record.user, signAccessFor(record.user)));
+        }
+      }
+      res.clearCookie(REFRESH_COOKIE_NAME, getClearCookieOptions());
+      return res.status(401).json({ error: 'Session expired' });
+    }
 
     res.cookie(REFRESH_COOKIE_NAME, signRefreshToken({ userId: record.userId, tokenId: newTokenId }), getRefreshCookieOptions());
-    return res.json(buildAuthResponse(record.user, signAccessFor(record.user)));
+    return res.json(buildAuthResponse(record.user, signAccessFor(record.user));
   } catch (err) {
     logger.error('Refresh token verification failed', { message: err.message });
     res.clearCookie(REFRESH_COOKIE_NAME, getClearCookieOptions());
