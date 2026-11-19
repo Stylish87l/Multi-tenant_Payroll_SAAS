@@ -211,7 +211,7 @@ router.post('/refresh', csrfProtection, async (req, res) => {
     }
 
     res.cookie(REFRESH_COOKIE_NAME, signRefreshToken({ userId: record.userId, tokenId: newTokenId }), getRefreshCookieOptions());
-    return res.json(buildAuthResponse(record.user, signAccessFor(record.user));
+    return res.json(buildAuthResponse(record.user, signAccessFor(record.user)));
   } catch (err) {
     logger.error('Refresh token verification failed', { message: err.message });
     res.clearCookie(REFRESH_COOKIE_NAME, getClearCookieOptions());
