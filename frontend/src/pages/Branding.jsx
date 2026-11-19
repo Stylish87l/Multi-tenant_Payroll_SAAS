@@ -178,27 +178,27 @@ const Branding = () => {
   return (
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">
       <header>
-        <h1 className="text-3xl font-bold text-white tracking-tight">Tenant Branding</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Tenant Branding</h1>
+        <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
           Customize theme color, logo, footer note, and payslip presentation for {isSuperAdmin ? 'a tenant' : 'your organization'}.
         </p>
       </header>
 
       {/* Tenant selector - SUPER_ADMIN only. ADMIN never sees or controls this. */}
       {isSuperAdmin && (
-        <Card className="border-white/5 bg-slate-950/40 p-6">
-          <div className="flex items-center gap-2 text-slate-400 mb-3">
+        <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-6">
+          <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 mb-3">
             <Building2 size={16} />
             <h3 className="text-xs font-bold uppercase tracking-widest">Select Tenant</h3>
           </div>
           <select
             value={selectedCompanyId}
             onChange={(e) => setSelectedCompanyId(e.target.value)}
-            className="w-full md:w-96 bg-slate-900 border border-white/10 rounded-xl py-3 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer"
+            className="w-full md:w-96 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer"
           >
-            <option value="" className="bg-slate-950">— Choose a company —</option>
+            <option value="" className="bg-white dark:bg-slate-950">— Choose a company —</option>
             {companies.map((c) => (
-              <option key={c.id} value={c.id} className="bg-slate-950">
+              <option key={c.id} value={c.id} className="bg-white dark:bg-slate-950">
                 {c.name} {c.tin ? `(${c.tin})` : ''}
               </option>
             ))}
@@ -221,7 +221,7 @@ const Branding = () => {
       )}
 
       {!selectedCompanyId && isSuperAdmin && !errorMsg && (
-        <Card className="p-6 text-center text-slate-400">
+        <Card className="p-6 text-center text-slate-600 dark:text-slate-400">
           Select a tenant above to view or edit their branding.
         </Card>
       )}
@@ -232,8 +232,8 @@ const Branding = () => {
         ) : (
           <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Form fields */}
-            <Card className="border-white/5 bg-slate-950/40 p-6 space-y-6">
-              <div className="flex items-center gap-2 text-slate-400">
+            <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-6 space-y-6">
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                 <Paintbrush size={16} />
                 <h3 className="text-xs font-bold uppercase tracking-widest">Theme Color</h3>
               </div>
@@ -242,7 +242,7 @@ const Branding = () => {
                   type="color"
                   value={HEX_COLOR_RE.test(form.themeColor) ? form.themeColor : '#4B6EF5'}
                   onChange={(e) => setForm({ ...form, themeColor: e.target.value })}
-                  className="h-12 w-14 rounded-lg border border-white/10 bg-slate-900 cursor-pointer"
+                  className="h-12 w-14 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 cursor-pointer"
                   aria-label="Pick theme color"
                 />
                 <input
@@ -250,12 +250,12 @@ const Branding = () => {
                   value={form.themeColor}
                   onChange={(e) => setForm({ ...form, themeColor: e.target.value })}
                   placeholder="#4B6EF5"
-                  className="flex-1 bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary font-mono"
+                  className="flex-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary font-mono"
                 />
               </div>
               {fieldErrors.themeColor && <p className="text-xs text-rose-400">{fieldErrors.themeColor}</p>}
 
-              <div className="flex items-center gap-2 text-slate-400 pt-2 border-t border-white/5">
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-white/5">
                 <Image size={16} />
                 <h3 className="text-xs font-bold uppercase tracking-widest">Company logo</h3>
               </div>
@@ -271,24 +271,24 @@ const Branding = () => {
                 reader.onload = () => setForm((prev) => ({ ...prev, logoUrl: String(reader.result) }));
                 reader.onerror = () => setFieldErrors((prev) => ({ ...prev, logoDataUrl: 'Unable to read the selected image.' }));
                 reader.readAsDataURL(file);
-              }} className="w-full text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white" />
+              }} className="w-full text-sm text-slate-700 dark:text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white" />
               {form.logoUrl && <div className="flex items-center gap-3"><img src={form.logoUrl} alt="Selected company logo" className="h-12 max-w-40 object-contain rounded bg-white p-1" /><button type="button" onClick={() => setForm((prev) => ({ ...prev, logoUrl: '' }))} className="text-xs text-rose-400">Remove logo</button></div>}
               <p className="text-[11px] text-slate-600">Upload PNG or JPEG, maximum 512 KB. The logo is stored with this tenant&apos;s branding.</p>
               {fieldErrors.logoUrl && <p className="text-xs text-rose-400">{fieldErrors.logoUrl}</p>}
               {fieldErrors.logoDataUrl && <p className="text-xs text-rose-400">{fieldErrors.logoDataUrl}</p>}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="text-xs text-slate-400">Payslip display name<input value={form.companyDisplayName} onChange={(e) => setForm({ ...form, companyDisplayName: e.target.value })} maxLength={120} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white" placeholder="Company name on payslip" /></label>
-                <label className="text-xs text-slate-400">Logo alignment<select value={form.logoAlignment} onChange={(e) => setForm({ ...form, logoAlignment: e.target.value })} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+                <label className="text-xs text-slate-600 dark:text-slate-400">Payslip display name<input value={form.companyDisplayName} onChange={(e) => setForm({ ...form, companyDisplayName: e.target.value })} maxLength={120} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white" placeholder="Company name on payslip" /></label>
+                <label className="text-xs text-slate-600 dark:text-slate-400">Logo alignment<select value={form.logoAlignment} onChange={(e) => setForm({ ...form, logoAlignment: e.target.value })} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
               </div>
-              <label className="block text-xs text-slate-400">Company address<textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} maxLength={300} rows={2} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white" placeholder="Company address" /></label>
+              <label className="block text-xs text-slate-600 dark:text-slate-400">Company address<textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} maxLength={300} rows={2} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white" placeholder="Company address" /></label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="text-xs text-slate-400">Contact email<input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white" placeholder="payroll@company.com" /></label>
-                <label className="text-xs text-slate-400">Contact phone<input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} maxLength={40} className="mt-2 w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white" placeholder="+233 ..." /></label>
+                <label className="text-xs text-slate-600 dark:text-slate-400">Contact email<input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white" placeholder="payroll@company.com" /></label>
+                <label className="text-xs text-slate-600 dark:text-slate-400">Contact phone<input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} maxLength={40} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white" placeholder="+233 ..." /></label>
               </div>
               {fieldErrors.contactEmail && <p className="text-xs text-rose-400">{fieldErrors.contactEmail}</p>}
 
-              <div className="flex items-center gap-2 text-slate-400 pt-2 border-t border-white/5">
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-white/5">
                 <MessageSquare size={16} />
                 <h3 className="text-xs font-bold uppercase tracking-widest">Footer Note</h3>
               </div>
@@ -298,13 +298,13 @@ const Branding = () => {
                 maxLength={500}
                 rows={3}
                 placeholder="e.g. Generated by Paylio. Confidential document."
-                className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary resize-none"
+                className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary resize-none"
               />
               <p className="text-[11px] text-slate-600 text-right">{form.footerNote.length}/500</p>
               {fieldErrors.footerNote && <p className="text-xs text-rose-400">{fieldErrors.footerNote}</p>}
-              <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={form.showFooter} onChange={(e) => setForm({ ...form, showFooter: e.target.checked })} className="rounded border-white/20 bg-slate-950" /> Show footer on payslip</label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"><input type="checkbox" checked={form.showFooter} onChange={(e) => setForm({ ...form, showFooter: e.target.checked })} className="rounded border-white/20 bg-white dark:bg-slate-950" /> Show footer on payslip</label>
 
-              <div className="flex items-center gap-2 text-slate-400 pt-2 border-t border-white/5">
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-white/5">
                 <MessageSquare size={16} />
                 <h3 className="text-xs font-bold uppercase tracking-widest">Payslip Tagline</h3>
               </div>
@@ -313,7 +313,7 @@ const Branding = () => {
                 value={form.tagline}
                 onChange={(e) => setForm({ ...form, tagline: e.target.value })}
                 placeholder="e.g. Empowering Ghanaian Businesses"
-                className="w-full bg-slate-950 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+                className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
               />
               <p className="text-[11px] text-slate-600">
                 Optional short line shown near the payslip header. Stored in the tenant&apos;s payslip template config.
@@ -330,16 +330,16 @@ const Branding = () => {
             </Card>
 
             {/* Full payslip preview: illustrative figures update with branding controls above. */}
-            <Card className="border-white/5 bg-slate-950/40 p-5 lg:sticky lg:top-6 self-start">
+            <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-5 lg:sticky lg:top-6 self-start">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <div><h3 className="text-sm font-bold text-white">Live payslip preview</h3><p className="mt-1 text-[11px] text-slate-500">A4 layout · Updates as you edit branding</p></div>
+                <div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Live payslip preview</h3><p className="mt-1 text-[11px] text-slate-500">A4 layout · Updates as you edit branding</p></div>
                 <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-primary">Sample data</span>
               </div>
               <div className="mx-auto w-full max-w-[620px] overflow-hidden rounded-lg bg-white shadow-2xl" style={{ color: '#172033', aspectRatio: '210 / 297' }}>
                 <div className="h-2" style={{ backgroundColor: previewThemeColor }} />
                 <div className="flex h-full flex-col px-[7%] pb-[5%] pt-[4%] text-[clamp(7px,1vw,11px)]">
                   <div className={'flex flex-col ' + (form.logoAlignment === 'left' ? 'items-start text-left' : form.logoAlignment === 'right' ? 'items-end text-right' : 'items-center text-center')}>
-                    {form.logoUrl ? <img src={form.logoUrl} alt="Company logo preview" className="mb-2 h-10 max-w-28 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="mb-2 flex h-10 w-10 items-center justify-center rounded bg-slate-100 text-[8px] text-slate-400">LOGO</div>}
+                    {form.logoUrl ? <img src={form.logoUrl} alt="Company logo preview" className="mb-2 h-10 max-w-28 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <div className="mb-2 flex h-10 w-10 items-center justify-center rounded bg-slate-100 text-[8px] text-slate-600 dark:text-slate-400">LOGO</div>}
                     <h2 className="text-[clamp(11px,1.7vw,17px)] font-extrabold tracking-tight" style={{ color: previewThemeColor }}>
                       {form.companyDisplayName || (isSuperAdmin ? companies.find((c) => c.id === selectedCompanyId)?.name : user?.companyName) || 'Your Company'}
                     </h2>
@@ -354,10 +354,10 @@ const Branding = () => {
                   <div className="mt-3">
                     <p className="border-b border-slate-200 pb-1 font-bold uppercase tracking-wide text-slate-600">Employee details</p>
                     <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
-                      <div><p className="text-slate-400">Employee name</p><p className="font-semibold">Ama Mensah</p></div>
-                      <div><p className="text-slate-400">Employee number</p><p className="font-semibold">EMP-00128</p></div>
-                      <div><p className="text-slate-400">Position</p><p className="font-semibold">Finance Officer</p></div>
-                      <div><p className="text-slate-400">SSNIT number</p><p className="font-semibold">•••• 4821</p></div>
+                      <div><p className="text-slate-600 dark:text-slate-400">Employee name</p><p className="font-semibold">Ama Mensah</p></div>
+                      <div><p className="text-slate-600 dark:text-slate-400">Employee number</p><p className="font-semibold">EMP-00128</p></div>
+                      <div><p className="text-slate-600 dark:text-slate-400">Position</p><p className="font-semibold">Finance Officer</p></div>
+                      <div><p className="text-slate-600 dark:text-slate-400">SSNIT number</p><p className="font-semibold">•••• 4821</p></div>
                     </div>
                   </div>
                   {[
@@ -373,13 +373,13 @@ const Branding = () => {
                     </div>
                   ))}
                   <div className="mt-3 rounded-md px-3 py-2 text-white" style={{ backgroundColor: previewThemeColor }}>
-                    <div className="flex items-center justify-between"><span className="text-[9px] font-bold uppercase tracking-wide text-white/75">Take-home pay</span><span className="text-[clamp(13px,2vw,20px)] font-extrabold tabular-nums">GHS 5,572.50</span></div>
+                    <div className="flex items-center justify-between"><span className="text-[9px] font-bold uppercase tracking-wide text-slate-900 dark:text-white/75">Take-home pay</span><span className="text-[clamp(13px,2vw,20px)] font-extrabold tabular-nums">GHS 5,572.50</span></div>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-200 pt-2">
-                    <div><p className="text-slate-400">Payment status</p><p className="font-semibold">PAID</p><p className="mt-1 text-slate-400">Bank account</p><p className="font-semibold">•••• 9012</p></div>
-                    <div><p className="text-slate-400">Payment reference</p><p className="font-semibold">PAY-2026-10-128</p><p className="mt-1 text-slate-400">Finalized</p><p className="font-semibold">31 Oct 2026</p></div>
+                    <div><p className="text-slate-600 dark:text-slate-400">Payment status</p><p className="font-semibold">PAID</p><p className="mt-1 text-slate-600 dark:text-slate-400">Bank account</p><p className="font-semibold">•••• 9012</p></div>
+                    <div><p className="text-slate-600 dark:text-slate-400">Payment reference</p><p className="font-semibold">PAY-2026-10-128</p><p className="mt-1 text-slate-600 dark:text-slate-400">Finalized</p><p className="font-semibold">31 Oct 2026</p></div>
                   </div>
-                  <div className="mt-auto border-t border-slate-200 pt-2 text-center text-[8px] italic text-slate-400">
+                  <div className="mt-auto border-t border-slate-200 pt-2 text-center text-[8px] italic text-slate-600 dark:text-slate-400">
                     {form.showFooter ? (form.footerNote || 'This is an electronically generated payslip and does not require a signature.') : 'Footer hidden'}
                   </div>
                 </div>
