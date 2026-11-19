@@ -274,7 +274,7 @@ const Dashboard = () => {
               ].map((action) => {
                 const Icon = action.icon;
                 return (
-                  <Link key={action.to} to={action.to} className="group rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/35 p-4 transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-slate-100 dark:bg-slate-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                  <Link key={action.to} to={action.to} className="group rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/35 p-4 transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-slate-100 dark:hover:bg-slate-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                     <div className="flex items-center justify-between">
                       <span className="rounded-xl bg-primary/10 p-2.5 text-primary"><Icon size={18}/></span>
                       <ArrowRight size={16} className="text-slate-600 transition group-hover:translate-x-1 group-hover:text-primary"/>
