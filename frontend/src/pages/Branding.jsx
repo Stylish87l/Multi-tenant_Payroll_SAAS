@@ -186,7 +186,7 @@ const Branding = () => {
 
       {/* Tenant selector - SUPER_ADMIN only. ADMIN never sees or controls this. */}
       {isSuperAdmin && (
-        <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-6">
+        <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-6">
           <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 mb-3">
             <Building2 size={16} />
             <h3 className="text-xs font-bold uppercase tracking-widest">Select Tenant</h3>
@@ -232,7 +232,7 @@ const Branding = () => {
         ) : (
           <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Form fields */}
-            <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-6 space-y-6">
+            <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-6 space-y-6">
               <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                 <Paintbrush size={16} />
                 <h3 className="text-xs font-bold uppercase tracking-widest">Theme Color</h3>
@@ -278,13 +278,13 @@ const Branding = () => {
               {fieldErrors.logoDataUrl && <p className="text-xs text-rose-400">{fieldErrors.logoDataUrl}</p>}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="text-xs text-slate-600 dark:text-slate-400">Payslip display name<input value={form.companyDisplayName} onChange={(e) => setForm({ ...form, companyDisplayName: e.target.value })} maxLength={120} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white" placeholder="Company name on payslip" /></label>
-                <label className="text-xs text-slate-600 dark:text-slate-400">Logo alignment<select value={form.logoAlignment} onChange={(e) => setForm({ ...form, logoAlignment: e.target.value })} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+                <label className="text-xs text-slate-600 dark:text-slate-400">Payslip display name<input value={form.companyDisplayName} onChange={(e) => setForm({ ...form, companyDisplayName: e.target.value })} maxLength={120} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-slate-900 dark:text-white" placeholder="Company name on payslip" /></label>
+                <label className="text-xs text-slate-600 dark:text-slate-400">Logo alignment<select value={form.logoAlignment} onChange={(e) => setForm({ ...form, logoAlignment: e.target.value })} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-slate-900 dark:text-white"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
               </div>
-              <label className="block text-xs text-slate-600 dark:text-slate-400">Company address<textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} maxLength={300} rows={2} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white" placeholder="Company address" /></label>
+              <label className="block text-xs text-slate-600 dark:text-slate-400">Company address<textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} maxLength={300} rows={2} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-slate-900 dark:text-white" placeholder="Company address" /></label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="text-xs text-slate-600 dark:text-slate-400">Contact email<input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white" placeholder="payroll@company.com" /></label>
-                <label className="text-xs text-slate-600 dark:text-slate-400">Contact phone<input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} maxLength={40} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white" placeholder="+233 ..." /></label>
+                <label className="text-xs text-slate-600 dark:text-slate-400">Contact email<input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-slate-900 dark:text-white" placeholder="payroll@company.com" /></label>
+                <label className="text-xs text-slate-600 dark:text-slate-400">Contact phone<input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} maxLength={40} className="mt-2 w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-slate-900 dark:text-white" placeholder="+233 ..." /></label>
               </div>
               {fieldErrors.contactEmail && <p className="text-xs text-rose-400">{fieldErrors.contactEmail}</p>}
 
@@ -330,7 +330,7 @@ const Branding = () => {
             </Card>
 
             {/* Full payslip preview: illustrative figures update with branding controls above. */}
-            <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-5 lg:sticky lg:top-6 self-start">
+            <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-5 lg:sticky lg:top-6 self-start">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Live payslip preview</h3><p className="mt-1 text-[11px] text-slate-500">A4 layout · Updates as you edit branding</p></div>
                 <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-primary">Sample data</span>
