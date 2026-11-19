@@ -37,7 +37,12 @@ const isUserUsable = (user) => user && user.status === 'ACTIVE' && !user.deleted
 // HMAC signing prevents an attacker from planting a forged cookie on a shared domain.
 const CSRF_COOKIE_NAME = 'csrf';
 const CSRF_TTL_MS = 2 * 60 * 60 * 1000;
-const csrfSecret = () => process.env.CSRF_SECRET || process.env.JWT_SECRET;
+const csrfSecret = () => {
+  if (!process.env.CSRF_SECRET) {
+    throw new Error('CSRF_SECRET must be configured before issuing or validating CSRF tokens.');
+  }
+  return process.env.CSRF_SECRET;
+};
 const signCsrfValue = (value) => crypto.createHmac('sha256', csrfSecret()).update(value).digest('hex');
 const createCsrfToken = () => {
   const value = `${Date.now()}.${crypto.randomBytes(32).toString('hex')}`;
