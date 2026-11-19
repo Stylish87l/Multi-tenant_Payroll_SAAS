@@ -504,7 +504,10 @@ const resolvers = {
       if (!run) throw notFound('Payroll run not found');
 
       await prisma.$transaction(async (tx) => {
-        const result = await tx.payrollRun.deleteMany({ where: { id: runId, status: 'DRAFT' } }); // items cascade
+        const result = await tx.payrollRun.updateMany({
+          where: { id: runId, status: 'DRAFT', deletedAt: null },
+          data: { status: 'CANCELLED', deletedAt: new Date() },
+        });
         if (result.count !== 1) throw conflict('Only DRAFT payroll runs can be discarded.');
         await writeAudit(tx, {
           actor: actorFromCtx(ctx), companyId: run.companyId, action: 'PAYROLL_RUN_DISCARDED',
