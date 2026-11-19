@@ -20,7 +20,7 @@ const ROLE_HELP = {
   ACCOUNTANT: 'Manage payroll, compensation and banking information, and prepare statutory reports.',
   EMPLOYEE: 'Access personal payslips and account notifications only.',
 };
-const inputClass = 'mt-1.5 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/70 px-3.5 py-3 text-sm text-white placeholder:text-slate-600 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/15';
+const inputClass = 'mt-1.5 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/70 px-3.5 py-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-600 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/15';
 const statusTone = {
   ACTIVE: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300',
   PENDING: 'border-amber-400/20 bg-amber-400/10 text-amber-300',
@@ -194,7 +194,7 @@ const UserManagement = () => {
             </div>
 
             {loadingUsers ? <div className="p-8"><Loader message="Loading organisation users..."/></div> : filteredUsers.length === 0 ? (
-              <div className="p-10 text-center"><Users className="mx-auto text-slate-600" size={28}/><h3 className="mt-3 font-semibold text-white">{users.length ? 'No matching users' : 'No accounts yet'}</h3><p className="mt-1 text-sm text-slate-500">{users.length ? 'Try another search or status filter.' : 'Add a user to start building your team.'}</p>{!users.length && <button type="button" onClick={openCreate} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white"><UserPlus size={15}/> Add your first user</button>}</div>
+              <div className="p-10 text-center"><Users className="mx-auto text-slate-600" size={28}/><h3 className="mt-3 font-semibold text-slate-900 dark:text-white">{users.length ? 'No matching users' : 'No accounts yet'}</h3><p className="mt-1 text-sm text-slate-500">{users.length ? 'Try another search or status filter.' : 'Add a user to start building your team.'}</p>{!users.length && <button type="button" onClick={openCreate} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white"><UserPlus size={15}/> Add your first user</button>}</div>
             ) : (
               <div className="divide-y divide-white/5">
                 {filteredUsers.map((account) => (
