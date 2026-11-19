@@ -13,6 +13,22 @@ router.use(authMiddleware);
 const tenantRun = (req) => (req.userRole !== 'SUPER_ADMIN' ? { companyId: req.companyId } : {});
 const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE'];
 
+const requireFinalizedRun = async (req, res, runId) => {
+  const run = await prisma.payrollRun.findFirst({
+    where: { id: runId, ...tenantRun(req) },
+    select: { id: true, status: true },
+  });
+  if (!run) {
+    res.status(404).json({ error: 'Payroll run not found' });
+    return false;
+  }
+  if (run.status !== 'FINALIZED') {
+    res.status(409).json({ error: 'Statutory schedules are available only for finalized payroll runs.' });
+    return false;
+  }
+  return true;
+};
+
 /** 1. Individual payslip data - scoped by tenant; employees see only their own FINALIZED payslips. */
 router.get('/payslip/:itemId', rbac(INDIVIDUAL_PAYSLIP_ROLES), async (req, res) => {
   // RBAC is hierarchical: HR inherits EMPLOYEE. Financial payslip access must
@@ -49,8 +65,9 @@ router.get('/gra-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, re
   const { runId } = req.params;
   const { format = 'json' } = req.query;
   try {
+    if (!(await requireFinalizedRun(req, res, runId))) return;
     const items = await prisma.payrollItem.findMany({
-      where: { payrollRunId: runId, payrollRun: tenantRun(req) },
+      where: { payrollRunId: runId, payrollRun: { ...tenantRun(req), status: 'FINALIZED' } },
       select: {
         employee: { select: { ghanaCardPin: true, name: true } },
         taxableIncome: true,
@@ -107,8 +124,9 @@ router.get('/ssnit-schedule/:runId', rbac(['ADMIN', 'ACCOUNTANT']), async (req, 
   const { runId } = req.params;
   const { format = 'json' } = req.query;
   try {
+    if (!(await requireFinalizedRun(req, res, runId))) return;
     const items = await prisma.payrollItem.findMany({
-      where: { payrollRunId: runId, payrollRun: tenantRun(req) },
+      where: { payrollRunId: runId, payrollRun: { ...tenantRun(req), status: 'FINALIZED' } },
       select: {
         employee: { select: { ssnitNumber: true, name: true } },
         grossSalary: true, ssnitEmployee: true, ssnitEmployer: true,
