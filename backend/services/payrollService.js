@@ -45,11 +45,19 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
     loadTaxConfig({ type: 'SSNIT', companyId, year, effectiveAt: normalizedMonth }),
     loadTaxConfig({ type: 'PAYE', companyId, year, effectiveAt: normalizedMonth }),
   ]);
+  const serializableTaxConfig = (config) => config
+    ? {
+        ...config,
+        __effectiveFrom: config.__effectiveFrom instanceof Date
+          ? config.__effectiveFrom.toISOString()
+          : config.__effectiveFrom,
+      }
+    : null;
   const taxConfigSnapshot = {
     year,
     effectiveAt: normalizedMonth,
-    SSNIT: ssnitTaxConfig,
-    PAYE: payeTaxConfig,
+    SSNIT: serializableTaxConfig(ssnitTaxConfig),
+    PAYE: serializableTaxConfig(payeTaxConfig),
   };
   if (existing) throw conflict(`Payroll for ${normalizedMonth.slice(0, 7)} already exists for this company.`);
 
