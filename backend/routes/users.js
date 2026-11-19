@@ -141,9 +141,10 @@ router.post('/accept-invite', async (req, res, next) => {
     const parsed = acceptInviteSchema.safeParse(req.body ?? {});
     if (!parsed.success) return next(parsed.error);
     const { token, password } = parsed.data;
-    const invite = await prisma.invite.findUnique({ where: { token: hashActivationToken(token) }, include: { user: true } })
-      // Backward compatibility for activation links issued before token hashing was introduced.
-      || await prisma.invite.findUnique({ where: { token }, include: { user: true } });
+    const invite = await prisma.invite.findUnique({
+      where: { token: hashActivationToken(token) },
+      include: { user: true },
+    });
     if (!invite || invite.expiresAt < new Date() || invite.user.status !== 'PENDING' || invite.user.deletedAt) {
       throw badInput('Activation link is invalid or has expired.');
     }
