@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import Card from '../components/Card';
 import Loader from '../components/Loader';
 import Modal from '../components/Modal';
+import { authFetch } from '../lib/authFetch';
 
 const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_API_URL || '';
 const REST_BASE = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
@@ -44,17 +45,12 @@ const UserManagement = () => {
   const { data: companyData, loading: loadingCompanies } = useQuery(GET_COMPANIES, { skip: !isSuperAdmin });
   const companies = useMemo(() => companyData?.companies || [], [companyData]);
 
-  const headers = useCallback(() => {
-    const token = localStorage.getItem('token');
-    return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-  }, []);
-
   const loadUsers = useCallback(async () => {
     if (!companyId) { setUsers([]); return; }
     setLoadingUsers(true);
     setError(null);
     try {
-      const response = await fetch(`${REST_BASE}/api/users?companyId=${encodeURIComponent(companyId)}`, { headers: headers() });
+      const response = await authFetch(`${REST_BASE}/api/users?companyId=${encodeURIComponent(companyId)}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Unable to load users.');
       setUsers(payload.users || []);
@@ -102,9 +98,9 @@ const UserManagement = () => {
     setSubmitting(true);
     try {
       const endpoint = mode === 'create' ? 'create' : 'invite';
-      const response = await fetch(`${REST_BASE}/api/users/${endpoint}`, {
+      const response = await authFetch(`${REST_BASE}/api/users/${endpoint}`, {
         method: 'POST',
-        headers: headers(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, name: form.name.trim(), email: form.email.trim().toLowerCase(), ...(isSuperAdmin ? { companyId } : {}) }),
       });
       const payload = await response.json();
@@ -124,7 +120,7 @@ const UserManagement = () => {
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`${REST_BASE}/api/users/${target.id}/status`, {
+      const response = await authFetch(`${REST_BASE}/api/users/${target.id}/status`, {
         method: 'PATCH',
         headers: headers(),
         body: JSON.stringify({ status }),
