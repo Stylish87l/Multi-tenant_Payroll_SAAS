@@ -177,7 +177,7 @@ const Reports = () => {
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">Prepare payroll schedules and employee payslip exports for the payroll period you select.</p>
       </header>
 
-      <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-6">
+      <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-2">
           <label htmlFor="payroll-run-select" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -219,7 +219,7 @@ const Reports = () => {
           const dynamicDisabled = !!isDownloading || !selectedRunId || runs.length === 0;
           
           return (
-            <Card key={report.id} className="group relative border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-5 transition-all hover:border-primary/25" >
+            <Card key={report.id} className="group relative border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-5 transition-all hover:border-primary/25" >
               <div className="flex items-start space-x-5">
                 <div className={`p-4 rounded-2xl bg-white/5 ${report.color} group-hover:scale-105 transition-transform duration-200`} aria-hidden="true">
                   <report.icon size={28} />
