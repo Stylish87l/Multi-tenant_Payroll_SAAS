@@ -20,14 +20,16 @@ export const USER_KEY = 'user';
 // --- CSRF bootstrap + refresh singleton ---
 let refreshPromise = null;
 let csrfTokenPromise = null;
-let logoutInProgress = false;
-const LOGOUT_PENDING_KEY = 'paylio:logout-pending';
 
-/** Re-enable cookie refresh only after an explicit, successful login. */
-export const resetLogoutState = () => {
-  logoutInProgress = false;
-  localStorage.removeItem(LOGOUT_PENDING_KEY);
-};
+/**
+ * Set when the user logs out so an in-flight refresh cannot resurrect the session.
+ * Without this guard, a silent refresh that resolves AFTER logout() clears storage
+ * would re-persist a fresh access token into localStorage and re-arm the session.
+ */
+let sessionRevoked = false;
+
+export const markSessionRevoked = () => { sessionRevoked = true; };
+export const markSessionActive = () => { sessionRevoked = false; };
 
 const getCsrfToken = async () => {
   if (!csrfTokenPromise) {
@@ -49,9 +51,6 @@ const getCsrfToken = async () => {
 };
 
 export const doRefresh = async () => {
-  if (logoutInProgress || localStorage.getItem(LOGOUT_PENDING_KEY) === 'true') {
-    throw new Error('Logout is in progress; automatic session refresh is disabled.');
-  }
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
@@ -70,6 +69,11 @@ export const doRefresh = async () => {
       const accessToken = json.accessToken || json.token;
       if (!accessToken) throw new Error('No access token returned from refresh');
 
+      // The user logged out while this refresh was in flight (e.g. server already rotated
+      // the token before the logout request revoked it). Discard the response and refuse
+      // to persist anything, otherwise logout() is silently undone.
+      if (sessionRevoked) throw new Error('EXPIRED');
+
       localStorage.setItem(TOKEN_KEY, accessToken);
       if (json.user) localStorage.setItem(USER_KEY, JSON.stringify(json.user));
       return accessToken;
@@ -85,35 +89,15 @@ export const doRefresh = async () => {
  * Revokes the refresh token server-side and clears the cookie.
  */
 export const doLogout = async () => {
-  // Persist the intent so a failed server logout cannot silently re-authenticate
-  // this browser on a route remount or page reload. Explicit login clears it.
-  logoutInProgress = true;
-  localStorage.setItem(LOGOUT_PENDING_KEY, 'true');
-
   try {
-    // Let any refresh already in flight finish rotating the cookie before revocation.
-    if (refreshPromise) {
-      try { await refreshPromise; } catch { /* continue and attempt server-side logout */ }
-    }
-
     const csrfToken = await getCsrfToken();
-    const response = await fetch(`${REST_BASE}/api/auth/logout`, {
+    await fetch(`${REST_BASE}/api/auth/logout`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'x-csrf-token': csrfToken },
     });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      throw new Error(`Logout request rejected (${response.status})${detail ? `: ${detail.slice(0, 180)}` : ''}`);
-    }
-
-    localStorage.removeItem(LOGOUT_PENDING_KEY);
-    return { success: true };
   } catch (err) {
-    // Stay locally signed out and keep automatic refresh blocked until explicit login.
-    console.error('Server logout could not be confirmed:', err);
-    return { success: false, error: err.message };
+    console.warn('Logout request failed', err);
   }
 };
 
