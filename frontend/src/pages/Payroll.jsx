@@ -124,7 +124,7 @@ const Payroll = () => {
       </div>
 
 
-      <section aria-label="Payroll workflow" className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white dark:bg-slate-950/35 p-4 sm:p-5">
+      <section aria-label="Payroll workflow" className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/35 p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Payroll workflow</h2>
           <span className="text-[11px] text-slate-500">Drafts are not final payroll</span>
@@ -145,9 +145,9 @@ const Payroll = () => {
       </section>
 
       {isSuperAdmin && (
-        <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 p-5">
+        <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-5">
           <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">Select tenant</label>
-          <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="w-full md:max-w-md rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 p-3 text-white">
+          <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="w-full md:max-w-md rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 p-3 text-slate-900 dark:text-white">
             <option value="">Choose a company</option>
             {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
           </select>
@@ -174,7 +174,7 @@ const Payroll = () => {
         <AnimatePresence>
           {runs.map((run, idx) => (
             <motion.div key={run.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ delay: Math.min(idx, 10) * 0.05 }}>
-              <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-white dark:bg-slate-950/40 hover:border-slate-200 dark:border-white/10 transition-colors">
+              <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 hover:border-slate-200 dark:border-white/10 transition-colors">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="flex items-center space-x-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 text-slate-700 dark:text-slate-300"><FileCheck size={24} /></div>
