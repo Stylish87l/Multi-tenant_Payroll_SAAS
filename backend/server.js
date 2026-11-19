@@ -43,6 +43,10 @@ if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is required.');
   process.exit(1);
 }
+if (!process.env.CSRF_SECRET || Buffer.byteLength(process.env.CSRF_SECRET) < 32) {
+  console.error('CSRF_SECRET is required and must contain at least 32 bytes.');
+  process.exit(1);
+}
 if (!process.env.NODE_ENV) {
   logger.warn('NODE_ENV is not set. Defaulting to development behaviour (permissive CORS, insecure cookies). Set NODE_ENV=production in deployment.');
 }
