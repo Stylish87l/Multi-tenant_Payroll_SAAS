@@ -11,6 +11,7 @@ export const actorFromReq = (req) => ({
   companyId: req.companyId || null,
   ip: req.ip || null,
   userAgent: req.get?.('User-Agent') || null,
+  correlationId: req.requestId || null,
 });
 
 export const actorFromCtx = (ctx) => ({
@@ -18,6 +19,7 @@ export const actorFromCtx = (ctx) => ({
   companyId: ctx.companyId || null,
   ip: ctx.req?.ip || null,
   userAgent: ctx.req?.get?.('User-Agent') || null,
+  correlationId: ctx.req?.requestId || null,
 });
 
 const toData = ({ actor, companyId, action, resourceType, resourceId, details }) => ({
@@ -29,6 +31,7 @@ const toData = ({ actor, companyId, action, resourceType, resourceId, details })
   resourceId: resourceId ?? null,
   ipAddress: actor?.ip || null,
   userAgent: actor?.userAgent || null,
+  correlationId: actor?.correlationId || null,
 });
 
 /** Use INSIDE a transaction (`client` = tx) so the action and its audit record commit together. */
