@@ -174,7 +174,7 @@ const Payroll = () => {
         <AnimatePresence>
           {runs.map((run, idx) => (
             <motion.div key={run.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ delay: Math.min(idx, 10) * 0.05 }}>
-              <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 hover:border-slate-200 dark:border-white/10 transition-colors">
+              <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 hover:border-slate-300 dark:hover:border-white/10 transition-colors">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="flex items-center space-x-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 text-slate-700 dark:text-slate-300"><FileCheck size={24} /></div>
