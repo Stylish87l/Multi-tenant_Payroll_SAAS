@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/payroll_ci
+      CSRF_SECRET: ci-only-csrf-secret-for-tests-32-bytes-minimum
     services:
       postgres:
         image: postgres:16
