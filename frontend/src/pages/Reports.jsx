@@ -193,17 +193,17 @@ const Reports = () => {
               id="payroll-run-select"
               value={selectedRunId}
               onChange={(e) => setSelectedRunId(e.target.value)}
-              className="w-full md:w-80 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer"
+              className="w-full md:w-80 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer"
             >
               {runs.map((run) => (
-                <option key={run.id} value={run.id} className="bg-white dark:bg-slate-950 text-white">
+                <option key={run.id} value={run.id} className="bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
                   {run.month} — Status: {run.status}
                 </option>
               ))}
             </select>
           )}
           </div>
-          {selectedRun && <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-wider text-primary">Selected run</p><p className="mt-1 text-sm font-semibold text-white">{String(selectedRun.month).slice(0, 7)}</p><p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-400">Status: {String(selectedRun.status).toLowerCase()}</p></div>}
+          {selectedRun && <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-wider text-primary">Selected run</p><p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{String(selectedRun.month).slice(0, 7)}</p><p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-400">Status: {String(selectedRun.status).toLowerCase()}</p></div>}
         </div>
       </Card>
 
