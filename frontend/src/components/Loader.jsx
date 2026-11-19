@@ -17,7 +17,7 @@ const Loader = ({ message = 'Loading...', className = '', size = 'md', fullScree
           </div>
         ))}
       </div>
-      <div className="rounded-2xl border border-white/10 bg-white dark:bg-slate-900/30 p-5" aria-hidden="true">
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/30 p-5" aria-hidden="true">
         <div className="skeleton-shimmer mb-6 h-4 w-1/3" />
         <div className="space-y-4">
           {Array.from({ length: 4 }, (_, index) => (
