@@ -54,10 +54,10 @@ const MyPayslips = () => {
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Your payroll</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">My payslips</h1>
-          <p className="mt-2 text-sm text-slate-400">Your finalized monthly statements, ready to review and download.</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">My payslips</h1>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Your finalized monthly statements, ready to review and download.</p>
         </div>
-        <button type="button" onClick={loadPayslips} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-50">
+        <button type="button" onClick={loadPayslips} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-50">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
       </header>
@@ -66,32 +66,32 @@ const MyPayslips = () => {
 
       {payslips.length > 0 && (
         <section className="grid gap-3 sm:grid-cols-2" aria-label="Payslip summary">
-          <Card className="border-white/5 bg-slate-950/40 p-4"><p className="text-xs font-medium text-slate-400">Available statements</p><p className="mt-2 text-2xl font-semibold tabular-nums text-white">{payslips.length}</p><p className="mt-1 text-[11px] text-slate-500">Finalized payslips in your account</p></Card>
-          <Card className="border-white/5 bg-slate-950/40 p-4"><p className="text-xs font-medium text-slate-400">Latest net pay</p><p className="mt-2 text-2xl font-semibold tabular-nums text-white">{latestPayslip ? `GHS ${money(latestPayslip.netPay)}` : '—'}</p><p className="mt-1 text-[11px] text-slate-500">{latestPayslip ? `Pay period ${String(latestPayslip.month).slice(0, 7)}` : 'No finalized statement yet'}</p></Card>
+          <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-4"><p className="text-xs font-medium text-slate-600 dark:text-slate-400">Available statements</p><p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">{payslips.length}</p><p className="mt-1 text-[11px] text-slate-500">Finalized payslips in your account</p></Card>
+          <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-4"><p className="text-xs font-medium text-slate-600 dark:text-slate-400">Latest net pay</p><p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">{latestPayslip ? `GHS ${money(latestPayslip.netPay)}` : '—'}</p><p className="mt-1 text-[11px] text-slate-500">{latestPayslip ? `Pay period ${String(latestPayslip.month).slice(0, 7)}` : 'No finalized statement yet'}</p></Card>
         </section>
       )}
 
       {payslips.length === 0 && !loading ? (
         <Card className="p-10 text-center">
           <Receipt size={32} className="mx-auto text-slate-500 mb-3" />
-          <h2 className="font-semibold text-white">No payslips available yet</h2>
-          <p className="text-sm text-slate-400 mt-1">Your payslip will appear here after your company&apos;s payroll is finalized.</p>
+          <h2 className="font-semibold text-slate-900 dark:text-white">No payslips available yet</h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Your payslip will appear here after your company&apos;s payroll is finalized.</p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {payslips.map((item) => (
-            <Card key={item.id} className="border-white/5 bg-slate-950/40 p-5 space-y-4">
+            <Card key={item.id} className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="rounded-xl bg-primary/10 p-3 text-primary"><Receipt size={20} /></div>
-                  <div><p className="text-xs text-slate-500">Pay period</p><h2 className="font-bold text-white">{String(item.month).slice(0, 7)}</h2></div>
+                  <div><p className="text-xs text-slate-500">Pay period</p><h2 className="font-bold text-slate-900 dark:text-white">{String(item.month).slice(0, 7)}</h2></div>
                 </div>
                 <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${item.paymentStatus === 'PAID' || item.paymentStatus === 'SENT' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>
                   {item.paymentStatus === 'PAID' || item.paymentStatus === 'SENT' ? <CheckCircle2 size={12} /> : <Clock size={12} />}
                   {String(item.paymentStatus || 'PENDING').replaceAll('_', ' ')}
                 </span>
               </div>
-              <div><p className="text-xs text-slate-500">Net pay</p><p className="text-2xl font-bold font-mono text-white">GHS {money(item.netPay)}</p></div>
+              <div><p className="text-xs text-slate-500">Net pay</p><p className="text-2xl font-bold font-mono text-slate-900 dark:text-white">GHS {money(item.netPay)}</p></div>
               {item.paymentRef && <p className="text-xs text-slate-500 break-all">Payment reference: {item.paymentRef}</p>}
               <button type="button" onClick={() => download(item)} disabled={downloading === item.id} className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50">
                 <Download size={16} /> {downloading === item.id ? 'Preparing PDF...' : 'Download payslip'}
