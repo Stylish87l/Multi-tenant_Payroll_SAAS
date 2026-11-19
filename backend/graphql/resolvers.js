@@ -474,14 +474,14 @@ const resolvers = {
       requireRole(ctx, ['SUPER_ADMIN', 'ADMIN'], 'finalize payroll');
 
       const run = await prisma.payrollRun.findFirst({
-        where: ctx.userRole === 'SUPER_ADMIN' ? { id: runId } : { id: runId, companyId: ctx.companyId },
+        where: ctx.userRole === 'SUPER_ADMIN' ? { id: runId, deletedAt: null } : { id: runId, companyId: ctx.companyId, deletedAt: null },
       });
       if (!run) throw notFound('Payroll run not found');
 
       // FIXED: no status guard - cancelled or already-finalized runs could be "finalized" again.
       const updated = await prisma.$transaction(async (tx) => {
         const result = await tx.payrollRun.updateMany({
-          where: { id: runId, status: 'DRAFT' },
+          where: { id: runId, status: 'DRAFT', deletedAt: null },
           data: { status: 'FINALIZED', processedAt: new Date() },
         });
         if (result.count !== 1) throw conflict(`Only DRAFT payroll runs can be finalized (this run is ${run.status}).`);
