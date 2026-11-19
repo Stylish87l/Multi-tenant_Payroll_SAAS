@@ -194,7 +194,7 @@ const Branding = () => {
           <select
             value={selectedCompanyId}
             onChange={(e) => setSelectedCompanyId(e.target.value)}
-            className="w-full md:w-96 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer"
+            className="w-full md:w-96 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer"
           >
             <option value="" className="bg-white dark:bg-slate-950">— Choose a company —</option>
             {companies.map((c) => (
@@ -313,7 +313,7 @@ const Branding = () => {
                 value={form.tagline}
                 onChange={(e) => setForm({ ...form, tagline: e.target.value })}
                 placeholder="e.g. Empowering Ghanaian Businesses"
-                className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-white outline-none focus:border-primary"
+                className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 p-3 rounded-xl text-slate-900 dark:text-white outline-none focus:border-primary"
               />
               <p className="text-[11px] text-slate-600">
                 Optional short line shown near the payslip header. Stored in the tenant&apos;s payslip template config.
