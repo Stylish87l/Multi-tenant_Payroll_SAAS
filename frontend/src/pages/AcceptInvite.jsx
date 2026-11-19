@@ -59,31 +59,31 @@ const AcceptInvite = () => {
     }
   };
 
-  const inputClass = 'w-full bg-slate-950/50 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all';
+  const inputClass = 'w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all';
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-slate-950 flex items-center justify-center p-4">
+    <div className="relative min-h-screen w-full overflow-hidden bg-white dark:bg-slate-950 flex items-center justify-center p-4">
       <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-primary/20 blur-[120px]" />
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md z-10">
-        <Card className="border-white/10 bg-slate-900/60 backdrop-blur-2xl shadow-2xl">
+        <Card className="border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900/60 backdrop-blur-2xl shadow-2xl">
           {done ? (
             <div role="status" className="text-center py-6 space-y-3">
               <CheckCircle2 className="mx-auto text-emerald-400" size={40} />
-              <h1 className="text-xl font-bold text-white">Account activated</h1>
-              <p className="text-sm text-slate-400">Taking you to sign in…</p>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white">Account activated</h1>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Taking you to sign in…</p>
             </div>
           ) : !token ? (
             <div role="alert" className="text-center py-6 space-y-3">
               <AlertCircle className="mx-auto text-rose-400" size={40} />
-              <h1 className="text-xl font-bold text-white">Invitation link is incomplete</h1>
-              <p className="text-sm text-slate-400">Open the link from your invitation email again, or ask your administrator to send a new one.</p>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white">Invitation link is incomplete</h1>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Open the link from your invitation email again, or ask your administrator to send a new one.</p>
               <Link to="/login" className="text-sm text-primary hover:underline">Go to sign in</Link>
             </div>
           ) : (
             <>
               <div className="mb-8 text-center">
-                <h1 className="text-2xl font-bold tracking-tight text-white">Set your password</h1>
-                <p className="mt-2 text-sm text-slate-400">Choose a password to activate your account.</p>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Set your password</h1>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Choose a password to activate your account.</p>
               </div>
               <form onSubmit={handleSubmit} className="space-y-5" noValidate>
                 <div className="space-y-2">
