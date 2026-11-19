@@ -6,6 +6,7 @@ import { GET_COMPANIES } from '../graphql/queries';
 import Card from '../components/Card';
 import Loader from '../components/Loader';
 import { useAuth } from '../context/AuthContext';
+import { authFetch } from '../lib/authFetch';
 
 const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_API_URL || '';
 const REST_BASE = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
@@ -48,23 +49,14 @@ const Branding = () => {
   });
   const companies = useMemo(() => companiesData?.companies ?? [], [companiesData]);
 
-  const authHeaders = useCallback(() => {
-    const token = localStorage.getItem('token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-  }, []);
-
   const loadBranding = useCallback(async (companyId) => {
     if (!companyId) return;
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
     try {
-      const res = await fetch(`${REST_BASE}/api/companies/${companyId}/branding`, {
+      const res = await authFetch(`${REST_BASE}/api/companies/${companyId}/branding`, {
         method: 'GET',
-        headers: authHeaders(),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -90,7 +82,7 @@ const Branding = () => {
     } finally {
       setLoading(false);
     }
-  }, [authHeaders]);
+  }, []);
 
   // Auto-load for ADMIN (fixed company). For SUPER_ADMIN, load whenever
   // they pick a tenant from the dropdown.
@@ -153,9 +145,9 @@ const Branding = () => {
         },
       };
 
-      const res = await fetch(`${REST_BASE}/api/companies/${selectedCompanyId}/branding`, {
+      const res = await authFetch(`${REST_BASE}/api/companies/${selectedCompanyId}/branding`, {
         method: 'PUT',
-        headers: authHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const json = await res.json();
@@ -175,7 +167,7 @@ const Branding = () => {
     } finally {
       setSaving(false);
     }
-  }, [selectedCompanyId, form, validate, authHeaders, isSuperAdmin]);
+  }, [selectedCompanyId, form, validate, isSuperAdmin]);
 
   const previewThemeColor = HEX_COLOR_RE.test(form.themeColor) ? form.themeColor : '#4B6EF5';
 
