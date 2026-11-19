@@ -206,12 +206,12 @@ const Employees = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {isSuperAdmin && <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="max-w-56 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Select tenant</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}
+          {isSuperAdmin && <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="max-w-56 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white"><option value="">Select tenant</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors" size={18} aria-hidden="true" />
             <input
               type="text" placeholder="Search staff..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-slate-100 dark:bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white focus:ring-2 focus:ring-primary/50 outline-none w-full md:w-64"
+              className="bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white focus:ring-2 focus:ring-primary/50 outline-none w-full md:w-64"
               aria-label="Search staff"
             />
           </div>
@@ -223,7 +223,7 @@ const Employees = () => {
         </div>
       </div>
 
-      {isSuperAdmin && !companyId && <Card className="border-dashed border-slate-200 dark:border-white/10 bg-white dark:bg-white dark:bg-slate-950/30 p-8 text-center text-slate-600 dark:text-slate-400">Select an organisation before adding or viewing staff.</Card>}
+      {isSuperAdmin && !companyId && <Card className="border-dashed border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/30 p-8 text-center text-slate-600 dark:text-slate-400">Select an organisation before adding or viewing staff.</Card>}
 
       {userError && !showModal && (
         <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>
