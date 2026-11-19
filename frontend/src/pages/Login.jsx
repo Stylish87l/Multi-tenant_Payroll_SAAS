@@ -36,18 +36,18 @@ const Login = () => {
   };
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-slate-950 flex items-center justify-center p-4">
+    <div className="relative min-h-screen w-full overflow-hidden bg-white dark:bg-slate-950 flex items-center justify-center p-4">
       <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-primary/20 blur-[120px]" />
       <div className="absolute bottom-[-10%] right-[-10%] h-[40%] w-[40%] rounded-full bg-secondary/10 blur-[120px]" />
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="w-full max-w-md z-10">
-        <Card className="border-white/10 bg-slate-900/60 backdrop-blur-2xl shadow-2xl">
+        <Card className="border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900/60 backdrop-blur-2xl shadow-2xl">
           <div className="mb-8 text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/20 text-primary">
               <Lock size={28} />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Welcome back</h1>
-            <p className="mt-2 text-sm text-slate-400">Sign in to manage your payroll</p>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Welcome back</h1>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Sign in to manage your payroll</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -58,7 +58,7 @@ const Login = () => {
                 <input
                   id="email" name="email" type="email" autoComplete="username"
                   value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  className="w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
                   placeholder="name@company.com" required
                 />
               </div>
@@ -71,12 +71,12 @@ const Login = () => {
                 <input
                   id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password"
                   value={password} onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-950/50 border border-white/10 rounded-xl py-3 pl-10 pr-12 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  className="w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-12 text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
                   placeholder="••••••••" required
                 />
                 <button
                   type="button" onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}

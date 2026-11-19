@@ -68,10 +68,10 @@ describe('employee payslip PDF', () => {
     expect(pdf.length).toBeGreaterThan(1000);
     const content = extractPdfText(pdf);
     for (const label of [
-      'EXAMPLE GROUP', 'EMPLOYEE PAYSLIP', 'Basic salary', 'Gross earnings',
+      'EXAMPLE GROUP', 'PAYSLIP', 'Basic salary', 'Gross earnings',
       'Employee SSNIT contribution', 'PAYE income tax', 'Employer SSNIT contribution',
-      'NET PAY', 'Bank on file', 'Example Bank', 'Account on file', '******7890',
-      'current employee profile', 'actual payout destination is not stored', 'Payment reference', 'PAY-123',
+      'TAKE-HOME PAY', 'Bank', 'Example Bank', 'Account ending', '******7890',
+      'current employee profile', 'historical payout destination', 'Payment reference', 'PAY-123',
     ]) {
       expect(content).toContain(label.replace(/\s/g, '').toLowerCase());
     }
@@ -87,6 +87,6 @@ describe('employee payslip PDF', () => {
     };
     const pdf = await render(legacy);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(extractPdfText(pdf)).toContain('Historical earnings split is unavailable for this legacy payroll record.'.replace(/\s/g, '').toLowerCase());
+    expect(extractPdfText(pdf)).toContain('Historical earnings breakdown is unavailable for this legacy payroll record.'.replace(/\s/g, '').toLowerCase());
   });
 });

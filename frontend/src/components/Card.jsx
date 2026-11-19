@@ -39,9 +39,9 @@ const Card = ({ children, className = '', onClick }) => {
       transition={{ duration: 0.4, ease: 'easeOut' }}
       className={`
         glass-panel relative group overflow-hidden
-        rounded-2xl border border-white/10 
-        bg-slate-900/50 backdrop-blur-xl 
-        transition-colors duration-500 hover:border-white/20
+        rounded-2xl border border-slate-200 dark:border-white/10 
+        bg-white/80 dark:bg-slate-900/50 backdrop-blur-xl 
+        transition-colors duration-500 hover:border-slate-300 dark:hover:border-white/20
         ${onClick ? 'cursor-pointer active:scale-[0.98]' : ''}
         ${className}
       `}
@@ -53,10 +53,10 @@ const Card = ({ children, className = '', onClick }) => {
         className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 transition duration-300 group-hover:opacity-100"
         style={{ background }}
       />
-      <div className="relative z-10 p-4 md:p-6 text-slate-200">
+      <div className="relative z-10 p-4 md:p-6 text-slate-800 dark:text-slate-200">
         {children}
       </div>
-      <div className="absolute bottom-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div className="absolute bottom-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-slate-300 dark:via-white/20 to-transparent" />
     </motion.div>
   );
 };

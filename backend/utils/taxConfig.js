@@ -43,7 +43,7 @@ export const loadTaxConfig = async ({ type, companyId = null, year, effectiveAt 
   let value = null;
   if (row?.config) {
     const parsed = typeof row.config === 'string' ? JSON.parse(row.config) : row.config;
-    value = { ...parsed, __year: row.year, __effectiveFrom: row.effectiveFrom, __scope: row.companyId ? 'company' : 'global' };
+    value = { ...parsed, __configId: row.id, __year: row.year, __effectiveFrom: row.effectiveFrom, __scope: row.companyId ? 'company' : 'global' };
   }
   cache.set(key, { value, expires: Date.now() + TTL_MS });
   return value;

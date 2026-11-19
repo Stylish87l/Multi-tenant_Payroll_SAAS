@@ -37,17 +37,17 @@ const Navbar = ({ onMenuClick }) => {
   }, [open]);
 
   return (
-    <nav className="sticky top-0 z-[60] w-full border-b border-white/10 bg-slate-950/60 backdrop-blur-md">
+    <nav className="sticky top-0 z-[60] w-full border-b border-slate-200 dark:border-white/10 bg-white/90 dark:bg-slate-950/60 backdrop-blur-md">
       <div className="w-full flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-2">
           {user && (
-            <button onClick={onMenuClick} className="md:hidden p-2 text-white hover:bg-white/5 rounded-xl transition-colors" aria-label="Open menu">
+            <button onClick={onMenuClick} className="md:hidden p-2 text-slate-700 dark:text-white hover:bg-white/5 rounded-xl transition-colors" aria-label="Open menu">
               <Menu size={20} />
             </button>
           )}
           <Link to="/" className="flex items-center space-x-2">
             <div className="h-8 w-8 rounded bg-gradient-to-tr from-primary to-secondary shadow-lg shadow-primary/20" />
-            <span className="text-xl font-bold tracking-tight text-white">Paylio</span>
+            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Paylio</span>
           </Link>
         </div>
 
@@ -60,14 +60,14 @@ const Navbar = ({ onMenuClick }) => {
                 onClick={() => setOpen((p) => !p)}
                 aria-expanded={open}
                 aria-haspopup="menu"
-                className="flex items-center space-x-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 transition-all hover:bg-white/10"
+                className="flex items-center space-x-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white/5 px-3 py-1.5 transition-all hover:bg-white/10"
               >
                 <div className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary/20 text-secondary"><Shield size={14} /></div>
                 <div className="text-left">
                   <p className="text-[10px] text-slate-500">{isSuper ? 'Viewing' : user.role}</p>
                   <p className="text-xs font-semibold text-slate-200 max-w-[140px] truncate">{user.companyName || user.email}</p>
                 </div>
-                <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+                <ChevronDown size={14} className={`text-slate-600 dark:text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
               </button>
 
               <AnimatePresence>
@@ -78,7 +78,7 @@ const Navbar = ({ onMenuClick }) => {
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     role="menu"
                     aria-label="Account menu"
-                    className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-slate-900/95 p-1 shadow-2xl backdrop-blur-xl"
+                    className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 p-1 shadow-2xl backdrop-blur-xl"
                   >
                     <div className="px-3 py-2">
                       <p className="text-xs font-semibold text-slate-200 truncate">{user.name || user.email}</p>
@@ -87,7 +87,7 @@ const Navbar = ({ onMenuClick }) => {
 
                     {isSuper && (
                       <>
-                        <div className="my-1 border-t border-white/5" />
+                        <div className="my-1 border-t border-slate-200 dark:border-white/5" />
                         <div className="px-3 py-2 text-[10px] font-bold text-slate-500">Switch organization</div>
                         <div className="max-h-56 overflow-y-auto">
                           {tenants.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">No organizations yet.</p>}
@@ -97,7 +97,7 @@ const Navbar = ({ onMenuClick }) => {
                               role="menuitemradio"
                               aria-checked={t.id === user.companyId}
                               onClick={() => { switchTenant({ id: t.id, name: t.name }); setOpen(false); }}
-                              className={`flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-white/5 hover:text-white ${t.id === user.companyId ? 'text-white' : 'text-slate-300'}`}
+                              className={`flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-white/5 hover:text-slate-900 dark:hover:text-white ${t.id === user.companyId ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}
                             >
                               <Building2 size={14} className={t.id === user.companyId ? 'text-primary' : 'text-slate-500'} />
                               <span className="truncate">{t.name}</span>
@@ -107,7 +107,7 @@ const Navbar = ({ onMenuClick }) => {
                       </>
                     )}
 
-                    <div className="my-1 border-t border-white/5" />
+                    <div className="my-1 border-t border-slate-200 dark:border-white/5" />
                     <button
                       onClick={() => { setOpen(false); logout(); }}
                       role="menuitem"

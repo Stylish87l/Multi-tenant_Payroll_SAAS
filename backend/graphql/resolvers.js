@@ -179,6 +179,8 @@ const resolvers = {
 
       const p = paginate(page, limit);
       const where = {
+        isActive: true,
+        deletedAt: null,
         AND: [
           tenantId ? { companyId: tenantId } : {}, // SUPER_ADMIN without a tenant sees all
           search ? {
@@ -206,7 +208,7 @@ const resolvers = {
 
       const tenantId = resolveTenant(ctx, argId);
       if (!tenantId && ctx.userRole !== 'SUPER_ADMIN') throw forbidden('No company context');
-      return prisma.employee.count({ where: tenantId ? { companyId: tenantId } : {} });
+      return prisma.employee.count({ where: { ...(tenantId ? { companyId: tenantId } : {}), isActive: true, deletedAt: null } });
     },
 
     recentPayrollRuns: async (_, { companyId: argId, limit = 5 }, ctx) => {
@@ -431,6 +433,8 @@ const resolvers = {
       if (!assertEmployeeInputPermissions(ctx.userRole, changedFields)) {
         throw forbidden('You do not have permission to change one or more sensitive employee fields.');
       }
+      if (data.isActive === false) data.deletedAt = existing.deletedAt || new Date();
+      if (data.isActive === true) data.deletedAt = null;
       const ruleError = validateEmployeeBusinessRules(data, existing);
       if (ruleError) throw badInput(ruleError);
 
@@ -441,7 +445,7 @@ const resolvers = {
           const updated = await tx.employee.update({ where: { id }, data });
           await writeAudit(tx, {
             actor: actorFromCtx(ctx), companyId: existing.companyId,
-            action: salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
+            action: data.isActive === false && existing.isActive ? 'EMPLOYEE_DEACTIVATED' : data.isActive === true && !existing.isActive ? 'EMPLOYEE_REACTIVATED' : salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
             resourceType: 'Employee', resourceId: id,
             details: {
               employeeId: id, changedFields: Object.keys(data),
@@ -470,14 +474,14 @@ const resolvers = {
       requireRole(ctx, ['SUPER_ADMIN', 'ADMIN'], 'finalize payroll');
 
       const run = await prisma.payrollRun.findFirst({
-        where: ctx.userRole === 'SUPER_ADMIN' ? { id: runId } : { id: runId, companyId: ctx.companyId },
+        where: ctx.userRole === 'SUPER_ADMIN' ? { id: runId, deletedAt: null } : { id: runId, companyId: ctx.companyId, deletedAt: null },
       });
       if (!run) throw notFound('Payroll run not found');
 
       // FIXED: no status guard - cancelled or already-finalized runs could be "finalized" again.
       const updated = await prisma.$transaction(async (tx) => {
         const result = await tx.payrollRun.updateMany({
-          where: { id: runId, status: 'DRAFT' },
+          where: { id: runId, status: 'DRAFT', deletedAt: null },
           data: { status: 'FINALIZED', processedAt: new Date() },
         });
         if (result.count !== 1) throw conflict(`Only DRAFT payroll runs can be finalized (this run is ${run.status}).`);
@@ -502,7 +506,10 @@ const resolvers = {
       if (!run) throw notFound('Payroll run not found');
 
       await prisma.$transaction(async (tx) => {
-        const result = await tx.payrollRun.deleteMany({ where: { id: runId, status: 'DRAFT' } }); // items cascade
+        const result = await tx.payrollRun.updateMany({
+          where: { id: runId, status: 'DRAFT', deletedAt: null },
+          data: { status: 'CANCELLED', deletedAt: new Date() },
+        });
         if (result.count !== 1) throw conflict('Only DRAFT payroll runs can be discarded.');
         await writeAudit(tx, {
           actor: actorFromCtx(ctx), companyId: run.companyId, action: 'PAYROLL_RUN_DISCARDED',

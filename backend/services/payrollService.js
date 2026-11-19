@@ -2,6 +2,7 @@ import prisma, { Prisma } from '../config/db.js';
 import logger from '../config/logger.js';
 import { calculateSSNIT } from '../utils/ssnitCalculator.js';
 import { calculatePAYE } from '../utils/payeCalculator.js';
+import { loadTaxConfig } from '../utils/taxConfig.js';
 import { writeAudit } from './auditService.js';
 import { badInput, conflict, notFound } from '../utils/appError.js';
 
@@ -39,7 +40,25 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
     throw badInput('Payroll cannot be processed for future months.');
   }
 
-  const existing = await prisma.payrollRun.findFirst({ where: { companyId, month: normalizedMonth } });
+  const existing = await prisma.payrollRun.findFirst({ where: { companyId, month: normalizedMonth, deletedAt: null } });
+  const [ssnitTaxConfig, payeTaxConfig] = await Promise.all([
+    loadTaxConfig({ type: 'SSNIT', companyId, year, effectiveAt: normalizedMonth }),
+    loadTaxConfig({ type: 'PAYE', companyId, year, effectiveAt: normalizedMonth }),
+  ]);
+  const serializableTaxConfig = (config) => config
+    ? {
+        ...config,
+        __effectiveFrom: config.__effectiveFrom instanceof Date
+          ? config.__effectiveFrom.toISOString()
+          : config.__effectiveFrom,
+      }
+    : null;
+  const taxConfigSnapshot = {
+    year,
+    effectiveAt: normalizedMonth,
+    SSNIT: serializableTaxConfig(ssnitTaxConfig),
+    PAYE: serializableTaxConfig(payeTaxConfig),
+  };
   if (existing) throw conflict(`Payroll for ${normalizedMonth.slice(0, 7)} already exists for this company.`);
 
   const employees = await prisma.employee.findMany({
@@ -98,6 +117,14 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
       housingAllowanceSnapshot: round2(D(emp.housingAllowance)),
       transportAllowanceSnapshot: round2(D(emp.transportAllowance)),
       otherAllowanceSnapshot: round2(D(emp.otherAllowance)),
+      reliefInputsSnapshot: {
+        isMarried: emp.isMarried,
+        hasResponsibility: emp.hasResponsibility,
+        childrenCount: emp.childrenCount,
+        isDisabled: emp.isDisabled,
+        age: emp.age,
+        agedDependentsCount: emp.agedDependentsCount,
+      },
       grossSalary: round2(gross),
       taxableIncome: round2(D(paye.taxableIncome)),
       ssnitEmployee: round2(ssnitEmployee),
@@ -112,7 +139,7 @@ export const createDraftPayrollRun = async ({ companyId, month, actor }) => {
   try {
     const run = await prisma.$transaction(async (tx) => {
       const created = await tx.payrollRun.create({
-        data: { companyId, month: normalizedMonth, status: 'DRAFT', runType: 'REGULAR', processedById: actor?.userId || null },
+        data: { companyId, month: normalizedMonth, status: 'DRAFT', runType: 'REGULAR', processedById: actor?.userId || null, taxConfigSnapshot },
       });
       await tx.payrollItem.createMany({ data: items.map((item) => ({ ...item, payrollRunId: created.id })) });
       await writeAudit(tx, {

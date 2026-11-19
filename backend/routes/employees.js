@@ -240,6 +240,8 @@ router.put('/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Employee profile not found or access denied.' });
 
     const changedFields = Object.fromEntries(Object.entries(data).filter(([field, value]) => String(value ?? '') !== String(existing[field] ?? '')));
+    if (data.isActive === false) data.deletedAt = existing.deletedAt || new Date();
+    if (data.isActive === true) data.deletedAt = null;
     if (!assertEmployeeInputPermissions(req.userRole, changedFields)) return res.status(403).json({ error: 'You do not have permission to change one or more sensitive employee fields.' });
 
     const businessRuleError = validateEmployeeBusinessRules(data, existing);
@@ -252,7 +254,7 @@ router.put('/:id', async (req, res) => {
       await writeAudit(tx, {
         actor: actorFromReq(req),
         companyId: existing.companyId,
-        action: salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
+        action: data.isActive === false && existing.isActive ? 'EMPLOYEE_DEACTIVATED' : data.isActive === true && !existing.isActive ? 'EMPLOYEE_REACTIVATED' : salaryChanged ? 'EMPLOYEE_SALARY_CHANGED' : 'EMPLOYEE_UPDATED',
         resourceType: 'Employee',
         resourceId: id,
         details: {

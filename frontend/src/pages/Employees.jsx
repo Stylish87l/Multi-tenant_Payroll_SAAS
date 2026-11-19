@@ -201,17 +201,17 @@ const Employees = () => {
     <div className="safe-area-inset p-4 md:p-8 space-y-6 pb-24">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Staff directory</h1>
-          <p className="text-slate-400 text-sm">Manage payroll profiles and tax reliefs</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Staff directory</h1>
+          <p className="text-slate-600 dark:text-slate-400 text-sm">Manage payroll profiles and tax reliefs</p>
         </div>
 
         <div className="flex items-center gap-2">
-          {isSuperAdmin && <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="max-w-56 rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Select tenant</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}
+          {isSuperAdmin && <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="max-w-56 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white"><option value="">Select tenant</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors" size={18} aria-hidden="true" />
             <input
               type="text" placeholder="Search staff..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-slate-900/50 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white focus:ring-2 focus:ring-primary/50 outline-none w-full md:w-64"
+              className="bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/50 outline-none w-full md:w-64"
               aria-label="Search staff"
             />
           </div>
@@ -223,7 +223,7 @@ const Employees = () => {
         </div>
       </div>
 
-      {isSuperAdmin && !companyId && <Card className="border-dashed border-white/10 bg-slate-950/30 p-8 text-center text-slate-400">Select an organisation before adding or viewing staff.</Card>}
+      {isSuperAdmin && !companyId && <Card className="border-dashed border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/30 p-8 text-center text-slate-600 dark:text-slate-400">Select an organisation before adding or viewing staff.</Card>}
 
       {userError && !showModal && (
         <div role="alert" className="rounded-md bg-rose-900/80 text-rose-100 p-3 text-sm">{userError}</div>
@@ -233,7 +233,7 @@ const Employees = () => {
         <AnimatePresence>
           {employees.length === 0 && !loading ? (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <Card className="p-6 text-center"><p className="text-slate-400">No staff found. Add your first staff member.</p></Card>
+              <Card className="p-6 text-center"><p className="text-slate-600 dark:text-slate-400">No staff found. Add your first staff member.</p></Card>
             </motion.div>
           ) : (
             employees.map((emp, idx) => (
@@ -241,24 +241,24 @@ const Employees = () => {
                 <Card className="hover:border-primary/30 transition-all group">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center border border-white/10 text-white font-bold">
+                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center border border-slate-200 dark:border-white/10 text-white font-bold">
                         {emp.name ? emp.name.charAt(0) : '?'}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h2 className="text-lg font-bold text-white group-hover:text-primary transition-colors">{emp.name}</h2>
+                          <h2 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors">{emp.name}</h2>
                           {emp.position && (
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400 font-medium">{emp.position}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 font-medium">{emp.position}</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
+                        <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400 mt-1">
                           <span className="flex items-center gap-1"><Mail size={14} /> {emp.email}</span>
                           <span className="hidden md:flex items-center gap-1 text-slate-500"><ShieldCheck size={14} /> {maskPII(emp.ghanaCardPin)}</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between md:justify-end gap-6 border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
+                    <div className="flex items-center justify-between md:justify-end gap-6 border-t md:border-t-0 border-slate-200 dark:border-white/5 pt-4 md:pt-0">
                       {['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'].includes(user?.role) ? (
                         <div className="text-left md:text-right">
                           <p className="text-[10px] font-bold text-slate-500 tracking-widest">Basic salary</p>
@@ -271,7 +271,7 @@ const Employees = () => {
                         </div>
                       )}
                       <button onClick={() => handleEdit(emp)} aria-label={`Edit ${emp.name}`}
-                        className="p-3 bg-white/5 hover:bg-primary/20 text-slate-300 hover:text-primary rounded-xl transition-all active:scale-90">
+                        className="p-3 bg-white/5 hover:bg-primary/20 text-slate-700 dark:text-slate-300 hover:text-primary rounded-xl transition-all active:scale-90">
                         <Edit2 size={18} />
                       </button>
                     </div>
@@ -285,7 +285,7 @@ const Employees = () => {
 
       {companyId && hasNextPage && (
         <div className="flex justify-center mt-4">
-          <button onClick={loadNextPage} disabled={loading} className="px-4 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50">
+          <button onClick={loadNextPage} disabled={loading} className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-50">
             {loading ? 'Loading...' : 'Load more'}
           </button>
         </div>

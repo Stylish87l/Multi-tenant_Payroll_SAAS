@@ -21,7 +21,7 @@ export const getPayrollRuns = async (req, res, next) => {
     const take = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
     const skip = (Math.max(Number(req.query.page) || 1, 1) - 1) * take;
     const runs = await prisma.payrollRun.findMany({
-      where: req.userRole === 'SUPER_ADMIN' ? {} : { companyId: req.companyId },
+      where: req.userRole === 'SUPER_ADMIN' ? { deletedAt: null } : { companyId: req.companyId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       skip,
       take,
@@ -36,19 +36,14 @@ export const getPayrollRuns = async (req, res, next) => {
 
 export const getPayrollDetails = async (req, res, next) => {
   try {
-    const run = await prisma.payrollRun.findUnique({
-      where: { id: req.params.id },
+    const run = await prisma.payrollRun.findFirst({
+      where: req.userRole === 'SUPER_ADMIN'
+        ? { id: req.params.id, deletedAt: null }
+        : { id: req.params.id, companyId: req.companyId, deletedAt: null },
       include: { items: { include: { employee: { select: { name: true } } } } },
     });
     if (!run) throw notFound('Payroll run not found.');
 
-    if (req.userRole !== 'SUPER_ADMIN' && run.companyId !== req.companyId) {
-      logger.warn('Unauthorized multi-tenant payroll access attempt prevented', {
-        userId: req.userId, runId: req.params.id, actualCompany: req.companyId,
-      });
-      // 404 not 403: do not confirm the run exists in another tenant.
-      throw notFound('Payroll run not found.');
-    }
     return res.json(run);
   } catch (error) {
     return next(error);

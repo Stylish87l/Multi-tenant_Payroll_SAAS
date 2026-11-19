@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import http from 'http';
+import { randomUUID } from 'crypto';
 import { WebSocketServer } from 'ws';
 import { ApolloServer } from '@apollo/server';
 import { unwrapResolverError } from '@apollo/server/errors';
@@ -43,6 +44,10 @@ if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is required.');
   process.exit(1);
 }
+if (!process.env.CSRF_SECRET || Buffer.byteLength(process.env.CSRF_SECRET) < 32) {
+  console.error('CSRF_SECRET is required and must contain at least 32 bytes.');
+  process.exit(1);
+}
 if (!process.env.NODE_ENV) {
   logger.warn('NODE_ENV is not set. Defaulting to development behaviour (permissive CORS, insecure cookies). Set NODE_ENV=production in deployment.');
 }
@@ -58,6 +63,17 @@ const httpServer = http.createServer(app);
 // and bypass the rate limiters. Trust exactly one proxy hop (Railway/Vercel edge). Override with TRUST_PROXY_HOPS.
 app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);
 app.disable('x-powered-by');
+
+// Give every HTTP request a validated correlation ID for logs and audit records.
+app.use((req, res, next) => {
+  const supplied = req.get('x-request-id');
+  const requestId = typeof supplied === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(supplied)
+    ? supplied
+    : randomUUID();
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  next();
+});
 
 // --- Health (registered first so platform health checks pass while Apollo starts) ---
 app.get('/health', async (req, res) => {
@@ -103,8 +119,8 @@ app.use(cors({
     return callback(new AppError('Not allowed by CORS', { status: 403, code: 'FORBIDDEN' }));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight', 'x-apollo-operation-name', 'x-csrf-token'],
+  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight', 'x-apollo-operation-name', 'x-csrf-token', 'x-tenant-id'],
   exposedHeaders: ['Content-Disposition'],
 }));
 

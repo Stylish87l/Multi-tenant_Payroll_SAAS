@@ -37,7 +37,12 @@ const isUserUsable = (user) => user && user.status === 'ACTIVE' && !user.deleted
 // HMAC signing prevents an attacker from planting a forged cookie on a shared domain.
 const CSRF_COOKIE_NAME = 'csrf';
 const CSRF_TTL_MS = 2 * 60 * 60 * 1000;
-const csrfSecret = () => process.env.CSRF_SECRET || process.env.JWT_SECRET;
+const csrfSecret = () => {
+  if (!process.env.CSRF_SECRET) {
+    throw new Error('CSRF_SECRET must be configured before issuing or validating CSRF tokens.');
+  }
+  return process.env.CSRF_SECRET;
+};
 const signCsrfValue = (value) => crypto.createHmac('sha256', csrfSecret()).update(value).digest('hex');
 const createCsrfToken = () => {
   const value = `${Date.now()}.${crypto.randomBytes(32).toString('hex')}`;
@@ -166,14 +171,16 @@ router.post('/refresh', csrfProtection, async (req, res) => {
       return res.status(401).json({ error: 'Session expired' });
     }
 
-    // Normal rotation
+    // Claim rotation conditionally: only one concurrent request may rotate this token.
     const newTokenId = crypto.randomUUID();
-    await prisma.$transaction([
-      prisma.refreshToken.update({
-        where: { id: record.id },
+    const rotation = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.refreshToken.updateMany({
+        where: { id: record.id, revokedAt: null },
         data: { revokedAt: new Date(), revocationReason: 'rotated', lastUsedAt: new Date() },
-      }),
-      prisma.refreshToken.create({
+      });
+      if (claimed.count !== 1) return { rotated: false };
+
+      await tx.refreshToken.create({
         data: {
           userId: record.userId,
           tokenId: newTokenId,
@@ -181,8 +188,27 @@ router.post('/refresh', csrfProtection, async (req, res) => {
           deviceInfo: req.get('User-Agent') || null,
           ipAddress: req.ip || null,
         },
-      }),
-    ]);
+      });
+      return { rotated: true };
+    });
+
+    if (!rotation.rotated) {
+      // Another request won the rotation race after our initial read.
+      const latest = await prisma.refreshToken.findUnique({ where: { id: record.id } });
+      const age = latest?.revokedAt ? Date.now() - new Date(latest.revokedAt).getTime() : Infinity;
+      if (latest?.revocationReason === 'rotated' && age >= 0 && age < GRACE_PERIOD_MS) {
+        const current = await prisma.refreshToken.findFirst({
+          where: { userId: record.userId, revokedAt: null, expiresAt: { gt: new Date() } },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (current) {
+          res.cookie(REFRESH_COOKIE_NAME, signRefreshToken({ userId: record.userId, tokenId: current.tokenId }), getRefreshCookieOptions());
+          return res.json(buildAuthResponse(record.user, signAccessFor(record.user)));
+        }
+      }
+      res.clearCookie(REFRESH_COOKIE_NAME, getClearCookieOptions());
+      return res.status(401).json({ error: 'Session expired' });
+    }
 
     res.cookie(REFRESH_COOKIE_NAME, signRefreshToken({ userId: record.userId, tokenId: newTokenId }), getRefreshCookieOptions());
     return res.json(buildAuthResponse(record.user, signAccessFor(record.user)));

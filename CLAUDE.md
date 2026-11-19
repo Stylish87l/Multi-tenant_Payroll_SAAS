@@ -1,7 +1,7 @@
 Claude Project Context – Ghana Payroll System
 Project Name: Ghana Payroll (Multi-Tenant SaaS Payroll System)
 Last reviewed: November 2026
-Tech Stack: Node.js 22 LTS (20 reached end of life in April 2026), Express 5, Prisma 7, PostgreSQL, GraphQL (Apollo Server), React 18 + Vite + Tailwind, Zod, BullMQ (or pg-boss, see Production Standards), Winston
+Tech Stack: Node.js 24 LTS (20 reached end of life in April 2026), Express 5, Prisma 7, PostgreSQL, GraphQL (Apollo Server), React 18 + Vite + Tailwind, Zod, BullMQ (or pg-boss, see Production Standards), Winston
 Core Purpose
 A modern, production-ready, multi-tenant payroll platform built specifically for Ghanaian companies. It handles:
 * Employee management with Ghana Card (TIN) and SSNIT validation
@@ -70,9 +70,9 @@ Important Rules for Claude
 - **Authorization:** role lists come from `permissions.js`. REST, GraphQL and the sidebar must not define their own copies.
 - **REST from the frontend:** use `authFetch`, never raw `fetch` with a token read from localStorage.
 - **Observability:** every request carries `X-Request-Id`; audit rows store it in `correlationId`. Production logs are JSON on stdout (no log files in the repo or the container).
-- **Delivery:** CI must pass lint, tests, `prisma migrate deploy` on an empty database, and the frontend build. Migrations run as a release step, not at container start. Do not commit `logs/` or `.env`.
+- **Delivery:** CI must pass lint, tests, `prisma migrate deploy` against an empty PostgreSQL database, and the frontend build. The current `npm start` script runs `prisma migrate deploy` before starting the API; move this to a platform pre-deploy/release command when the hosting plan supports it, and avoid concurrent app starts racing migrations. Do not commit `logs/` or `.env`.
 - **Calculator changes** (SSNIT, PAYE, reliefs, bonus tax) require a golden-vector test and sign-off from someone qualified in Ghana payroll tax. Claude must flag assumptions that need such verification rather than assert them.
-- **Runtime:** Node 22 LTS. Keep `.node-version`, `engines`, CI and the Dockerfile aligned.
+- **Runtime:** Node 24 LTS. Keep `.node-version`, `engines`, CI and the Dockerfile aligned.
 
 ## ✅ KNOWN OPEN ITEMS (track here, remove when done)
 - Hubtel webhook uses a placeholder shared secret; replace with Hubtel's real signature scheme.

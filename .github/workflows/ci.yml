@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, chore/production-readiness-hardening]
+    branches: [main, chore/production-readiness-hardening, hardening/production-readiness-2026]
 
 permissions:
   contents: read
@@ -17,6 +17,23 @@ jobs:
   backend:
     name: Backend checks
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/payroll_ci
+      CSRF_SECRET: ci-only-csrf-secret-for-tests-32-bytes-minimum
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: payroll_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d payroll_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
@@ -29,8 +46,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci --legacy-peer-deps
       - run: npm run build
-        env:
-          DATABASE_URL: postgresql://ci:ci@localhost:5432/payroll_ci
+      - run: npx prisma migrate deploy
       - run: npm run lint
       - run: npm test -- --runInBand
 

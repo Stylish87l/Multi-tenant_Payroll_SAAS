@@ -20,7 +20,7 @@ const APPROVE_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 const STATUS_STYLES = {
   DRAFT: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
   FINALIZED: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-  CANCELLED: 'bg-slate-500/10 text-slate-400 border-white/10',
+  CANCELLED: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10',
 };
 const STATUS_LABELS = { DRAFT: 'Draft - awaiting approval', FINALIZED: 'Finalized', CANCELLED: 'Cancelled' };
 
@@ -110,8 +110,8 @@ const Payroll = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Payroll operations</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Payroll</h1>
-          <p className="mt-2 text-sm text-slate-400">Prepare, review and approve monthly payroll with a clear audit trail.</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Payroll</h1>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Prepare, review and approve monthly payroll with a clear audit trail.</p>
         </div>
 
         {canRun && (
@@ -124,9 +124,9 @@ const Payroll = () => {
       </div>
 
 
-      <section aria-label="Payroll workflow" className="rounded-2xl border border-white/10 bg-slate-950/35 p-4 sm:p-5">
+      <section aria-label="Payroll workflow" className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/35 p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-white">Payroll workflow</h2>
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Payroll workflow</h2>
           <span className="text-[11px] text-slate-500">Drafts are not final payroll</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -145,15 +145,15 @@ const Payroll = () => {
       </section>
 
       {isSuperAdmin && (
-        <Card className="border-white/5 bg-slate-950/40 p-5">
-          <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-400">Select tenant</label>
-          <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="w-full md:max-w-md rounded-xl border border-white/10 bg-slate-900 p-3 text-white">
+        <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 p-5">
+          <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">Select tenant</label>
+          <select aria-label="Select tenant" value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(e.target.value)} className="w-full md:max-w-md rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 p-3 text-slate-900 dark:text-white">
             <option value="">Choose a company</option>
             {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
           </select>
         </Card>
       )}
-      {!companyId && <Card className="p-8 text-center text-slate-400">Select a tenant to view payroll and run a payroll cycle.</Card>}
+      {!companyId && <Card className="p-8 text-center text-slate-600 dark:text-slate-400">Select a tenant to view payroll and run a payroll cycle.</Card>}
 
       {actionError && (
         <div role="alert" className="rounded-xl bg-rose-500/10 text-rose-400 p-4 border border-rose-500/20 text-sm flex items-center gap-2">
@@ -162,11 +162,11 @@ const Payroll = () => {
       )}
 
       {companyId && runs.length === 0 && !loading && (
-        <Card className="p-12 text-center"><p className="text-slate-400">No payroll runs yet. Start your first run above.</p></Card>
+        <Card className="p-12 text-center"><p className="text-slate-600 dark:text-slate-400">No payroll runs yet. Start your first run above.</p></Card>
       )}
 
       {companyId && <div className="grid grid-cols-1 gap-6">
-        <div className="flex items-center space-x-2 text-slate-400">
+        <div className="flex items-center space-x-2 text-slate-600 dark:text-slate-400">
           <History size={18} />
           <h2 className="text-xs font-bold tracking-widest">Recent runs</h2>
         </div>
@@ -174,20 +174,20 @@ const Payroll = () => {
         <AnimatePresence>
           {runs.map((run, idx) => (
             <motion.div key={run.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ delay: Math.min(idx, 10) * 0.05 }}>
-              <Card className="border-white/5 bg-slate-950/40 hover:border-white/10 transition-colors">
+              <Card className="border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/40 hover:border-slate-300 dark:hover:border-white/10 transition-colors">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="flex items-center space-x-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 text-slate-300"><FileCheck size={24} /></div>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 text-slate-700 dark:text-slate-300"><FileCheck size={24} /></div>
                     <div>
                       <p className="text-[10px] font-bold tracking-widest text-slate-500">Period</p>
-                      <h3 className="text-lg font-bold text-white">{String(run.month).slice(0, 7)}</h3>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">{String(run.month).slice(0, 7)}</h3>
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4">
                     <div className="text-left lg:text-right">
                       <p className="text-[10px] font-bold tracking-widest text-slate-500">Net pay</p>
-                      <p className="text-lg font-mono font-bold text-white">
+                      <p className="text-lg font-mono font-bold text-slate-900 dark:text-white">
                         {run.totalNet ? `GHS ${Number(run.totalNet).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---'}
                       </p>
                     </div>
@@ -205,7 +205,7 @@ const Payroll = () => {
                           <Lock size={14} /> Finalize
                         </button>
                         <button onClick={() => handleDiscard(run)} disabled={busyRunId === run.id}
-                          className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-rose-500/20 hover:text-rose-300 disabled:opacity-50 active:scale-95 transition-all">
+                          className="flex items-center gap-2 rounded-xl bg-white/5 border border-slate-200 dark:border-white/10 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-rose-500/20 hover:text-rose-300 disabled:opacity-50 active:scale-95 transition-all">
                           <Trash2 size={14} /> Discard
                         </button>
                       </div>

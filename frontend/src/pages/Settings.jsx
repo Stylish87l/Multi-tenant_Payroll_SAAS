@@ -90,8 +90,8 @@ const Settings = () => {
     <div className="safe-area-inset p-4 md:p-8 space-y-8 pb-24">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Preferences</h1>
-          <p className="text-slate-400 text-sm mt-1">Choose how Paylio contacts you.</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Preferences</h1>
+          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Choose how Paylio contacts you.</p>
         </div>
         <AnimatePresence>
           {isSaving && (
@@ -121,9 +121,9 @@ const Settings = () => {
                 return (
                   <div key={item.id} className="flex items-center justify-between p-5 hover:bg-white/[0.02] transition-colors">
                     <div className="flex items-start space-x-4">
-                      <div className="mt-1 p-2 rounded-lg bg-slate-900 text-slate-400" aria-hidden="true"><item.icon size={18} /></div>
+                      <div className="mt-1 p-2 rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400" aria-hidden="true"><item.icon size={18} /></div>
                       <div>
-                        <p className="text-sm font-bold text-white">{item.label}</p>
+                        <p className="text-sm font-bold text-slate-900 dark:text-white">{item.label}</p>
                         <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
                       </div>
                     </div>
@@ -142,8 +142,8 @@ const Settings = () => {
 
         <Card className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 flex flex-col items-center justify-center text-center p-8">
           <Palette className="text-indigo-400 mb-4" size={40} />
-          <h2 className="text-lg font-bold text-white">Appearance</h2>
-          <p className="text-sm text-slate-400 mt-2">Use the sun/moon button in the top bar to switch between dark and light mode.</p>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">Appearance</h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">Use the sun/moon button in the top bar to switch between dark and light mode.</p>
         </Card>
       </div>
     </div>

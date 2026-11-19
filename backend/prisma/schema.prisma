@@ -111,6 +111,7 @@ model PayrollRun {
   processedById String?
   processedAt   DateTime?
   errorMessage  String?
+  taxConfigSnapshot Json?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -118,7 +119,6 @@ model PayrollRun {
   company       Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   processedBy   User?         @relation("RunProcessor", fields: [processedById], references: [id], onDelete: SetNull)
 
-  @@unique([companyId, month])
   @@index([companyId])
   @@map("payroll_runs")
 }
@@ -138,6 +138,7 @@ model PayrollItem {
   ssnitTier1    Decimal       @db.Decimal(18, 4)
   ssnitTier2    Decimal       @db.Decimal(18, 4)
   payeTax       Decimal       @db.Decimal(18, 4)
+  reliefInputsSnapshot Json?
   netPay        Decimal       @db.Decimal(18, 4)
   paymentStatus PaymentStatus @default(PENDING)
   paymentRef    String?
@@ -167,8 +168,8 @@ model AuditLog {
   resourceId    String?
   resourceType  String?
   userAgent     String?
-  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  company       Company?  @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@index([companyId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
@@ -273,7 +274,7 @@ model TaxConfig {
   config        Json
   effectiveFrom DateTime @default("2026-01-01T00:00:00.000Z") @map("effective_from") @db.Timestamptz(3)
   createdAt     DateTime @default(now())
-  company       Company? @relation(fields: [companyId], references: [id], onDelete: SetNull) // Cascade doesn't make sense on a nullable FK
+  company       Company? @relation(fields: [companyId], references: [id], onDelete: Restrict) // Prevent tenant config from becoming global when a company is removed.
 
   @@index([companyId, type, year, effectiveFrom], map: "tax_configs_company_type_year_effective_from_idx")
   @@map("tax_configs")
