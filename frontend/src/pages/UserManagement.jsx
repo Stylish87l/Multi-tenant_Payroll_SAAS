@@ -122,7 +122,7 @@ const UserManagement = () => {
     try {
       const response = await authFetch(`${REST_BASE}/api/users/${target.id}/status`, {
         method: 'PATCH',
-        headers: headers(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
       const payload = await response.json();
