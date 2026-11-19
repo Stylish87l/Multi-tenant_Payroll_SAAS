@@ -118,7 +118,6 @@ model PayrollRun {
   company       Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   processedBy   User?         @relation("RunProcessor", fields: [processedById], references: [id], onDelete: SetNull)
 
-  @@unique([companyId, month])
   @@index([companyId])
   @@map("payroll_runs")
 }
