@@ -17,7 +17,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
         where: { deletedAt: null },
         include: {
           employee: {
-            select: { id: true, isActive: true, deletedAt: true, bankName: true, bankAccount: true },
+            select: { id: true, isActive: true, deletedAt: true, bankName: true, bankCode: true, bankAccount: true },
           },
         },
       },
