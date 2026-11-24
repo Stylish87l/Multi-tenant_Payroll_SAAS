@@ -1,8 +1,8 @@
 import prisma from '../config/db.js';
 import { z } from 'zod';
-import { reviewPayrollRun } from '../services/payrollAnomalyService.js';
+import { getPayrollRunFingerprint, getPayrollRunFingerprints, reviewPayrollRun } from '../services/payrollAnomalyService.js';
 import { actorFromReq, writeAudit } from '../services/auditService.js';
-import { badInput, notFound } from '../utils/appError.js';
+import { badInput, conflict, notFound } from '../utils/appError.js';
 
 const decisionSchema = z.object({
   decision: z.enum(['CONFIRMED', 'DISMISSED', 'NEEDS_INVESTIGATION', 'RESOLVED']),
@@ -32,7 +32,7 @@ export const listPayrollReviews = async (req, res, next) => {
         where, skip: (page - 1) * take, take,
         orderBy: { createdAt: 'desc' },
         select: {
-          id: true, payrollRunId: true, status: true, summary: true, provider: true,
+          id: true, payrollRunId: true, inputHash: true, status: true, summary: true, provider: true,
           model: true, createdAt: true, updatedAt: true,
           _count: { select: { findings: true } },
           payrollRun: { select: { month: true, status: true } },
@@ -40,7 +40,15 @@ export const listPayrollReviews = async (req, res, next) => {
       }),
       prisma.payrollReview.count({ where }),
     ]);
-    return res.json({ items, total, page, limit: take, hasNextPage: page * take < total });
+    const fingerprints = await getPayrollRunFingerprints({
+      companyId: req.reviewCompanyId,
+      payrollRunIds: items.map((item) => item.payrollRunId),
+    });
+    const withFreshness = items.map(({ inputHash, ...item }) => ({
+      ...item,
+      isStale: !inputHash || fingerprints.get(item.payrollRunId) !== inputHash,
+    }));
+    return res.json({ items: withFreshness, total, page, limit: take, hasNextPage: page * take < total });
   } catch (error) {
     return next(error);
   }
@@ -59,6 +67,12 @@ export const getPayrollReview = async (req, res, next) => {
       },
     });
     if (!review) throw notFound('Payroll review not found.');
+    const currentFingerprint = await getPayrollRunFingerprint({
+      companyId: req.reviewCompanyId,
+      payrollRunId: review.payrollRunId,
+    });
+    review.isStale = !review.inputHash || currentFingerprint !== review.inputHash;
+    delete review.inputHash;
     const severityRank = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
     review.findings.sort((a, b) => severityRank[b.severity] - severityRank[a.severity] || a.createdAt - b.createdAt);
     return res.json(review);
@@ -80,7 +94,10 @@ export const recordPayrollFindingDecision = async (req, res, next) => {
         reviewId: req.params.reviewId,
         companyId: req.reviewCompanyId,
       },
-      select: { id: true, status: true, reviewId: true },
+      select: {
+        id: true, status: true, reviewId: true,
+        review: { select: { payrollRunId: true, inputHash: true } },
+      },
     });
     if (!finding) throw notFound('Finding not found.');
 
@@ -92,6 +109,15 @@ export const recordPayrollFindingDecision = async (req, res, next) => {
     };
     const actor = actorFromReq(req);
     const result = await prisma.$transaction(async (tx) => {
+      const currentFingerprint = await getPayrollRunFingerprint({
+        companyId: req.reviewCompanyId,
+        payrollRunId: finding.review.payrollRunId,
+        client: tx,
+      });
+      if (!finding.review.inputHash || currentFingerprint !== finding.review.inputHash) {
+        throw conflict('This payroll review is stale because the payroll inputs changed. Generate a fresh review before recording decisions.');
+      }
+
       const updated = await tx.payrollReviewFinding.update({
         where: { id: finding.id },
         data: { status: statusByDecision[decision] },
