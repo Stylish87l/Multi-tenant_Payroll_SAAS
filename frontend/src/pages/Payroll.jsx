@@ -66,6 +66,9 @@ const Payroll = () => {
       setActiveReviewMonth(null);
       return undefined;
     }
+    setActiveReview(null);
+    setActiveReviewMonth(null);
+    setReviewHistory([]);
     let cancelled = false;
     requestReviewApi(`/api/companies/${encodeURIComponent(companyId)}/payroll-reviews?page=1&limit=10`)
       .then((result) => { if (!cancelled) setReviewHistory(result.items || []); })
@@ -279,7 +282,7 @@ const Payroll = () => {
               ))}
             </div>
           ) : <p className="text-xs text-slate-500">No reviews have been run for this company yet.</p>}
-          {activeReview && (
+          {activeReview && activeReview.companyId === companyId && (
             <Card className="border-indigo-500/20 bg-indigo-500/[0.035] p-4 sm:p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
