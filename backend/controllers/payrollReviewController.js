@@ -73,7 +73,7 @@ export const recordPayrollFindingDecision = async (req, res, next) => {
     if (!parsed.success) throw badInput(parsed.error.issues.map((issue) => issue.message).join('; '));
 
     const { decision, comment } = parsed.data;
-    if (comment && /(?:\\d[ -]?){9,}/.test(comment)) throw badInput('Do not include bank account numbers or government identifiers in review comments.');
+    if (comment && /(?:[0-9][ -]?){9,}/.test(comment)) throw badInput('Do not include bank account numbers or government identifiers in review comments.');
     const finding = await prisma.payrollReviewFinding.findFirst({
       where: {
         id: req.params.findingId,
