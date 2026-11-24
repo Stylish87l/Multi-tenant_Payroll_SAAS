@@ -35,6 +35,38 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
   const findings = [];
   const add = (finding) => findings.push({ ...finding, employeeId: finding.employeeId || null });
 
+  const taxSnapshot = run.taxConfigSnapshot || {};
+  for (const taxType of ['PAYE', 'SSNIT']) {
+    if (!taxSnapshot[taxType]) {
+      add({
+        code: `MISSING_${taxType}_CONFIGURATION`,
+        category: 'STATUTORY_CONFIGURATION',
+        severity: 'CRITICAL',
+        title: `Missing ${taxType} configuration snapshot`,
+        description: `This payroll run does not contain a ${taxType} tax configuration snapshot.`,
+        evidence: { taxType, payrollRunId: run.id },
+        recommendation: 'Stop payroll approval and verify the effective statutory configuration for this payroll period.',
+      });
+    }
+  }
+
+  if (run.runType === 'REGULAR') {
+    const activeEmployeeCount = await prisma.employee.count({
+      where: { companyId, isActive: true, deletedAt: null },
+    });
+    if (activeEmployeeCount > run.items.length) {
+      add({
+        code: 'ACTIVE_EMPLOYEES_MISSING_FROM_PAYROLL',
+        category: 'EMPLOYEE_COVERAGE',
+        severity: 'HIGH',
+        title: 'Active employees missing from payroll',
+        description: 'The regular payroll run contains fewer employees than the company currently has active employee records.',
+        evidence: { activeEmployeeCount, payrollItemCount: run.items.length },
+        recommendation: 'Reconcile the active employee roster against this payroll run and confirm any approved exclusions.',
+      });
+    }
+  }
+
   const bankAccounts = new Map();
   for (const item of run.items) {
     const employee = item.employee;
