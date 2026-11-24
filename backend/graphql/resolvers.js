@@ -216,10 +216,10 @@ const resolvers = {
       if (!PAYROLL_FINANCE_ROLES.includes(ctx.userRole)) return [];
 
       const tenantId = resolveTenant(ctx, argId);
-      if (!tenantId && ctx.userRole !== 'SUPER_ADMIN') throw forbidden('No company context');
+      if (!tenantId) throw forbidden('Select a company before viewing payroll runs.');
 
       return prisma.payrollRun.findMany({
-        where: tenantId ? { companyId: tenantId } : {},
+        where: { companyId: tenantId, deletedAt: null },
         take: Math.min(Math.max(Number(limit) || 5, 1), 50),
         orderBy: { createdAt: 'desc' },
       });
@@ -236,10 +236,10 @@ const resolvers = {
       requireRole(ctx, PAYROLL_FINANCE_ROLES, 'view payroll runs');
 
       const tenantId = resolveTenant(ctx, argId);
-      if (!tenantId && ctx.userRole !== 'SUPER_ADMIN') throw forbidden('No company context');
+      if (!tenantId) throw forbidden('Select a company before viewing payroll runs.');
 
       const p = paginate(page, limit);
-      const where = tenantId ? { companyId: tenantId } : {};
+      const where = { companyId: tenantId, deletedAt: null };
       const [items, total] = await Promise.all([
         prisma.payrollRun.findMany({ where, skip: p.skip, take: p.take, orderBy: { createdAt: 'desc' } }),
         prisma.payrollRun.count({ where }),
@@ -247,10 +247,12 @@ const resolvers = {
       return { items, total, page: p.page, limit: p.take, pageInfo: pageInfo(p, items, total) };
     },
 
-    payrollRun: async (_, { id }, ctx) => {
+    payrollRun: async (_, { id, companyId: argCompanyId }, ctx) => {
       requireRole(ctx, PAYROLL_FINANCE_ROLES, 'view payroll run details');
+      const tenantId = ctx.userRole === 'SUPER_ADMIN' ? argCompanyId : ctx.companyId;
+      if (!tenantId) throw forbidden('Select a company before viewing payroll run details.');
       const run = await prisma.payrollRun.findFirst({
-        where: ctx.userRole === 'SUPER_ADMIN' ? { id } : { id, companyId: ctx.companyId },
+        where: { id, companyId: tenantId, deletedAt: null },
         include: { items: { include: { employee: true } } },
       });
       if (!run) throw notFound('Payroll run not found or access denied');
