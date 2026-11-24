@@ -13,7 +13,7 @@ export const explainPayrollFindings = async (findings) => {
   const baseUrl = (process.env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
   const model = process.env.AI_MODEL || 'gpt-4o-mini';
   const safeFindings = findings.map(({ code, category, severity, title, description, evidence, recommendation }) => ({
-    code, category, severity, title, description, evidence, recommendation,
+    code, category, severity, title, description, recommendation,
   }));
 
   try {
