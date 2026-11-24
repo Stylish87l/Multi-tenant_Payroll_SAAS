@@ -55,7 +55,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
         recommendation: 'Verify payment instructions with the employee using an approved secure channel before disbursement.',
       });
     } else {
-      const key = String(employee.bankAccount).replace(/\s+/g, '').toLowerCase();
+      const key = [employee.bankName, employee.bankCode, String(employee.bankAccount).replace(/\s+/g, '').toLowerCase()].filter(Boolean).join(':').toLowerCase();
       if (!bankAccounts.has(key)) bankAccounts.set(key, []);
       bankAccounts.get(key).push(item.employeeId);
     }
