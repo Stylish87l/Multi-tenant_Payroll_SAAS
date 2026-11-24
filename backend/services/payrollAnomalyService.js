@@ -1,5 +1,6 @@
+import { createHmac } from 'node:crypto';
 import prisma from '../config/db.js';
-import { badInput, notFound } from '../utils/appError.js';
+import { badInput, conflict, notFound } from '../utils/appError.js';
 import { explainPayrollFindings } from './aiReviewService.js';
 
 const money = (value) => Number(value || 0);
@@ -11,6 +12,88 @@ const CHANGE_THRESHOLD_PERCENT = configuredThreshold('PAYROLL_REVIEW_CHANGE_PERC
 const CHANGE_THRESHOLD_GHS = configuredThreshold('PAYROLL_REVIEW_CHANGE_ABSOLUTE_GHS', 100);
 const pctChange = (current, previous) => previous === 0 ? (current === 0 ? 0 : 100) : ((current - previous) / Math.abs(previous)) * 100;
 
+const REVIEW_RUN_INCLUDE = {
+  items: {
+    where: { deletedAt: null },
+    orderBy: { employeeId: 'asc' },
+    include: {
+      employee: {
+        select: {
+          id: true, isActive: true, deletedAt: true, bankName: true,
+          bankCode: true, bankAccount: true, updatedAt: true,
+        },
+      },
+    },
+  },
+};
+
+/**
+ * HMAC fingerprint of every payroll input used by the review. The secret is
+ * server-only; the digest lets us detect edits without storing a second copy
+ * of sensitive bank instructions or exposing them to the AI provider.
+ */
+export const createPayrollReviewFingerprint = (run) => {
+  const secret = process.env.CSRF_SECRET;
+  if (!secret || Buffer.byteLength(secret) < 32) {
+    throw new Error('CSRF_SECRET must contain at least 32 bytes to fingerprint payroll review inputs.');
+  }
+
+  const payload = {
+    id: run.id,
+    companyId: run.companyId,
+    month: run.month,
+    runType: run.runType,
+    taxConfigSnapshot: run.taxConfigSnapshot ?? null,
+    items: [...(run.items || [])]
+      .sort((a, b) => a.employeeId.localeCompare(b.employeeId))
+      .map((item) => ({
+        employeeId: item.employeeId,
+        grossSalary: String(item.grossSalary),
+        basicSalarySnapshot: item.basicSalarySnapshot == null ? null : String(item.basicSalarySnapshot),
+        housingAllowanceSnapshot: item.housingAllowanceSnapshot == null ? null : String(item.housingAllowanceSnapshot),
+        transportAllowanceSnapshot: item.transportAllowanceSnapshot == null ? null : String(item.transportAllowanceSnapshot),
+        otherAllowanceSnapshot: item.otherAllowanceSnapshot == null ? null : String(item.otherAllowanceSnapshot),
+        taxableIncome: String(item.taxableIncome),
+        ssnitEmployee: String(item.ssnitEmployee),
+        ssnitEmployer: String(item.ssnitEmployer),
+        ssnitTier1: String(item.ssnitTier1),
+        ssnitTier2: String(item.ssnitTier2),
+        payeTax: String(item.payeTax),
+        netPay: String(item.netPay),
+        reliefInputsSnapshot: item.reliefInputsSnapshot ?? null,
+        employee: item.employee ? {
+          id: item.employee.id,
+          isActive: item.employee.isActive,
+          deletedAt: item.employee.deletedAt?.toISOString?.() ?? null,
+          bankName: item.employee.bankName ?? null,
+          bankCode: item.employee.bankCode ?? null,
+          bankAccount: item.employee.bankAccount ?? null,
+          updatedAt: item.employee.updatedAt?.toISOString?.() ?? null,
+        } : null,
+      })),
+  };
+
+  return createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+};
+
+export const getPayrollRunFingerprint = async ({ companyId, payrollRunId, client = prisma }) => {
+  const run = await client.payrollRun.findFirst({
+    where: { id: payrollRunId, companyId, deletedAt: null },
+    include: REVIEW_RUN_INCLUDE,
+  });
+  return run ? createPayrollReviewFingerprint(run) : null;
+};
+
+export const getPayrollRunFingerprints = async ({ companyId, payrollRunIds, client = prisma }) => {
+  const ids = [...new Set(payrollRunIds)].filter(Boolean);
+  if (!ids.length) return new Map();
+  const runs = await client.payrollRun.findMany({
+    where: { id: { in: ids }, companyId, deletedAt: null },
+    include: REVIEW_RUN_INCLUDE,
+  });
+  return new Map(runs.map((run) => [run.id, createPayrollReviewFingerprint(run)]));
+};
+
 /**
  * Deterministic review rules. These findings are advisory and never mutate a
  * payroll run, payroll item, tax calculation, employee record or payment.
@@ -18,19 +101,12 @@ const pctChange = (current, previous) => previous === 0 ? (current === 0 ? 0 : 1
 export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
   const run = await prisma.payrollRun.findFirst({
     where: { id: payrollRunId, companyId, deletedAt: null },
-    include: {
-      items: {
-        where: { deletedAt: null },
-        include: {
-          employee: {
-            select: { id: true, isActive: true, deletedAt: true, bankName: true, bankCode: true, bankAccount: true },
-          },
-        },
-      },
-    },
+    include: REVIEW_RUN_INCLUDE,
   });
   if (!run) throw notFound('Payroll run not found for this company.');
+  if (run.status !== 'DRAFT') throw conflict('Only a DRAFT payroll run can receive a pre-finalization review.');
   if (!run.items.length) throw badInput('This payroll run has no payroll items to review.');
+  const inputHash = createPayrollReviewFingerprint(run);
 
   const previousRun = await prisma.payrollRun.findFirst({
     where: { companyId, deletedAt: null, status: 'FINALIZED', runType: run.runType, month: { lt: run.month } },
@@ -57,17 +133,20 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
   }
 
   if (run.runType === 'REGULAR') {
-    const activeEmployeeCount = await prisma.employee.count({
+    const activeEmployees = await prisma.employee.findMany({
       where: { companyId, isActive: true, deletedAt: null, createdAt: { lte: run.createdAt } },
+      select: { id: true },
     });
-    if (activeEmployeeCount > run.items.length) {
+    const payrollEmployeeIds = new Set(run.items.map((item) => item.employeeId));
+    const missingEmployeeCount = activeEmployees.filter((employee) => !payrollEmployeeIds.has(employee.id)).length;
+    if (missingEmployeeCount > 0) {
       add({
         code: 'ACTIVE_EMPLOYEES_MISSING_FROM_PAYROLL',
         category: 'EMPLOYEE_COVERAGE',
         severity: 'HIGH',
         title: 'Active employees missing from payroll',
-        description: 'The regular payroll run contains fewer employees than the company currently has active employee records.',
-        evidence: { activeEmployeeCount, payrollItemCount: run.items.length },
+        description: 'One or more active employee records that existed when this run was created are missing from the regular payroll.',
+        evidence: { activeEmployeeCount: activeEmployees.length, missingEmployeeCount, payrollItemCount: run.items.length },
         recommendation: 'Reconcile the active employee roster against this payroll run and confirm any approved exclusions.',
       });
     }
@@ -167,11 +246,25 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
   const ai = await explainPayrollFindings(findings);
   const explanationByCode = new Map(ai.explanations.map((item) => [item.code, item.explanation.slice(0, 2000)]));
   const created = await prisma.$transaction(async (tx) => {
+    // AI generation can take several seconds. Re-read the exact inputs inside
+    // the write transaction so a concurrently edited draft cannot receive a
+    // review that describes an earlier version.
+    const latestRun = await tx.payrollRun.findFirst({
+      where: { id: payrollRunId, companyId, deletedAt: null },
+      include: REVIEW_RUN_INCLUDE,
+    });
+    if (!latestRun || latestRun.status !== 'DRAFT') {
+      throw conflict('The payroll draft changed state while the review was running. Refresh and review the current draft.');
+    }
+    if (createPayrollReviewFingerprint(latestRun) !== inputHash) {
+      throw conflict('Payroll inputs changed while the review was running. Run a new review for the latest draft.');
+    }
+
     const review = await tx.payrollReview.create({
       data: {
         companyId, payrollRunId, requestedById: actor?.userId || null,
         status: 'COMPLETED', summary: ai.summary,
-        provider: ai.provider, model: ai.model,
+        provider: ai.provider, model: ai.model, inputHash,
         findings: {
           create: findings.map((finding) => ({
             companyId, employeeId: finding.employeeId, code: finding.code,
@@ -191,7 +284,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
       details: { payrollRunId, findingCount: findings.length, aiProvider: ai.provider },
     });
     return review;
-  });
+  }, { isolationLevel: 'Serializable' });
   const severityRank = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
   created.findings.sort((a, b) => severityRank[b.severity] - severityRank[a.severity] || a.createdAt - b.createdAt);
   return created;
