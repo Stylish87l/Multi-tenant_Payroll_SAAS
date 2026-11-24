@@ -265,7 +265,7 @@ const typeDefs = gql`
     pendingNotifications(userId: ID): Int
 
     payrollRuns(companyId: ID, page: Int, limit: Int, after: String): PayrollRunConnection!
-    payrollRun(id: ID!): PayrollRun
+    payrollRun(id: ID!, companyId: ID): PayrollRun
     notifications(page: Int, limit: Int): [Notification!]!
     """ADMIN / SUPER_ADMIN only. Tenant-scoped."""
     auditLogs(companyId: ID, page: Int, limit: Int): [AuditLog!]!
