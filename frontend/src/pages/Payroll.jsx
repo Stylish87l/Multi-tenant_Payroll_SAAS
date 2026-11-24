@@ -1,8 +1,8 @@
 // src/pages/Payroll.jsx
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useQuery, useMutation, useSubscription } from '@apollo/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, FileCheck, History, AlertCircle, Clock, CheckCircle2, Trash2, Lock } from 'lucide-react';
+import { Play, FileCheck, History, AlertCircle, Clock, CheckCircle2, Trash2, Lock, Sparkles, ShieldAlert, RefreshCw } from 'lucide-react';
 
 import { GET_PAYROLL_RUNS, GET_COMPANIES } from '../graphql/queries';
 import { RUN_PAYROLL, FINALIZE_PAYROLL, DISCARD_PAYROLL_DRAFT } from '../graphql/mutations';
@@ -10,6 +10,7 @@ import { PAYROLL_UPDATED_SUB } from '../graphql/subscriptions';
 import Card from '../components/Card';
 import Loader from '../components/Loader';
 import { useAuth } from '../context/AuthContext';
+import { REST_BASE, TOKEN_KEY } from '../lib/apolloClient';
 
 // Mirrors the server: runPayroll = finance roles; finalize/discard = ADMIN tier (segregation of duties).
 const RUN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'];
@@ -35,6 +36,42 @@ const Payroll = () => {
   const companies = companiesData?.companies ?? [];
   const [actionError, setActionError] = useState(null);
   const [busyRunId, setBusyRunId] = useState(null);
+  const [reviewHistory, setReviewHistory] = useState([]);
+  const [activeReview, setActiveReview] = useState(null);
+  const [activeReviewMonth, setActiveReviewMonth] = useState(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState(null);
+
+  const requestReviewApi = useCallback(async (path, options = {}) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const response = await fetch(`${REST_BASE}${path}`, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || payload.error || `Request failed (${response.status})`);
+    return payload;
+  }, []);
+
+  useEffect(() => {
+    if (!companyId) {
+      setReviewHistory([]);
+      setActiveReview(null);
+      setActiveReviewMonth(null);
+      return undefined;
+    }
+    let cancelled = false;
+    requestReviewApi(`/api/companies/${encodeURIComponent(companyId)}/payroll-reviews?page=1&limit=10`)
+      .then((result) => { if (!cancelled) setReviewHistory(result.items || []); })
+      .catch(() => { if (!cancelled) setReviewHistory([]); });
+    return () => { cancelled = true; };
+  }, [companyId, requestReviewApi]);
 
   const variables = { companyId, page: 1, limit: 50 };
   const { loading, error, data, refetch } = useQuery(GET_PAYROLL_RUNS, {
@@ -67,6 +104,63 @@ const Payroll = () => {
       setActionError(errMsg(err, 'Payroll could not be run. Please try again.'));
     }
   }, [runPayroll, user, companyId, refetch]);
+
+  const handleReviewRun = useCallback(async (run) => {
+    if (!companyId || !RUN_ROLES.includes(user?.role)) return;
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      const review = await requestReviewApi(
+        `/api/companies/${encodeURIComponent(companyId)}/payroll-reviews/payroll-runs/${encodeURIComponent(run.id)}`,
+        { method: 'POST' }
+      );
+      setActiveReview(review);
+      setActiveReviewMonth(run.month);
+      const history = await requestReviewApi(`/api/companies/${encodeURIComponent(companyId)}/payroll-reviews?page=1&limit=10`);
+      setReviewHistory(history.items || []);
+    } catch (err) {
+      setReviewError(err.message || 'Payroll review could not be completed.');
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [companyId, requestReviewApi, user]);
+
+  const handleOpenReview = useCallback(async (review) => {
+    if (!companyId) return;
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      const detail = await requestReviewApi(
+        `/api/companies/${encodeURIComponent(companyId)}/payroll-reviews/${encodeURIComponent(review.id)}`
+      );
+      setActiveReview(detail);
+      setActiveReviewMonth(detail.payrollRun?.month || review.payrollRun?.month || null);
+    } catch (err) {
+      setReviewError(err.message || 'Could not load this review.');
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [companyId, requestReviewApi]);
+
+  const handleFindingDecision = useCallback(async (findingId, decision) => {
+    if (!companyId || !activeReview?.id) return;
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      const updated = await requestReviewApi(
+        `/api/companies/${encodeURIComponent(companyId)}/payroll-reviews/${encodeURIComponent(activeReview.id)}/findings/${encodeURIComponent(findingId)}`,
+        { method: 'PATCH', body: JSON.stringify({ decision }) }
+      );
+      setActiveReview((current) => ({
+        ...current,
+        findings: current.findings.map((finding) => finding.id === findingId ? { ...finding, status: updated.status } : finding),
+      }));
+    } catch (err) {
+      setReviewError(err.message || 'Could not save the review decision.');
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [activeReview, companyId, requestReviewApi]);
 
   const handleFinalize = useCallback(async (run) => {
     if (!window.confirm(`Finalize payroll for ${run.month.slice(0, 7)}? Finalized runs cannot be edited or discarded.`)) return;
@@ -155,6 +249,84 @@ const Payroll = () => {
       )}
       {!companyId && <Card className="p-8 text-center text-slate-600 dark:text-slate-400">Select a tenant to view payroll and run a payroll cycle.</Card>}
 
+      {companyId && (
+        <section className="space-y-4" aria-label="Paylio AI payroll reviews">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-slate-900 dark:text-white">
+                <Sparkles size={18} className="text-indigo-500" />
+                <h2 className="text-sm font-bold tracking-wide">Paylio AI review history</h2>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Rule-based checks with optional AI explanations. A human remains responsible for every decision.</p>
+            </div>
+            <button type="button" onClick={() => {
+              requestReviewApi(`/api/companies/${encodeURIComponent(companyId)}/payroll-reviews?page=1&limit=10`)
+                .then((result) => setReviewHistory(result.items || []))
+                .catch((err) => setReviewError(err.message));
+            }} className="rounded-lg border border-slate-200 dark:border-white/10 p-2 text-slate-600 dark:text-slate-300" aria-label="Refresh review history">
+              <RefreshCw size={15} />
+            </button>
+          </div>
+          {reviewError && <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-400">{reviewError}</div>}
+          {reviewHistory.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {reviewHistory.map((review) => (
+                <button key={review.id} type="button" onClick={() => handleOpenReview(review)} disabled={reviewBusy}
+                  className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2 text-left text-xs hover:border-indigo-400 disabled:opacity-50">
+                  <span className="block font-semibold text-slate-800 dark:text-slate-100">{review.payrollRun?.month?.slice(0, 7) || 'Payroll review'}</span>
+                  <span className="mt-1 block text-slate-500">{review._count?.findings ?? 0} findings · {new Date(review.createdAt).toLocaleDateString()}</span>
+                </button>
+              ))}
+            </div>
+          ) : <p className="text-xs text-slate-500">No reviews have been run for this company yet.</p>}
+          {activeReview && (
+            <Card className="border-indigo-500/20 bg-indigo-500/[0.035] p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-500">Payroll review · {activeReviewMonth?.slice(0, 7) || 'Selected run'}</p>
+                  <h3 className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{activeReview.findings?.length || 0} findings identified</h3>
+                  {activeReview.summary && <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">{activeReview.summary}</p>}
+                  <p className="mt-1 text-[11px] text-slate-500">Explanation provider: {activeReview.provider || 'Rules only'}{activeReview.model ? ` · ${activeReview.model}` : ''}</p>
+                </div>
+                <button type="button" onClick={() => setActiveReview(null)} className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-white">Close review</button>
+              </div>
+              {activeReview.findings?.length ? (
+                <div className="mt-4 space-y-3">
+                  {activeReview.findings.map((finding) => (
+                    <div key={finding.id} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-950/50 p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${finding.severity === 'CRITICAL' || finding.severity === 'HIGH' ? 'bg-rose-500/10 text-rose-500' : finding.severity === 'MEDIUM' ? 'bg-amber-500/10 text-amber-600' : 'bg-slate-500/10 text-slate-500'}`}>{finding.severity}</span>
+                        <span className="text-[10px] text-slate-500">{finding.code}</span>
+                        <span className="ml-auto text-[10px] font-semibold uppercase text-slate-500">{finding.status}</span>
+                      </div>
+                      <h4 className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{finding.title}</h4>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{finding.description}</p>
+                      <p className="mt-2 text-xs text-slate-500"><strong>Suggested check:</strong> {finding.recommendation}</p>
+                      {finding.aiExplanation && <p className="mt-2 rounded-lg bg-indigo-500/5 p-3 text-xs leading-5 text-slate-600 dark:text-slate-300"><strong>AI context:</strong> {finding.aiExplanation}</p>}
+                      {finding.employeeId && <p className="mt-2 text-[10px] text-slate-500">Employee reference: {finding.employeeId.slice(0, 8)}…</p>}
+                      {finding.status !== 'RESOLVED' && finding.status !== 'DISMISSED' && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {[
+                            ['CONFIRMED', 'Confirm'],
+                            ['NEEDS_INVESTIGATION', 'Investigate'],
+                            ['DISMISSED', 'Dismiss'],
+                            ['RESOLVED', 'Resolve'],
+                          ].map(([decision, label]) => (
+                            <button key={decision} type="button" disabled={reviewBusy} onClick={() => handleFindingDecision(finding.id, decision)}
+                              className="rounded-lg border border-slate-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:border-indigo-400 disabled:opacity-50">{label}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="mt-4 rounded-lg bg-emerald-500/10 p-4 text-sm text-emerald-600 dark:text-emerald-300">No anomalies were detected by the enabled deterministic checks. Continue with the normal payroll review and approval process.</p>}
+              <div className="mt-4 flex items-start gap-2 text-[11px] leading-5 text-slate-500"><ShieldAlert size={15} className="mt-0.5 shrink-0" /> Paylio AI does not change payroll values, tax calculations or payment status. Review every finding before finalizing.</div>
+            </Card>
+          )}
+        </section>
+      )}
+
       {actionError && (
         <div role="alert" className="rounded-xl bg-rose-500/10 text-rose-400 p-4 border border-rose-500/20 text-sm flex items-center gap-2">
           <AlertCircle size={16} /> {actionError}
@@ -198,6 +370,12 @@ const Payroll = () => {
                       <span>{STATUS_LABELS[run.status] || run.status}</span>
                     </div>
 
+                    {canRun && (
+                      <button type="button" onClick={() => handleReviewRun(run)} disabled={reviewBusy}
+                        className="flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs font-bold text-indigo-600 dark:text-indigo-300 hover:bg-indigo-500/15 disabled:opacity-50">
+                        <Sparkles size={14} /> {reviewBusy ? 'Reviewing...' : 'AI review'}
+                      </button>
+                    )}
                     {run.status === 'DRAFT' && canApprove && (
                       <div className="flex items-center gap-2">
                         <button onClick={() => handleFinalize(run)} disabled={busyRunId === run.id}
