@@ -17,7 +17,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
         where: { deletedAt: null },
         include: {
           employee: {
-            select: { id: true, name: true, isActive: true, deletedAt: true, bankName: true, bankCode: true, bankAccount: true },
+            select: { id: true, isActive: true, deletedAt: true, bankName: true, bankAccount: true },
           },
         },
       },
@@ -77,7 +77,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
           });
         }
       }
-    } else {
+    } else if (previousRun) {
       add({
         code: 'NEW_EMPLOYEE_IN_PAYROLL', category: 'EMPLOYEE_STATUS', severity: 'INFO',
         employeeId: item.employeeId, title: 'Employee has no prior finalized payroll',
