@@ -52,7 +52,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
 
   if (run.runType === 'REGULAR') {
     const activeEmployeeCount = await prisma.employee.count({
-      where: { companyId, isActive: true, deletedAt: null },
+      where: { companyId, isActive: true, deletedAt: null, createdAt: { lte: run.createdAt } },
     });
     if (activeEmployeeCount > run.items.length) {
       add({
