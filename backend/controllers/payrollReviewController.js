@@ -52,13 +52,15 @@ export const getPayrollReview = async (req, res, next) => {
       where: { id: req.params.reviewId, companyId: req.reviewCompanyId },
       include: {
         findings: {
-          orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }],
+          orderBy: { createdAt: 'asc' },
           include: { actions: { orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, decision: true, comment: true, createdAt: true, actor: { select: { id: true, name: true, email: true } } } } },
         },
         payrollRun: { select: { id: true, month: true, status: true } },
       },
     });
     if (!review) throw notFound('Payroll review not found.');
+    const severityRank = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
+    review.findings.sort((a, b) => severityRank[b.severity] - severityRank[a.severity] || a.createdAt - b.createdAt);
     return res.json(review);
   } catch (error) {
     return next(error);
