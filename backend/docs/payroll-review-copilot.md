@@ -4,6 +4,8 @@
 
 The Payroll Review Copilot runs deterministic checks against a payroll run and its most recent earlier finalized run of the same run type. It can flag:
 
+- Missing PAYE or SSNIT configuration snapshots
+- Active employees missing from a regular payroll run (compared with employee records that existed when the run was created)
 - Inactive employees included in a payroll run
 - Missing bank name or account details
 - Duplicate bank instructions within the same bank/bank code
