@@ -27,7 +27,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
   if (!run.items.length) throw badInput('This payroll run has no payroll items to review.');
 
   const previousRun = await prisma.payrollRun.findFirst({
-    where: { companyId, deletedAt: null, status: 'FINALIZED', month: { lt: run.month } },
+    where: { companyId, deletedAt: null, status: 'FINALIZED', runType: run.runType, month: { lt: run.month } },
     orderBy: { month: 'desc' },
     include: { items: { where: { deletedAt: null }, select: { employeeId: true, grossSalary: true, netPay: true, payeTax: true, ssnitEmployee: true } } },
   });
@@ -94,7 +94,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
         code: 'DUPLICATE_BANK_ACCOUNT', category: 'PAYMENT_INTEGRITY', severity: 'HIGH',
         title: 'Bank account shared by multiple employees',
         description: 'More than one employee is configured with the same bank account number.',
-        evidence: { affectedEmployeeCount: employeeIds.length },
+        evidence: { affectedEmployeeCount: employeeIds.length, affectedEmployeeIds: employeeIds },
         recommendation: 'Verify whether this is an approved shared account or an incorrect payment instruction. Do not disclose account details in review comments.',
       });
     }
@@ -144,7 +144,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
           })),
         },
       },
-      include: { findings: { orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }] } },
+      include: { findings: { orderBy: { createdAt: 'asc' } } },
     });
     const { writeAudit } = await import('./auditService.js');
     await writeAudit(tx, {
@@ -154,5 +154,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
     });
     return review;
   });
+  const severityRank = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
+  created.findings.sort((a, b) => severityRank[b.severity] - severityRank[a.severity] || a.createdAt - b.createdAt);
   return created;
 };
