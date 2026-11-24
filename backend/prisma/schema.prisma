@@ -14,6 +14,33 @@ enum BackgroundJobStatus {
   FAILED
 }
 
+enum PayrollReviewStatus {
+  COMPLETED
+  FAILED
+}
+
+enum PayrollFindingSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum PayrollFindingStatus {
+  OPEN
+  CONFIRMED
+  DISMISSED
+  RESOLVED
+}
+
+enum PayrollReviewDecision {
+  CONFIRMED
+  DISMISSED
+  NEEDS_INVESTIGATION
+  RESOLVED
+}
+
 model Company {
   id              String       @id @default(uuid())
   name            String
@@ -37,6 +64,9 @@ model Company {
   notifications   Notification[]
   auditLogs        AuditLog[]
   backgroundJobs   BackgroundJob[]
+  payrollReviews   PayrollReview[]
+  payrollReviewFindings PayrollReviewFinding[]
+  payrollReviewActions PayrollReviewAction[]
 
   @@map("companies")
 }
@@ -60,6 +90,8 @@ model User {
   company                Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
   employeeProfile        Employee?
   notificationPreference NotificationPreference?
+  requestedPayrollReviews PayrollReview[] @relation("PayrollReviewRequester")
+  payrollReviewActions PayrollReviewAction[] @relation("PayrollReviewActor")
 
   @@index([companyId])
   @@map("users")
@@ -94,6 +126,7 @@ model Employee {
   company             Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   user                User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   payrollItems        PayrollItem[]
+  payrollReviewFindings PayrollReviewFinding[]
 
   @@unique([companyId, email])
   @@unique([companyId, ssnitNumber])
@@ -118,6 +151,7 @@ model PayrollRun {
   items         PayrollItem[]
   company       Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   processedBy   User?         @relation("RunProcessor", fields: [processedById], references: [id], onDelete: SetNull)
+  payrollReviews PayrollReview[]
 
   @@index([companyId])
   @@map("payroll_runs")
@@ -278,6 +312,72 @@ model TaxConfig {
 
   @@index([companyId, type, year, effectiveFrom], map: "tax_configs_company_type_year_effective_from_idx")
   @@map("tax_configs")
+}
+
+
+model PayrollReview {
+  id            String              @id @default(uuid())
+  companyId     String
+  payrollRunId  String
+  requestedById String?
+  status        PayrollReviewStatus @default(COMPLETED)
+  summary       String?             @db.Text
+  provider      String?
+  model         String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  payrollRun    PayrollRun          @relation(fields: [payrollRunId], references: [id], onDelete: Restrict)
+  requestedBy   User?               @relation("PayrollReviewRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  findings      PayrollReviewFinding[]
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([payrollRunId])
+  @@map("payroll_reviews")
+}
+
+model PayrollReviewFinding {
+  id             String                 @id @default(uuid())
+  reviewId       String
+  companyId      String
+  employeeId     String?
+  code           String
+  category       String
+  severity       PayrollFindingSeverity
+  status         PayrollFindingStatus   @default(OPEN)
+  title          String
+  description    String                 @db.Text
+  evidence       Json
+  recommendation String                 @db.Text
+  aiExplanation  String?                @db.Text
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  review         PayrollReview          @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  company        Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  employee       Employee?              @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  actions        PayrollReviewAction[]
+
+  @@index([companyId, status])
+  @@index([reviewId, severity])
+  @@index([employeeId])
+  @@map("payroll_review_findings")
+}
+
+model PayrollReviewAction {
+  id        String                @id @default(uuid())
+  findingId String
+  companyId String
+  actorId   String
+  decision  PayrollReviewDecision
+  comment   String?               @db.Text
+  createdAt DateTime              @default(now())
+  finding   PayrollReviewFinding  @relation(fields: [findingId], references: [id], onDelete: Restrict)
+  company   Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  actor     User                  @relation("PayrollReviewActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([findingId, createdAt(sort: Desc)])
+  @@map("payroll_review_actions")
 }
 
 enum Role {
