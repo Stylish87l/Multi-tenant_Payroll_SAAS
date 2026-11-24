@@ -50,6 +50,8 @@ Without AI configuration, the Copilot still runs all deterministic checks and re
 - AI_MODEL — optional model name; defaults to gpt-4o-mini
 - AI_PROVIDER_NAME — optional display name
 - AI_TIMEOUT_MS — optional request timeout; defaults to 10000
+- PAYROLL_REVIEW_CHANGE_PERCENT — optional minimum percentage movement for gross/net and statutory variance checks; defaults to 20
+- PAYROLL_REVIEW_CHANGE_ABSOLUTE_GHS — optional minimum absolute GHS movement for those checks; defaults to 100
 
 Only rule-generated codes, categories, severity, titles, descriptions and recommendations are sent to the provider. Employee names/IDs, bank data, Ghana Card PINs, SSNIT identifiers and raw payroll evidence are not included in the AI request. Provider errors/timeouts fall back to rules-only mode and do not block payroll review.
 
