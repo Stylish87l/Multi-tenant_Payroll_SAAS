@@ -3,6 +3,12 @@ import { badInput, notFound } from '../utils/appError.js';
 import { explainPayrollFindings } from './aiReviewService.js';
 
 const money = (value) => Number(value || 0);
+const configuredThreshold = (name, fallback) => {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+const CHANGE_THRESHOLD_PERCENT = configuredThreshold('PAYROLL_REVIEW_CHANGE_PERCENT', 20);
+const CHANGE_THRESHOLD_GHS = configuredThreshold('PAYROLL_REVIEW_CHANGE_ABSOLUTE_GHS', 100);
 const pctChange = (current, previous) => previous === 0 ? (current === 0 ? 0 : 100) : ((current - previous) / Math.abs(previous)) * 100;
 
 /**
@@ -98,7 +104,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
         const before = money(previous[field]);
         const after = money(item[field]);
         const change = pctChange(after, before);
-        if (Math.abs(change) >= 20 && Math.abs(after - before) >= 100) {
+        if (Math.abs(change) >= CHANGE_THRESHOLD_PERCENT && Math.abs(after - before) >= CHANGE_THRESHOLD_GHS) {
           add({
             code: field === 'grossSalary' ? 'GROSS_PAY_CHANGE' : 'NET_PAY_CHANGE',
             category: 'PAY_VARIANCE', severity: Math.abs(change) >= 50 ? 'HIGH' : 'MEDIUM',
@@ -145,7 +151,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
       ['employee SSNIT', currentTotals.ssnit, priorTotals.ssnit],
     ]) {
       const change = pctChange(current, previous);
-      if (Math.abs(change) >= 20 && Math.abs(current - previous) >= 100) {
+      if (Math.abs(change) >= CHANGE_THRESHOLD_PERCENT && Math.abs(current - previous) >= CHANGE_THRESHOLD_GHS) {
         add({
           code: `STATUTORY_DEDUCTION_VARIANCE_${label === 'PAYE' ? 'PAYE' : 'SSNIT'}`,
           category: 'STATUTORY_DEDUCTIONS', severity: 'MEDIUM',
