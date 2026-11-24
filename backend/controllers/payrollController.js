@@ -2,7 +2,7 @@ import prisma from '../config/db.js';
 import logger from '../config/logger.js';
 import { createDraftPayrollRun } from '../services/payrollService.js';
 import { actorFromReq } from '../services/auditService.js';
-import { badInput, forbidden, notFound } from '../utils/appError.js';
+import { forbidden, notFound } from '../utils/appError.js';
 
 const resolvePayrollCompanyId = async (req, requestedCompanyId) => {
   const companyId = req.userRole === 'SUPER_ADMIN' ? requestedCompanyId : req.companyId;
@@ -17,8 +17,7 @@ const resolvePayrollCompanyId = async (req, requestedCompanyId) => {
 
 export const runPayroll = async (req, res, next) => {
   try {
-    const companyId = req.userRole === 'SUPER_ADMIN' ? req.body.companyId : req.companyId;
-    if (!companyId) throw badInput('companyId is required for SUPER_ADMIN payroll runs.');
+    const companyId = await resolvePayrollCompanyId(req, req.body.companyId);
 
     const run = await createDraftPayrollRun({ companyId, month: req.body.month, actor: actorFromReq(req) });
     return res.status(201).json({ message: 'Success', runId: run.id });
