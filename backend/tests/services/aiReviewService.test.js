@@ -6,6 +6,7 @@ const originalEnv = {
   AI_BASE_URL: process.env.AI_BASE_URL,
   AI_MODEL: process.env.AI_MODEL,
   AI_PROVIDER_NAME: process.env.AI_PROVIDER_NAME,
+  AI_TIMEOUT_MS: process.env.AI_TIMEOUT_MS,
 };
 
 afterEach(() => {
@@ -23,15 +24,20 @@ describe('explainPayrollFindings', () => {
     expect(result).toEqual({ provider: 'rules-only', model: null, summary: null, explanations: [] });
   });
 
-  it('sends only the minimal anonymised finding context to the provider', async () => {
+  it('uses Gemini defaults and sends only minimal anonymised finding context', async () => {
     process.env.AI_API_KEY = 'test-key';
-    process.env.AI_MODEL = 'test-model';
+    delete process.env.AI_BASE_URL;
+    delete process.env.AI_PROVIDER_NAME;
+    delete process.env.AI_MODEL;
     const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
         choices: [{ message: { content: JSON.stringify({
           summary: 'Review the flagged movement.',
-          explanations: [{ code: 'GROSS_PAY_CHANGE', explanation: 'Check the approved salary record.' }],
+          explanations: [
+            { code: 'GROSS_PAY_CHANGE', explanation: 'Check the approved salary record.' },
+            { code: 'UNTRUSTED_CODE', explanation: 'This must be ignored.' },
+          ],
         }) } }],
       }),
     });
@@ -47,14 +53,42 @@ describe('explainPayrollFindings', () => {
       evidence: { bankAccount: '123456789012', salary: 10000 },
     }]);
 
-    expect(result.provider).toBe('openai-compatible');
-    expect(result.model).toBe('test-model');
+    expect(result.provider).toBe('Gemini');
+    expect(result.model).toBe('gemini-2.5-flash');
+    expect(result.explanations).toEqual([
+      { code: 'GROSS_PAY_CHANGE', explanation: 'Check the approved salary record.' },
+    ]);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.model).toBe('gemini-2.5-flash');
     const userMessage = body.messages.find((message) => message.role === 'user').content;
     expect(userMessage).not.toContain('private-employee-id');
     expect(userMessage).not.toContain('123456789012');
     expect(userMessage).not.toContain('10000');
     expect(userMessage).toContain('GROSS_PAY_CHANGE');
+  });
+
+  it('supports overriding Gemini with another OpenAI-compatible provider', async () => {
+    process.env.AI_API_KEY = 'test-key';
+    process.env.AI_BASE_URL = 'https://example.test/v1/';
+    process.env.AI_MODEL = 'custom-model';
+    process.env.AI_PROVIDER_NAME = 'Custom';
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"summary":"OK","explanations":[]}' } }] }),
+    });
+
+    const result = await explainPayrollFindings([]);
+    expect(result).toMatchObject({ provider: 'Custom', model: 'custom-model', summary: 'OK' });
   });
 
   it('falls back safely when the provider fails', async () => {
