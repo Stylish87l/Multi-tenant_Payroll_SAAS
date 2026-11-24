@@ -1,6 +1,6 @@
 import express from 'express';
 import PDFDocument from 'pdfkit';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import prisma from '../config/db.js';
 import authMiddleware from '../middleware/auth.js';
 import rbac from '../middleware/rbac.js';
@@ -254,7 +254,7 @@ router.get('/bulk/:runId/pdf', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), asy
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="bulk_payslips_${safeName(runId)}.zip"`);
     res.setHeader('Cache-Control', 'private, no-store');
-    archive = archiver('zip', { zlib: { level: 5 } });
+    archive = new ZipArchive({ zlib: { level: 5 } });
     archive.on('error', (err) => logger.error('Payslip archive error', { runId, message: err.message }));
     archive.pipe(res);
 

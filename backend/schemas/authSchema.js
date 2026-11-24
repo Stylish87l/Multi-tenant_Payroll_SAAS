@@ -32,7 +32,7 @@ export const INVITABLE_ROLES = ['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'];
 export const inviteSchema = z.object({
   email,
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100),
-  role: z.enum(INVITABLE_ROLES, { errorMap: () => ({ message: 'Invalid role' }) }).default('EMPLOYEE'),
+  role: z.enum(INVITABLE_ROLES, { error: 'Invalid role' }).default('EMPLOYEE'),
   companyId: z.string().uuid().optional(),
 }).strict();
 

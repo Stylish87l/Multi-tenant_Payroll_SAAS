@@ -32,9 +32,10 @@ export const baseNotificationObject = z.object({
   // rejected with "Unsupported notification category" - a false negative
   // caused by the validator lagging behind the DB/GraphQL contract it's
   // supposed to enforce.
-  type: z.enum(['INVITE', 'PAYSLIP', 'ALERT', 'APPROVAL', 'SYSTEM', 'REMINDER'], {
-    errorMap: () => ({ message: 'Unsupported notification category' }),
-  }),
+  type: z.enum(
+    ['INVITE', 'PAYSLIP', 'ALERT', 'APPROVAL', 'SYSTEM', 'REMINDER'],
+    { error: 'Unsupported notification category' }
+  ),
 
   channel: z.enum(['EMAIL', 'SMS', 'PUSH']).default('EMAIL'),
 
@@ -44,7 +45,7 @@ export const baseNotificationObject = z.object({
     subject: z.string().min(5, 'Subject must be at least 5 characters').optional(),
     body: z.string().min(10, 'Body must be at least 10 characters'),
     link: z.string().url('Invalid link').optional(),
-    metadata: z.record(z.any()).optional(), // Extensible for GraphQL/Custom triggers
+    metadata: z.record(z.string(), z.any()).optional(), // Extensible for GraphQL/Custom triggers
   }),
 
   // Expiry Bypass Security
