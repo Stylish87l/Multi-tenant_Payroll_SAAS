@@ -23,7 +23,10 @@ const finalizedItem = {
       year: 2026,
       effectiveAt: '2026-10-01',
       PAYE: { bands: [{ limit: 500, rate: 0.05 }], reliefs: {} },
-      SSNIT: { employeeRate: 0.055, employerRate: 0.13 },
+      SSNIT: {
+        maxEarnings: 69000, minContributionBase: 587.8,
+        employeeRate: 5.5, employerRate: 13, tier1Rate: 13.5, tier2Rate: 5,
+      },
     },
   },
 };
