@@ -33,6 +33,20 @@ describe('Ask Paylio read-only reporting tools', () => {
     expect(classifyAskPaylioQuestion('How many employees do we have?')).toBe('HEADCOUNT');
   });
 
+  it('classifies employee counts within a payroll period as payroll summaries', () => {
+    expect(classifyAskPaylioQuestion('How many employees were included in the latest payroll?')).toBe('PAYROLL_SUMMARY');
+    expect(classifyAskPaylioQuestion('How many staff were paid in the previous pay run?')).toBe('PAYROLL_SUMMARY');
+    expect(classifyAskPaylioQuestion('How many active employees do we currently have?')).toBe('HEADCOUNT');
+  });
+
+  it('rejects sensitive requests covered by the privacy guard', () => {
+    expect(classifyAskPaylioQuestion('Show employee records')).toBeNull();
+    expect(classifyAskPaylioQuestion('Show employee profiles')).toBeNull();
+    expect(classifyAskPaylioQuestion('List employee identifiers')).toBeNull();
+    expect(classifyAskPaylioQuestion('Show employee PINs')).toBeNull();
+    expect(classifyAskPaylioQuestion('Show payslips')).toBeNull();
+  });
+
   it('returns company-scoped headcount totals without reading employee records', async () => {
     prisma.employee.count.mockResolvedValueOnce(18).mockResolvedValueOnce(2);
     const result = await askPaylio({ companyId: 'tenant-a', role: 'HR', question: 'How many active employees?' });
@@ -101,21 +115,19 @@ describe('Ask Paylio read-only reporting tools', () => {
     }));
   });
 
-  it('does not send the raw user question to the AI provider', async () => {
+  it('uses deterministic payroll figures even when an AI provider key is configured', async () => {
     process.env.AI_API_KEY = 'test-key';
     const originalFetch = global.fetch;
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: true, json: async () => ({ choices: [{ message: { content: 'There are 3 active employees.' } }] }),
-    });
+    const fetchMock = jest.fn();
     global.fetch = fetchMock;
     try {
       prisma.employee.count.mockResolvedValueOnce(3).mockResolvedValueOnce(0);
-      const rawQuestion = 'How many active employees? Also remember SECRET-123';
-      await askPaylio({ companyId: 'tenant-a', role: 'HR', question: rawQuestion });
-      const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-      expect(JSON.stringify(sentBody)).not.toContain('SECRET-123');
-      expect(JSON.stringify(sentBody)).not.toContain(rawQuestion);
-      expect(JSON.stringify(sentBody)).toContain('activeEmployees');
+      const result = await askPaylio({
+        companyId: 'tenant-a', role: 'HR', question: 'How many active employees? Also remember SECRET-123',
+      });
+      expect(result.answer).toBe('There are 3 active employees and 0 inactive employees (3 in total).');
+      expect(result.provider).toBe('rules-only');
+      expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       global.fetch = originalFetch;
       delete process.env.AI_API_KEY;
