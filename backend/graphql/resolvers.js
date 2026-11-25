@@ -8,6 +8,7 @@ import { REFRESH_COOKIE_NAME, getRefreshCookieOptions } from '../config/cookies.
 import { processPayout as processPayoutService } from '../services/paymentServices.js';
 import { createDraftPayrollRun } from '../services/payrollService.js';
 import { getPayrollReviewInputFingerprint } from '../services/payrollAnomalyService.js';
+import { assertPayrollReviewGate } from '../services/payrollFinalizationGate.js';
 import { createNotification } from '../services/notificationService.js';
 import { writeAudit, writeAuditSafe, actorFromCtx } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
@@ -479,25 +480,16 @@ const resolvers = {
         where: ctx.userRole === 'SUPER_ADMIN' ? { id: runId, deletedAt: null } : { id: runId, companyId: ctx.companyId, deletedAt: null },
       });
       if (!run) throw notFound('Payroll run not found');
-      const normalizedOverrideReason = typeof overrideReason === 'string' ? overrideReason.trim() : '';
-      if (overrideReason !== undefined && overrideReason !== null) {
-        if (typeof overrideReason !== 'string' || normalizedOverrideReason.length < 10 || normalizedOverrideReason.length > 1000) throw badInput('An override reason must contain between 10 and 1000 characters.');
-        if (/(?:[0-9][ -]?){9,}/.test(normalizedOverrideReason)) throw badInput('Do not include bank account numbers or government identifiers in an override reason.');
-      }
       const updated = await prisma.$transaction(async (tx) => {
         const latestReview = await tx.payrollReview.findFirst({
           where: { companyId: run.companyId, payrollRunId: runId },
           orderBy: { createdAt: 'desc' },
           include: { findings: { select: { id: true, severity: true, status: true } } },
         });
-        if (!latestReview || latestReview.status !== 'COMPLETED') throw conflict('A completed Copilot review is required before payroll can be finalized.');
         const currentFingerprint = await getPayrollReviewInputFingerprint({ companyId: run.companyId, payrollRunId: runId, client: tx });
-        if (!latestReview.inputFingerprint || latestReview.inputFingerprint !== currentFingerprint) throw conflict('The latest Copilot review is stale. Run a new review before finalizing payroll.');
-        const blockingFindings = latestReview.findings.filter((finding) =>
-          ['CRITICAL', 'HIGH'].includes(finding.severity) && !['DISMISSED', 'RESOLVED'].includes(finding.status)
-        );
-        if (blockingFindings.length && !normalizedOverrideReason) throw conflict('Payroll finalization blocked by unresolved CRITICAL/HIGH Copilot findings. Resolve them or submit an audited override reason.');
-        if (normalizedOverrideReason && !blockingFindings.length) throw badInput('An override reason is only accepted when unresolved CRITICAL or HIGH findings exist.');
+        const { blockingFindings, normalizedOverrideReason } = assertPayrollReviewGate({
+          review: latestReview, currentFingerprint, overrideReason,
+        });
         if (blockingFindings.length) {
           await writeAudit(tx, {
             actor: actorFromCtx(ctx), companyId: run.companyId,
