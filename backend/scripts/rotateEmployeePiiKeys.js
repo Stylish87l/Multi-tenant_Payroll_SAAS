@@ -58,7 +58,45 @@ const main = async () => {
     if (rows.length < batchSize) break;
   }
 
-  process.stdout.write(`Employee PII key rotation ${dryRun ? 'dry run' : 'completed'}: inspected ${inspected} row(s), rotated ${rotated} row(s).\n`);
+  let usersInspected = 0;
+  let userSecretsRotated = 0;
+  let userCursor = null;
+  for (;;) {
+    const users = userCursor
+      ? await prisma.$queryRaw`
+          SELECT "id", "two_factor_secret_encrypted"
+          FROM "users"
+          WHERE "two_factor_secret_encrypted" IS NOT NULL AND "id" > ${userCursor}
+          ORDER BY "id" ASC LIMIT ${batchSize}
+        `
+      : await prisma.$queryRaw`
+          SELECT "id", "two_factor_secret_encrypted"
+          FROM "users"
+          WHERE "two_factor_secret_encrypted" IS NOT NULL
+          ORDER BY "id" ASC LIMIT ${batchSize}
+        `;
+    if (!users.length) break;
+
+    for (const user of users) {
+      usersInspected += 1;
+      if (getEmployeePiiCiphertextKeyId(user.two_factor_secret_encrypted) === currentKeyId) continue;
+      const encryptedSecret = reencryptSensitiveValue(user.two_factor_secret_encrypted);
+      if (dryRun) {
+        userSecretsRotated += 1;
+        continue;
+      }
+      await prisma.$executeRaw`
+        UPDATE "users"
+        SET "two_factor_secret_encrypted" = ${encryptedSecret}
+        WHERE "id" = ${user.id}
+      `;
+      userSecretsRotated += 1;
+    }
+    userCursor = users[users.length - 1].id;
+    if (users.length < batchSize) break;
+  }
+
+  process.stdout.write(`Encrypted data key rotation ${dryRun ? 'dry run' : 'completed'}: Employee rows inspected ${inspected}, rotated ${rotated}; TOTP secrets inspected ${usersInspected}, rotated ${userSecretsRotated}.\n`);
 };
 
 try {
