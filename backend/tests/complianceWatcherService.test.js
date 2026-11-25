@@ -43,7 +43,7 @@ describe('official Ghana compliance source watcher', () => {
   it('establishes a baseline without raising a change notice on the first scan', async () => {
     global.fetch.mockResolvedValue(htmlResponse('<html><title>GRA PAYE</title><h1>PAYE guidance</h1><p>Official statutory guidance and tax information for employers. Please refer to the published authority guidance for further details.</p></html>'));
     const result = await scanOfficialComplianceSources({ signalFactory: () => undefined });
-    expect(result).toEqual({ sources: 1, baseline: 1, notices: 0, unchanged: 0, errors: 0 });
+    expect(result).toEqual({ sources: 1, checked: 1, baseline: 1, notices: 0, unchanged: 0, errors: 0 });
     expect(prisma.complianceSource.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'gra-paye' },
       data: expect.objectContaining({ lastStatus: 'BASELINE', lastContentHash: expect.stringMatching(/^[a-f0-9]{64}$/) }),
@@ -86,6 +86,17 @@ describe('official Ghana compliance source watcher', () => {
       headers: expect.objectContaining({ 'If-None-Match': '"v1"' }),
       redirect: 'error',
     }));
+  });
+
+  it('skips a source until its configured polling interval elapses', async () => {
+    prisma.complianceSource.findMany.mockResolvedValue([{
+      ...source,
+      lastCheckedAt: new Date(),
+      pollIntervalMinutes: 360,
+    }]);
+    const result = await scanOfficialComplianceSources({ signalFactory: () => undefined });
+    expect(result).toEqual({ sources: 1, checked: 0, baseline: 0, notices: 0, unchanged: 0, errors: 0 });
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('never fetches a source URL outside the built-in official allowlist', async () => {
