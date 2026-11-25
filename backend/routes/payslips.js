@@ -180,8 +180,11 @@ const findPayslip = async (req, itemId) => {
 
 
 // Employee self-service explanation. This endpoint intentionally selects no employee PII.
-router.get('/item/:itemId/explanation', rbac(['EMPLOYEE']), async (req, res) => {
+const noStorePayslipResponse = (_req, res, next) => {
   res.setHeader('Cache-Control', 'private, no-store');
+  next();
+};
+router.get('/item/:itemId/explanation', noStorePayslipResponse, rbac(['EMPLOYEE']), async (req, res) => {
   if (req.userRole !== 'EMPLOYEE') return res.status(403).json({ error: 'Employee access only.' });
   try {
     const where = buildPayslipItemWhere({
