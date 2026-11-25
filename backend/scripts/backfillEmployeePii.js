@@ -11,6 +11,17 @@ const dryRun = process.argv.includes('--dry-run');
 const main = async () => {
   validateEmployeePiiEncryptionConfig();
   let processed = 0;
+  if (dryRun) {
+    const total = await prisma.$queryRaw`
+      SELECT COUNT(*)::int AS "count"
+      FROM "employees"
+      WHERE "bankAccount" IS NOT NULL
+         OR "ssnitNumber" IS NOT NULL
+         OR "ghanaCardPin" IS NOT NULL
+    `;
+    process.stdout.write(`Employee PII backfill dry run: ${Number(total[0]?.count || 0)} row(s) require migration.\\n`);
+    return;
+  }
 
   for (;;) {
     const rows = await prisma.$queryRaw`
@@ -32,10 +43,6 @@ const main = async () => {
       LIMIT ${batchSize}
     `;
     if (!rows.length) break;
-    if (dryRun) {
-      processed += rows.length;
-      break;
-    }
 
     await prisma.$transaction(async (tx) => {
       for (const row of rows) {
