@@ -1,61 +1,51 @@
-/**
- * Fail-closed live payout configuration.
- *
- * Credentials alone must never activate money movement. Hubtel live payouts require
- * verified merchant credentials, bank-account verification, and trusted callback ingress.
- */
-export class PayoutStateError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'PayoutStateError';
-    this.expose = true;
-  }
-}
+import { describe, test, expect } from '@jest/globals';
+import { resolvePayoutMode } from '../utils/paymentConfiguration.js';
 
-export const resolvePayoutMode = ({ provider, employee, env = process.env }) => {
-  if (!['hubtel', 'paystack'].includes(provider)) {
-    throw new PayoutStateError(`Unsupported payment provider: ${provider}`);
-  }
-
-  const credentialsPresent = provider === 'paystack'
-    ? Boolean(env.PAYSTACK_SECRET_KEY)
-    : Boolean(
-      env.HUBTEL_API_ID && env.HUBTEL_API_KEY && env.HUBTEL_COLLECTION_ACCOUNT
-      && env.HUBTEL_DISBURSEMENT_ACCOUNT && env.HUBTEL_PAYOUT_CALLBACK_URL
-    );
-
-  if (!credentialsPresent) {
-    if (['development', 'test'].includes(env.NODE_ENV)) return 'SIMULATION';
-    throw new PayoutStateError(`Payment provider "${provider}" is not configured; refusing to simulate outside development/test.`);
-  }
-
-  if (env.ENABLE_LIVE_PAYOUTS !== 'true') {
-    throw new PayoutStateError('Live payouts are disabled. Enable them only after completing provider verification and a successful sandbox reconciliation.');
-  }
-
-  if (provider === 'paystack') {
-    if (env.PAYSTACK_TRANSFER_CONFIGURATION_VERIFIED !== 'true') {
-      throw new PayoutStateError('Paystack transfers are blocked until the transfer configuration and bank-code mapping have been verified.');
-    }
-    if (!employee?.bankCode) {
-      throw new PayoutStateError('Paystack payout requires a verified bank code on the employee record.');
-    }
-  }
-
-  if (provider === 'hubtel') {
-    if (env.HUBTEL_TRANSFER_CONTRACT_VERIFIED !== 'true') {
-      throw new PayoutStateError('Hubtel transfers are blocked until the current Send to Bank contract has been verified in the Hubtel sandbox.');
-    }
-    let callbackUrl;
-    try { callbackUrl = new URL(env.HUBTEL_PAYOUT_CALLBACK_URL); } catch { throw new PayoutStateError('HUBTEL_PAYOUT_CALLBACK_URL must be a valid HTTPS URL.'); }
-    if (callbackUrl.protocol !== 'https:') throw new PayoutStateError('HUBTEL_PAYOUT_CALLBACK_URL must use HTTPS.');
-    if (env.HUBTEL_CALLBACK_INGRESS_ALLOWLIST_VERIFIED !== 'true') {
-      throw new PayoutStateError('Hubtel payouts are blocked until the callback ingress is restricted to Hubtel source IPs and the trusted proxy chain is verified.');
-    }
-    if (!employee?.bankCode || !employee?.bankAccount || !employee?.bankName || !employee?.name) {
-      throw new PayoutStateError('Hubtel bank payouts require a bank code, bank name, account number and employee name.');
-    }
-  }
-
-  return 'LIVE';
+const paystackEnv = {
+  NODE_ENV: 'production', PAYSTACK_SECRET_KEY: 'test-key', ENABLE_LIVE_PAYOUTS: 'true',
+  PAYSTACK_TRANSFER_CONFIGURATION_VERIFIED: 'true',
 };
+const hubtelEnv = {
+  NODE_ENV: 'production', HUBTEL_API_ID: 'api-id', HUBTEL_API_KEY: 'api-key',
+  HUBTEL_COLLECTION_ACCOUNT: 'collection-account', HUBTEL_DISBURSEMENT_ACCOUNT: 'disbursement-account',
+  HUBTEL_PAYOUT_CALLBACK_URL: 'https://api.example.test/api/webhooks/hubtel',
+  ENABLE_LIVE_PAYOUTS: 'true', HUBTEL_TRANSFER_CONTRACT_VERIFIED: 'true',
+  HUBTEL_CALLBACK_INGRESS_ALLOWLIST_VERIFIED: 'true',
+};
+const employee = { name: 'Kwame Asante', bankCode: '300304', bankName: 'GCB BANK LIMITED', bankAccount: '0012345678' };
+
+describe('live payout safety gate', () => {
+  test('allows simulation only outside production when credentials are absent', () => {
+    expect(resolvePayoutMode({ provider: 'hubtel', employee: {}, env: { NODE_ENV: 'test' } })).toBe('SIMULATION');
+  });
+  test('refuses production simulation when provider credentials are missing', () => {
+    expect(() => resolvePayoutMode({ provider: 'hubtel', employee: {}, env: { NODE_ENV: 'production' } }))
+      .toThrow(/refusing to simulate/);
+  });
+  test('requires explicit global opt-in even when credentials exist', () => {
+    expect(() => resolvePayoutMode({ provider: 'hubtel', employee, env: { ...hubtelEnv, ENABLE_LIVE_PAYOUTS: 'false' } }))
+      .toThrow(/Live payouts are disabled/);
+  });
+  test('requires the current Hubtel Send to Bank contract verification', () => {
+    expect(() => resolvePayoutMode({ provider: 'hubtel', employee, env: { ...hubtelEnv, HUBTEL_TRANSFER_CONTRACT_VERIFIED: 'false' } }))
+      .toThrow(/contract/);
+  });
+  test('requires trusted callback ingress verification', () => {
+    expect(() => resolvePayoutMode({ provider: 'hubtel', employee, env: { ...hubtelEnv, HUBTEL_CALLBACK_INGRESS_ALLOWLIST_VERIFIED: 'false' } }))
+      .toThrow(/callback ingress/);
+  });
+  test('requires an HTTPS callback URL and complete employee bank details', () => {
+    expect(() => resolvePayoutMode({ provider: 'hubtel', employee, env: { ...hubtelEnv, HUBTEL_PAYOUT_CALLBACK_URL: 'http://example.test/hook' } }))
+      .toThrow(/HTTPS/);
+    expect(() => resolvePayoutMode({ provider: 'hubtel', employee: { ...employee, bankCode: null }, env: hubtelEnv }))
+      .toThrow(/bank code/);
+  });
+  test('enables Hubtel live mode only when every gate is satisfied', () => {
+    expect(resolvePayoutMode({ provider: 'hubtel', employee, env: hubtelEnv })).toBe('LIVE');
+  });
+  test('preserves Paystack bank-code verification', () => {
+    expect(() => resolvePayoutMode({ provider: 'paystack', employee: { bankName: 'GCB Bank' }, env: paystackEnv }))
+      .toThrow(/bank code/);
+    expect(resolvePayoutMode({ provider: 'paystack', employee: { bankCode: 'GH-GCB' }, env: paystackEnv })).toBe('LIVE');
+  });
+});
