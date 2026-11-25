@@ -146,10 +146,15 @@ const MyPayslips = () => {
                     <p className="mt-2 text-xs text-slate-500">Taxable income recorded for PAYE: GHS {explanations[item.id].taxableIncomeGhs}</p>
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Paid separately by your employer</h4>
+                    <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Employer contribution</h4>
                     <div className="mt-2 space-y-2">
                       {explanations[item.id].employerContributions.map((line) => <div key={line.label} className="flex justify-between gap-3 text-xs"><span className="text-slate-600 dark:text-slate-300">{line.label}</span><span className="font-medium tabular-nums text-slate-900 dark:text-white">GHS {line.amountGhs}</span></div>)}
                     </div>
+                    <h4 className="mt-3 text-xs font-bold uppercase tracking-wide text-slate-500">SSNIT remittance breakdown</h4>
+                    <div className="mt-2 space-y-2">
+                      {explanations[item.id].ssnitRemittances.map((line) => <div key={line.label} className="flex justify-between gap-3 text-xs"><span className="text-slate-600 dark:text-slate-300">{line.label}</span><span className="font-medium tabular-nums text-slate-900 dark:text-white">GHS {line.amountGhs}</span></div>)}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Tier 1 and Tier 2 are remittance categories, not additional deductions from your take-home pay.</p>
                   </div>
                   <div className="flex justify-between rounded-lg bg-primary/10 p-3 text-sm font-bold text-slate-900 dark:text-white"><span>Your recorded take-home pay</span><span>GHS {explanations[item.id].netPayGhs}</span></div>
                   <div className="space-y-1 text-xs text-slate-500">
