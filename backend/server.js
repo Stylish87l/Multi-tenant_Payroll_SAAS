@@ -35,6 +35,7 @@ import tenantBrandingRoutes from './routes/tenantBranding.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import payrollReviewRoutes from './routes/payrollReviewRoutes.js';
 import askPaylioRoutes from './routes/askPaylioRoutes.js';
+import complianceRoutes from './routes/complianceRoutes.js';
 import webhookRoutes from './routes/webhooks.js';
 import typeDefs from './graphql/typeDefs.js';
 import resolvers from './graphql/resolvers.js';
@@ -159,6 +160,7 @@ app.use('/api/payslips', authMiddleware, payslipRoutes);
 app.use('/api/tenants', authMiddleware, tenantRoutes);
 app.use('/api/companies/:companyId/payroll-reviews', authMiddleware, payrollReviewRoutes);
 app.use('/api/companies/:companyId/ask-paylio', authMiddleware, askPaylioRoutes);
+app.use('/api/companies/:companyId/compliance', authMiddleware, complianceRoutes);
 app.use('/api/companies', authMiddleware, tenantBrandingRoutes);
 app.use('/api/notifications', authMiddleware, notificationRoutes);
 // FIXED: users router was mounted behind authMiddleware, so POST /accept-invite (public by design)
