@@ -67,6 +67,37 @@ describe('Ask Paylio read-only reporting tools', () => {
     }));
   });
 
+  it('returns payroll status counts scoped to the selected company', async () => {
+    prisma.payrollRun.groupBy.mockResolvedValue([
+      { status: 'DRAFT', _count: { _all: 2 } },
+      { status: 'FINALIZED', _count: { _all: 4 } },
+    ]);
+    const result = await askPaylio({ companyId: 'tenant-b', role: 'ADMIN', question: 'How many payroll runs are drafts or finalized?' });
+    expect(result.data.counts).toEqual({ DRAFT: 2, FINALIZED: 4 });
+    expect(prisma.payrollRun.groupBy).toHaveBeenCalledWith(expect.objectContaining({
+      where: { companyId: 'tenant-b', deletedAt: null },
+    }));
+  });
+
+  it('returns at most six finalized periods with aggregate trend values', async () => {
+    prisma.payrollRun.findMany.mockResolvedValue([
+      { id: 'run-2', month: '2026-10' }, { id: 'run-1', month: '2026-09' },
+    ]);
+    prisma.payrollItem.groupBy.mockResolvedValue([
+      { payrollRunId: 'run-2', _count: { _all: 2 }, _sum: { grossSalary: 4000, netPay: 3200, payeTax: 300 } },
+      { payrollRunId: 'run-1', _count: { _all: 2 }, _sum: { grossSalary: 3800, netPay: 3100, payeTax: 280 } },
+    ]);
+    const result = await askPaylio({ companyId: 'tenant-b', role: 'ACCOUNTANT', question: 'Show payroll trends over time' });
+    expect(result.data.periods).toHaveLength(2);
+    expect(prisma.payrollRun.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { companyId: 'tenant-b', status: 'FINALIZED', deletedAt: null },
+      take: 6,
+    }));
+    expect(prisma.payrollItem.groupBy).toHaveBeenCalledWith(expect.objectContaining({
+      where: { payrollRunId: { in: ['run-2', 'run-1'] }, deletedAt: null },
+    }));
+  });
+
   it('does not send the raw user question to the AI provider', async () => {
     process.env.AI_API_KEY = 'test-key';
     const originalFetch = global.fetch;
