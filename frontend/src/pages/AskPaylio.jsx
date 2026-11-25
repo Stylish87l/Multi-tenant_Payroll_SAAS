@@ -93,7 +93,7 @@ const AskPaylio = () => {
       {busy && <Card className="p-5 text-sm text-slate-500">Checking approved company reports...</Card>}
       {answer && (
         <Card className="p-5 md:p-7 space-y-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white"><Sparkles size={17} className="text-primary" /> Paylio's answer</div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white"><Sparkles size={17} className="text-primary" /> Paylio response</div>
           <p className="text-sm leading-7 text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{answer.answer}</p>
           <div className="flex items-center gap-2 text-xs text-slate-500"><ShieldCheck size={14} /> Read-only result · {answer.provider || 'rules-only'}{answer.intent ? ` · ${answer.intent.toLowerCase().replaceAll('_', ' ')}` : ''}</div>
           {answer.data && <details className="border-t border-slate-200 dark:border-white/10 pt-3">
@@ -102,7 +102,7 @@ const AskPaylio = () => {
           </details>}
         </Card>
       )}
-      <p className="text-xs text-slate-500">Ask Paylio is advisory. Payroll calculations, statutory amounts, approvals and payments remain controlled by Paylio's existing deterministic workflows and authorized users.</p>
+      <p className="text-xs text-slate-500">Ask Paylio is advisory. Payroll calculations, statutory amounts, approvals and payments remain controlled by Paylio deterministic workflows and authorized users.</p>
     </div>
   );
 };
