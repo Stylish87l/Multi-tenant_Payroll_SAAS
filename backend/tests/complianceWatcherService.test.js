@@ -41,7 +41,7 @@ describe('official Ghana compliance source watcher', () => {
   });
 
   it('establishes a baseline without raising a change notice on the first scan', async () => {
-    global.fetch.mockResolvedValue(htmlResponse('<html><title>GRA PAYE</title><h1>PAYE guidance</h1><p>Official statutory guidance and tax information.</p></html>'));
+    global.fetch.mockResolvedValue(htmlResponse('<html><title>GRA PAYE</title><h1>PAYE guidance</h1><p>Official statutory guidance and tax information for employers. Please refer to the published authority guidance for further details.</p></html>'));
     const result = await scanOfficialComplianceSources();
     expect(result).toEqual({ sources: 1, baseline: 1, notices: 0, unchanged: 0, errors: 0 });
     expect(prisma.complianceSource.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -57,7 +57,7 @@ describe('official Ghana compliance source watcher', () => {
       complianceSource: { update: jest.fn().mockResolvedValue({}) },
     };
     prisma.$transaction.mockImplementation(async (callback) => callback(tx));
-    global.fetch.mockResolvedValue(htmlResponse('<html><h1>New PAYE notice</h1><p>Official tax guidance has changed for employers and payroll operators.</p></html>', { etag: '"v2"' }));
+    global.fetch.mockResolvedValue(htmlResponse('<html><h1>New PAYE notice</h1><p>Official tax guidance has changed for employers and payroll operators. Further information is available on the authority website.</p></html>', { etag: '"v2"' }));
 
     const result = await scanOfficialComplianceSources();
     expect(result.notices).toBe(1);
