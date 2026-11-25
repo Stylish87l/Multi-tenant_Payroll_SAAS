@@ -108,8 +108,11 @@ export const encryptEmployeeWriteData = (data, { markVersion = false } = {}) => 
   let sensitiveFieldChanged = false;
   for (const field of SENSITIVE_FIELDS) {
     if (!Object.prototype.hasOwnProperty.call(next, field)) continue;
-    const value = next[field];
-    if (value === undefined) { delete next[field]; continue; }
+    const inputValue = next[field];
+    if (inputValue === undefined) { delete next[field]; continue; }
+    const value = inputValue && typeof inputValue === 'object' && !Array.isArray(inputValue)
+      && Object.keys(inputValue).length === 1 && Object.hasOwn(inputValue, 'set')
+      ? inputValue.set : inputValue;
     next[field] = encryptSensitiveValue(value);
     sensitiveFieldChanged = true;
     if (field === 'ssnitNumber') next.ssnitNumberHash = createEmployeePiiBlindIndex(value, field);
