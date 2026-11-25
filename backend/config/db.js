@@ -96,6 +96,14 @@ export const assertDataEncryptionReady = async () => {
   if (Number(invalidUserSecrets[0]?.count || 0) !== 0) {
     throw new Error('Two-factor secrets are not fully encrypted. Refusing to start the API or worker.');
   }
+  const invalidImportPreviews = await basePrisma.$queryRaw`
+    SELECT COUNT(*)::int AS "count"
+    FROM "employee_import_previews"
+    WHERE "payload_encrypted" NOT LIKE 'enc:v1:%'
+  `;
+  if (Number(invalidImportPreviews[0]?.count || 0) !== 0) {
+    throw new Error('Employee import preview payloads are not encrypted. Refusing to start the API or worker.');
+  }
   return true;
 };
 

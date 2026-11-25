@@ -103,7 +103,50 @@ const main = async () => {
     if (users.length < batchSize) break;
   }
 
-  process.stdout.write(`Encrypted data key rotation ${dryRun ? 'dry run' : 'completed'}: Employee rows inspected ${inspected}, rotated ${rotated}; TOTP secrets inspected ${usersInspected}, rotated ${userSecretsRotated}.\n`);
+  let importPreviewsInspected = 0;
+  let importPreviewsRotated = 0;
+  const previewTable = await prisma.$queryRaw`
+    SELECT COUNT(*)::int AS "count"
+    FROM information_schema.tables
+    WHERE table_schema = current_schema()
+      AND table_name = 'employee_import_previews'
+  `;
+  let previewCursor = null;
+  for (; Number(previewTable[0]?.count || 0) === 1;) {
+    const previews = previewCursor
+      ? await prisma.$queryRaw`
+          SELECT "id", "payload_encrypted"
+          FROM "employee_import_previews"
+          WHERE "id" > ${previewCursor}
+          ORDER BY "id" ASC LIMIT ${batchSize}
+        `
+      : await prisma.$queryRaw`
+          SELECT "id", "payload_encrypted"
+          FROM "employee_import_previews"
+          ORDER BY "id" ASC LIMIT ${batchSize}
+        `;
+    if (!previews.length) break;
+
+    for (const preview of previews) {
+      importPreviewsInspected += 1;
+      if (getEmployeePiiCiphertextKeyId(preview.payload_encrypted) === currentKeyId) continue;
+      const encryptedPayload = reencryptSensitiveValue(preview.payload_encrypted);
+      if (dryRun) {
+        importPreviewsRotated += 1;
+        continue;
+      }
+      await prisma.$executeRaw`
+        UPDATE "employee_import_previews"
+        SET "payload_encrypted" = ${encryptedPayload}
+        WHERE "id" = ${preview.id}
+      `;
+      importPreviewsRotated += 1;
+    }
+    previewCursor = previews[previews.length - 1].id;
+    if (previews.length < batchSize) break;
+  }
+
+  process.stdout.write(`Encrypted data key rotation ${dryRun ? 'dry run' : 'completed'}: Employee rows inspected ${inspected}, rotated ${rotated}; TOTP secrets inspected ${usersInspected}, rotated ${userSecretsRotated}; employee import previews inspected ${importPreviewsInspected}, rotated ${importPreviewsRotated}.\n`);
 };
 
 try {

@@ -101,6 +101,7 @@ const run = async () => {
   logger.info('Paylio background worker started');
   let lastReconcileHour = new Date().toISOString().slice(0, 13);
   let lastHealthReport = 0;
+  let lastImportPreviewCleanup = 0;
   while (!shuttingDown) {
     try {
       if (Date.now() - lastHealthReport >= 5 * 60 * 1000) {
@@ -110,6 +111,15 @@ const run = async () => {
         if (health.failed > 0 || health.pending > 50) logger.warn('Background job queue requires attention', health);
         else logger.info('Background job queue health', health);
         lastHealthReport = Date.now();
+      }
+      if (Date.now() - lastImportPreviewCleanup >= 5 * 60 * 1000) {
+        const expired = await prisma.employeeImportPreview.deleteMany({
+          where: { status: 'PREVIEWED', expiresAt: { lt: new Date() } },
+        });
+        if (expired.count > 0) {
+          logger.info('Expired encrypted employee import previews purged', { count: expired.count });
+        }
+        lastImportPreviewCleanup = Date.now();
       }
       const hour = new Date().toISOString().slice(0, 13);
       if (hour !== lastReconcileHour) {

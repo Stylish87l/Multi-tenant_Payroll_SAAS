@@ -67,6 +67,7 @@ model Company {
   payrollReviews   PayrollReview[]
   payrollReviewFindings PayrollReviewFinding[]
   payrollReviewActions PayrollReviewAction[]
+  employeeImportPreviews EmployeeImportPreview[]
 
   @@map("companies")
 }
@@ -98,6 +99,7 @@ model User {
   notificationPreference NotificationPreference?
   requestedPayrollReviews PayrollReview[] @relation("PayrollReviewRequester")
   payrollReviewActions PayrollReviewAction[] @relation("PayrollReviewActor")
+  employeeImportPreviews EmployeeImportPreview[]
 
   @@index([companyId])
   @@map("users")
@@ -423,6 +425,22 @@ model PayrollReviewAction {
   @@index([companyId, createdAt(sort: Desc)])
   @@index([findingId, createdAt(sort: Desc)])
   @@map("payroll_review_actions")
+}
+
+model EmployeeImportPreview {
+  id              String   @id @default(uuid())
+  companyId       String
+  userId          String
+  payloadEncrypted String  @map("payload_encrypted") @db.Text
+  rowCount        Int      @map("row_count")
+  status          String   @default("PREVIEWED")
+  expiresAt       DateTime @map("expires_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId, status, expiresAt], map: "employee_import_previews_scope_idx")
+  @@map("employee_import_previews")
 }
 
 enum Role {
