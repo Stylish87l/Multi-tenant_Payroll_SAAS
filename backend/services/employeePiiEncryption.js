@@ -228,11 +228,12 @@ export const createEmployeePiiEncryptionExtension = () => ({
     $allModels: {
       async $allOperations({ model, operation, args, query }) {
         const writeOperations = ['create', 'update', 'updateMany', 'createMany', 'createManyAndReturn', 'updateManyAndReturn', 'upsert'];
-        if (model !== 'Employee' && writeOperations.includes(operation) && hasNestedEmployeeWrite(args?.data)) {
+        const isEmployeeModel = String(model || '').toLowerCase() === 'employee';
+        if (!isEmployeeModel && writeOperations.includes(operation) && hasNestedEmployeeWrite(args?.data)) {
           throw new Error('Nested Employee writes are disabled. Use the Employee model directly so PII is encrypted.');
         }
-        if (model === 'Employee') {
-          if (args.where) args.where = model === 'Employee' ? encryptEmployeeWhere(args.where) : encryptNestedEmployeeWhere(args.where);
+        if (isEmployeeModel) {
+          if (args.where) args.where = encryptEmployeeWhere(args.where);
           if (operation === 'create') args.data = encryptEmployeeWriteData(args.data, { markVersion: true });
           else if (operation === 'createMany' || operation === 'createManyAndReturn') args.data = encryptMany(args.data, { markVersion: true });
           else if (operation === 'upsert') {
@@ -241,6 +242,8 @@ export const createEmployeePiiEncryptionExtension = () => ({
           } else if (['update', 'updateMany', 'updateManyAndReturn'].includes(operation)) {
             args.data = encryptEmployeeWriteData(args.data);
           }
+        } else if (args.where) {
+          args.where = encryptNestedEmployeeWhere(args.where);
         }
         const result = await query(args);
         return decryptEmployeeRecords(result);
