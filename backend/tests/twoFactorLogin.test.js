@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { clearFailures } from '../utils/loginThrottle.js';
 
 const prisma = {
   user: { findUnique: jest.fn() },
@@ -6,9 +7,9 @@ const prisma = {
   auditLog: { create: jest.fn() },
   $transaction: jest.fn(),
 };
+const tx = { auditLog: { create: jest.fn() } };
 const bcryptCompare = jest.fn();
 const verifyUserTwoFactorCode = jest.fn();
-const tx = { auditLog: { create: jest.fn() } };
 
 jest.unstable_mockModule('../config/db.js', () => ({
   default: prisma,
@@ -30,7 +31,7 @@ const { default: resolvers } = await import('../graphql/resolvers.js');
 const login = resolvers.Mutation.login;
 const user = {
   id: 'user-1',
-  email: 'admin@example.test',
+  email: 'two-factor-login@example.test',
   password: 'password-hash',
   status: 'ACTIVE',
   deletedAt: null,
@@ -39,9 +40,11 @@ const user = {
   twoFactorEnabled: true,
   twoFactorSecretEncrypted: 'enc:v1:test-key:placeholder',
 };
+const context = { req: { ip: '127.0.0.1', get: () => 'test-agent' } };
 
 describe('GraphQL login second-factor enforcement', () => {
   beforeEach(() => {
+    clearFailures(user.email);
     prisma.user.findUnique.mockResolvedValue(user);
     prisma.$transaction.mockImplementation(async (callback) => callback(tx));
     bcryptCompare.mockResolvedValue(true);
@@ -50,12 +53,13 @@ describe('GraphQL login second-factor enforcement', () => {
     tx.auditLog.create.mockReset();
   });
 
-  afterEach(() => jest.clearAllMocks());
-
-  const ctx = { req: { ip: '127.0.0.1', get: () => 'test-agent' } };
+  afterEach(() => {
+    clearFailures(user.email);
+    jest.clearAllMocks();
+  });
 
   it('does not issue a session after password verification when a second factor is required', async () => {
-    await expect(login(null, { email: user.email, password: 'correct-password' }, ctx))
+    await expect(login(null, { email: user.email, password: 'correct-password' }, context))
       .rejects.toMatchObject({ code: 'TWO_FACTOR_REQUIRED' });
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.refreshToken.create).not.toHaveBeenCalled();
@@ -67,7 +71,7 @@ describe('GraphQL login second-factor enforcement', () => {
       email: user.email,
       password: 'correct-password',
       twoFactorCode: '000000',
-    }, ctx)).rejects.toMatchObject({ code: 'INVALID_TWO_FACTOR_CODE' });
+    }, context)).rejects.toMatchObject({ code: 'INVALID_TWO_FACTOR_CODE' });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.refreshToken.create).not.toHaveBeenCalled();
   });
