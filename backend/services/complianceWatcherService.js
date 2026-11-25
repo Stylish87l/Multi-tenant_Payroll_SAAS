@@ -133,8 +133,8 @@ const scanSource = async (source) => {
       return { baseline: 0, notices: 0, unchanged: 1, errors: 0 };
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.complianceNotice.createMany({
+    const createdNotices = await prisma.$transaction(async (tx) => {
+      const created = await tx.complianceNotice.createMany({
         data: [{
           sourceId: source.id,
           title,
@@ -157,8 +157,9 @@ const scanSource = async (source) => {
           lastError: null,
         },
       });
+      return created.count;
     });
-    return { baseline: 0, notices: 1, unchanged: 0, errors: 0 };
+    return { baseline: 0, notices: createdNotices, unchanged: createdNotices === 0 ? 1 : 0, errors: 0 };
   } catch (error) {
     const message = String(error?.message || 'Source fetch failed').slice(0, 500);
     await updateSourceStatus(source.id, { lastStatus: 'ERROR', lastError: message });
