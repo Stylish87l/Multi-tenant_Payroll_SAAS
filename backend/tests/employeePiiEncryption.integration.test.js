@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { describe, expect, it } from '@jest/globals';
 import prisma from '../config/db.js';
 
