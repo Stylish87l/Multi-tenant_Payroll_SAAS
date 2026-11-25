@@ -19,7 +19,7 @@ Configure these in the backend secret manager. Do not commit actual values:
 - `DATA_ENCRYPTION_INDEX_KEY`: a separate base64-encoded 32-byte HMAC key; it must not equal the current or any previous AES key
 - `DATA_ENCRYPTION_PREVIOUS_KEYS`: optional JSON object mapping old key IDs to base64-encoded 32-byte keys while rotating
 
-Production startup refuses to serve traffic unless the keys validate and `EMPLOYEE_PII_ENCRYPTION_READY=true`. The server and worker also verify that the migration is applied, every employee row has encryption version 1, and every non-null sensitive field has the ciphertext envelope. Test mode uses test-only fallback keys; production and development do not.
+Production startup refuses to serve traffic unless the keys validate and `EMPLOYEE_PII_ENCRYPTION_READY=true`. The server and worker also verify that the employee migration is applied, every employee row has encryption version 1, every non-null employee sensitive field has the ciphertext envelope, and any stored TOTP secret uses the ciphertext envelope. When deploying the TOTP feature, apply migration `20261125040000_two_factor_auth` before starting the new server or worker. Test mode uses test-only fallback keys; production and development do not.
 
 ## Initial production rollout
 
@@ -42,10 +42,10 @@ AES key rotation is supported with key IDs:
 
 1. Set a new `DATA_ENCRYPTION_KEY_ID` and `DATA_ENCRYPTION_KEY`.
 2. Add the old key ID and old base64 key to `DATA_ENCRYPTION_PREVIOUS_KEYS` so existing ciphertext remains readable.
-3. Run `npm run employee-pii:rotate` (or `npm run employee-pii:rotate -- --dry-run`) to re-encrypt all stored values with the current key.
+3. Run `npm run employee-pii:rotate` (or `npm run employee-pii:rotate -- --dry-run`) to re-encrypt employee fields and any stored TOTP authenticator secrets with the current key.
 4. Verify the rotation, then remove old keys from `DATA_ENCRYPTION_PREVIOUS_KEYS`.
 
-The blind-index key is deliberately separate and stable. This rotation command does not rotate `DATA_ENCRYPTION_INDEX_KEY`; changing it requires a dedicated maintenance re-index operation and unique-index validation.
+The same AES key protects TOTP authenticator secrets. Keep previous keys until both employee fields and TOTP secrets have been rotated. The blind-index key is deliberately separate and stable. This rotation command does not rotate `DATA_ENCRYPTION_INDEX_KEY`; changing it requires a dedicated maintenance re-index operation and unique-index validation.
 
 ## Implementation boundaries
 

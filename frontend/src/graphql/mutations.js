@@ -8,8 +8,8 @@ import { EMPLOYEE_CORE_FIELDS, EMPLOYEE_FINANCIAL_FIELDS, EMPLOYEE_RELIEF_FIELDS
  * apolloClient.js's doRefresh() is the only supported client entry point.
  */
 export const LOGIN_MUTATION = gql`
-  mutation Login($email: String!, $password: String!) {
-    login(email: $email, password: $password) {
+  mutation Login($email: String!, $password: String!, $twoFactorCode: String) {
+    login(email: $email, password: $password, twoFactorCode: $twoFactorCode) {
       accessToken
       companyId
       user {

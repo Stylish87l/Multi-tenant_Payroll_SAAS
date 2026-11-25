@@ -6,12 +6,11 @@ import { Bell, Smartphone, Mail, Palette } from 'lucide-react';
 import { GET_PREFERENCES } from '../graphql/queries';
 import { UPDATE_PREFERENCES } from '../graphql/mutations';
 import Card from '../components/Card';
+import TwoFactorSecurity from '../components/TwoFactorSecurity';
 import Loader from '../components/Loader';
 
 const DEBOUNCE_MS = 400;
 
-// Two-factor auth was removed from this page: the toggle only flipped a database flag; no authenticator
-// flow exists, so it gave users false assurance. Re-add when TOTP is actually implemented.
 const SECTIONS = [
   {
     title: 'Alert channels',
@@ -91,7 +90,7 @@ const Settings = () => {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Preferences</h1>
-          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Choose how Paylio contacts you.</p>
+          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Manage your alerts and account security.</p>
         </div>
         <AnimatePresence>
           {isSaving && (
@@ -109,6 +108,7 @@ const Settings = () => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="md:col-span-2"><TwoFactorSecurity /></div>
         {SECTIONS.map((section) => (
           <div key={section.title} className="space-y-4">
             <div className="flex items-center space-x-2 px-1">

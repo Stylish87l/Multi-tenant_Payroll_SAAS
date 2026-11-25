@@ -9,6 +9,7 @@ import { processPayout as processPayoutService } from '../services/paymentServic
 import { createDraftPayrollRun } from '../services/payrollService.js';
 import { getPayrollReviewInputFingerprint } from '../services/payrollAnomalyService.js';
 import { assertPayrollReviewGate } from '../services/payrollFinalizationGate.js';
+import { verifyUserTwoFactorCode } from '../services/twoFactorService.js';
 import { createNotification } from '../services/notificationService.js';
 import { writeAudit, writeAuditSafe, actorFromCtx } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
@@ -350,7 +351,7 @@ const resolvers = {
       }
     },
 
-    login: async (_, { email, password }, ctx) => {
+    login: async (_, { email, password, twoFactorCode }, ctx) => {
       const normalizedEmail = String(email || '').toLowerCase().trim();
       const invalid = () => new AppError('Invalid email or password', { status: 401, code: 'UNAUTHENTICATED_LOGIN' });
 
@@ -370,6 +371,36 @@ const resolvers = {
       }
       if (user.status !== 'ACTIVE') {
         throw new AppError(user.status === 'PENDING' ? 'Please accept your invitation first' : 'Account is suspended', { status: 403, code: 'FORBIDDEN' });
+      }
+
+      if (user.twoFactorEnabled) {
+        if (typeof twoFactorCode !== 'string' || !twoFactorCode.trim()) {
+          throw new AppError('Enter your authenticator or recovery code to continue.', { status: 401, code: 'TWO_FACTOR_REQUIRED' });
+        }
+        const verification = await prisma.$transaction(async (tx) => {
+          const result = await verifyUserTwoFactorCode({ tx, user, code: twoFactorCode });
+          if (result.valid && result.method === 'recovery_code') {
+            await tx.auditLog.create({
+              data: {
+                userId: user.id,
+                companyId: user.companyId,
+                action: 'TWO_FACTOR_RECOVERY_CODE_USED',
+                details: { method: 'recovery_code', source: 'login' },
+                ipAddress: ctx.req?.ip || null,
+                userAgent: ctx.req?.get?.('User-Agent') || null,
+                resourceType: 'User',
+                resourceId: user.id,
+                performedBy: 'user',
+              },
+            });
+          }
+          return result;
+        });
+        if (!verification.valid) {
+          recordFailure(normalizedEmail);
+          logger.warn('Login failed: invalid two-factor code', { ip: ctx.req?.ip });
+          throw new AppError('The authenticator or recovery code is invalid or already used.', { status: 401, code: 'INVALID_TWO_FACTOR_CODE' });
+        }
       }
 
       clearFailures(normalizedEmail);

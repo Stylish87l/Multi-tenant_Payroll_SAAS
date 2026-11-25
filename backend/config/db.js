@@ -12,8 +12,8 @@ const { PrismaClient, Prisma } = pkgPrisma;
 export { Prisma };
 
 /**
- * Production must not serve employee reads/writes until the maintenance backfill has
- * encrypted existing bank accounts, SSNIT numbers and Ghana Card PINs.
+ * Production must not serve encrypted employee or account-security data until the
+ * maintenance backfill has encrypted existing employee sensitive fields.
  * The one-off backfill command opts into a restricted startup mode.
  */
 if (process.env.NODE_ENV === 'production') {
@@ -65,7 +65,7 @@ basePrisma.$on('error', (e) => logger.error('Prisma Error', { message: e.message
 
 const prisma = basePrisma.$extends(createEmployeePiiEncryptionExtension());
 
-export const assertEmployeePiiBackfillComplete = async () => {
+export const assertDataEncryptionReady = async () => {
   const columns = await basePrisma.$queryRaw`
     SELECT COUNT(*)::int AS "count"
     FROM information_schema.columns
@@ -87,8 +87,20 @@ export const assertEmployeePiiBackfillComplete = async () => {
   if (Number(remaining[0]?.count || 0) !== 0) {
     throw new Error('Employee PII is not fully encrypted. Complete the maintenance backfill before serving traffic.');
   }
+  const invalidUserSecrets = await basePrisma.$queryRaw`
+    SELECT COUNT(*)::int AS "count"
+    FROM "users"
+    WHERE "two_factor_secret_encrypted" IS NOT NULL
+      AND "two_factor_secret_encrypted" NOT LIKE 'enc:v1:%'
+  `;
+  if (Number(invalidUserSecrets[0]?.count || 0) !== 0) {
+    throw new Error('Two-factor secrets are not fully encrypted. Refusing to start the API or worker.');
+  }
   return true;
 };
+
+// Backward-compatible alias for callers/tests using the original employee-only name.
+export const assertEmployeePiiBackfillComplete = assertDataEncryptionReady;
 
 export const disconnectDb = async () => {
   await basePrisma.$disconnect();

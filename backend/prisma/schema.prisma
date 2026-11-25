@@ -82,6 +82,11 @@ model User {
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   deletedAt              DateTime?
+  twoFactorEnabled       Boolean               @default(false) @map("two_factor_enabled")
+  twoFactorSecretEncrypted String?              @map("two_factor_secret_encrypted")
+  twoFactorVerifiedAt    DateTime?              @map("two_factor_verified_at")
+  twoFactorLastCounter   BigInt?                @map("two_factor_last_counter")
+  twoFactorRecoveryCodes TwoFactorRecoveryCode[]
   auditLogs              AuditLog[]
   invites                Invite[]
   notifications          Notification[]
@@ -219,6 +224,19 @@ model AuditLog {
   @@index([companyId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+model TwoFactorRecoveryCode {
+  id        String    @id @default(uuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+  @@index([userId, usedAt])
+  @@map("two_factor_recovery_codes")
 }
 
 model PasswordResetToken {
