@@ -20,7 +20,12 @@ export const buildPayslipExplanation = (item) => {
 
   const period = String(item.payrollRun.month || '').slice(0, 7);
   const taxSnapshot = item.payrollRun.taxConfigSnapshot;
-  const historicalTaxAvailable = Boolean(taxSnapshot?.PAYE && taxSnapshot?.SSNIT);
+  const historicalTaxAvailable = Boolean(
+    Array.isArray(taxSnapshot?.PAYE?.bands) && taxSnapshot.PAYE.bands.length > 0
+    && taxSnapshot.PAYE.reliefs && typeof taxSnapshot.PAYE.reliefs === 'object'
+    && ['maxEarnings', 'minContributionBase', 'employeeRate', 'employerRate', 'tier1Rate', 'tier2Rate']
+      .every((key) => Number.isFinite(Number(taxSnapshot?.SSNIT?.[key]))),
+  );
   const earningsAvailable = hasEarningsSnapshot(item);
   const employeeSsnit = money(item.ssnitEmployee);
   const paye = money(item.payeTax);
