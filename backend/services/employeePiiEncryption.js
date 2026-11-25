@@ -67,6 +67,13 @@ export const encryptSensitiveValue = (value) => {
   return encryptWithCurrentKey(value);
 };
 
+export const getCurrentEmployeePiiKeyId = () => getKeyring().currentKeyId;
+
+export const getEmployeePiiCiphertextKeyId = (value) => {
+  if (typeof value !== 'string' || !value.startsWith(ENVELOPE_PREFIX)) return null;
+  return value.split(':')[2] || null;
+};
+
 export const decryptSensitiveValue = (value) => {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'string' || !value.startsWith(ENVELOPE_PREFIX)) {
@@ -85,6 +92,11 @@ export const decryptSensitiveValue = (value) => {
     decipher.update(Buffer.from(ciphertextEncoded, 'base64url')),
     decipher.final(),
   ]).toString('utf8');
+};
+
+export const reencryptSensitiveValue = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  return encryptWithCurrentKey(decryptSensitiveValue(value));
 };
 
 const normalizeIdentifier = (value) => String(value).normalize('NFKC').trim().toUpperCase().replace(/\s+/g, ' ');
