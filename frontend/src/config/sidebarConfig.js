@@ -19,6 +19,12 @@ export const sidebarMenuItems = [
     roles: ['SUPER_ADMIN', 'ADMIN', 'HR'],
   },
   {
+    name: 'Import Employees',
+    path: '/employee-import',
+    icon: Upload,
+    roles: ['SUPER_ADMIN', 'ADMIN'],
+  },
+  {
     name: 'User Management',
     path: '/users',
     icon: UserCog,
