@@ -174,7 +174,7 @@ const validateRows = async ({ rows, companyId, client }) => {
 
   const [existingEmails, existingSsnit, existingGhanaCard] = await Promise.all([
     emails.size ? client.employee.findMany({
-      where: { companyId, email: { in: [...emails] } }, select: { email: true },
+      where: { companyId, email: { in: [...emails], mode: 'insensitive' } }, select: { email: true },
     }) : [],
     ssnitHashes.size ? client.employee.findMany({
       where: { companyId, ssnitNumberHash: { in: [...ssnitHashes] } }, select: { ssnitNumberHash: true },
