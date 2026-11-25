@@ -104,6 +104,14 @@ const TwoFactorSecurity = () => {
   };
 
   if (loading) return <Card className="p-5"><p className="text-sm text-slate-500">Loading account security…</p></Card>;
+  if (!status) return (
+    <Card className="p-5 space-y-3">
+      <h2 className="text-lg font-bold text-slate-900 dark:text-white">Two-factor authentication</h2>
+      {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
+      <button type="button" onClick={() => { setLoading(true); setError(''); loadStatus(); }}
+        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-white/15">Retry</button>
+    </Card>
+  );
 
   return (
     <Card className="p-5 space-y-5">
