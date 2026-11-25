@@ -65,7 +65,7 @@ basePrisma.$on('error', (e) => logger.error('Prisma Error', { message: e.message
 
 const prisma = basePrisma.$extends(createEmployeePiiEncryptionExtension());
 
-export const assertEmployeePiiBackfillComplete = async () => {
+export const assertDataEncryptionReady = async () => {
   const columns = await basePrisma.$queryRaw`
     SELECT COUNT(*)::int AS "count"
     FROM information_schema.columns
