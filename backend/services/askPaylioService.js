@@ -97,7 +97,7 @@ const classifyQuestion = (question) => {
   }
 
   if (/trend|trends|over time|compare.*month|month.*compare|history|historical/.test(q)) return 'PAYROLL_TREND';
-  if (/status|draft|finalized|cancelled|pending payroll/.test(q)) return 'PAYROLL_STATUS';
+  if (/\\b(status|draft|cancelled|pending payroll)\\b/.test(q) || /how many payroll runs?/.test(q)) return 'PAYROLL_STATUS';
   if (/\b(headcount|workforce|staff count|employee count|how many (?:active |inactive )?(?:employees|staff)|number of employees)\b/.test(q)) return 'HEADCOUNT';
   if (/payroll|salary|gross|net pay|paye|ssnit|tax|deduction|cost|wage/.test(q)) return 'PAYROLL_SUMMARY';
   return null;
