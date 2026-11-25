@@ -12,7 +12,7 @@ On My Payslips, the employee can expand **Explain this payslip** to view:
 - Employer SSNIT contribution, clearly separated from employee deductions.
 - Tier 1 and Tier 2 SSNIT remittance values in a separate section; these are not shown as extra employee deductions or as additional employer contributions.
 - The recorded take-home pay and payment status.
-- Whether the historical tax-configuration and relief-input snapshots are available.
+- Whether the historical tax-configuration and relief-input snapshots are available, plus the relief-input flags/counts saved at payroll time for employee verification.
 
 ## Data and calculation rules
 
