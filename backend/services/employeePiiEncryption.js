@@ -67,13 +67,6 @@ export const encryptSensitiveValue = (value) => {
   return encryptWithCurrentKey(value);
 };
 
-export const getCurrentEmployeePiiKeyId = () => getKeyring().currentKeyId;
-
-export const getEmployeePiiCiphertextKeyId = (value) => {
-  if (typeof value !== 'string' || !value.startsWith(ENVELOPE_PREFIX)) return null;
-  return value.split(':')[2] || null;
-};
-
 export const decryptSensitiveValue = (value) => {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'string' || !value.startsWith(ENVELOPE_PREFIX)) {
