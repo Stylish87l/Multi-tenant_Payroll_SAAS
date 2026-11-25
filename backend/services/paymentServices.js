@@ -4,13 +4,12 @@ import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import prisma, { Prisma } from '../config/db.js';
 import logger from '../config/logger.js';
+import { enqueueBackgroundJob } from './backgroundJobService.js';
+import { getHubtelPayoutStatus, submitHubtelBankPayout, verifyHubtelBankAccountName } from './hubtelPayoutService.js';
 import { PayoutStateError, resolvePayoutMode } from '../utils/paymentConfiguration.js';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || null;
 const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET || PAYSTACK_SECRET_KEY;
-const HUBTEL_CLIENT_ID = process.env.HUBTEL_CLIENT_ID || null;
-const HUBTEL_CLIENT_SECRET = process.env.HUBTEL_CLIENT_SECRET || null;
-const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
 
 /**
  * Simulation is restricted to development/test. Live transfers require an explicit
@@ -60,26 +59,6 @@ const callPaystackTransfer = async ({ employee, amountInSubunit, reference }) =>
   return { status: 'PROCESSING', reference, providerTransferCode: transferJson.data?.transfer_code, providerStatus: transferJson.data?.status || 'pending' };
 };
 
-/** VERIFY against your Hubtel merchant contract/docs: request shape varies by account type. */
-const callHubtelTransfer = async ({ employee, amountInGHS, reference }) => {
-  const auth = Buffer.from(`${HUBTEL_CLIENT_ID}:${HUBTEL_CLIENT_SECRET}`).toString('base64');
-  const res = await fetch(
-    `https://api.hubtel.com/v1/merchantaccount/merchants/${HUBTEL_MERCHANT_ACCOUNT}/transfers/out`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({
-        RecipientName: employee.name, RecipientBankAccount: employee.bankAccount, RecipientBank: employee.bankName,
-        Amount: amountInGHS, ClientReference: reference, Description: 'Payroll disbursement',
-      }),
-    }
-  );
-  const json = await res.json().catch(() => ({}));
-  assertOk(res, json, 'Hubtel transfer');
-  return { status: 'SENT', reference, providerTransactionId: json.Data?.TransactionId };
-};
-
 /**
  * Core payout logic with idempotency and double-pay protection.
  *
@@ -101,7 +80,7 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
     try {
       const item = await prisma.payrollItem.findUnique({
         where: { id: payrollItemId },
-        include: { employee: { select: { bankAccount: true, bankName: true, bankCode: true, name: true } }, payrollRun: { select: { status: true } } },
+        include: { employee: { select: { bankAccount: true, bankName: true, bankCode: true, name: true } }, payrollRun: { select: { status: true, companyId: true } } },
       });
 
       if (!item) throw new PayoutStateError('Payroll item not found.');
@@ -121,12 +100,33 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
 
       const payoutMode = resolvePayoutMode({ provider, employee: item.employee });
       const isLive = payoutMode === 'LIVE';
+      let verifiedBankAccountName = null;
+      if (provider === 'hubtel' && isLive) {
+        if (netPayDecimal.decimalPlaces() > 2) throw new PayoutStateError('Hubtel bank payouts require a net pay amount with no more than two decimal places.');
+        verifiedBankAccountName = await verifyHubtelBankAccountName({
+          bankCode: item.employee.bankCode,
+          bankAccount: item.employee.bankAccount,
+          employeeName: item.employee.name,
+        });
+      }
 
       // Atomic claim. @updatedAt changes on every write, so a concurrent claimer's `updatedAt` filter fails.
-      const idempotencyKey = item.paymentRef || `pay_${item.id}_${uuidv4().substring(0, 8)}`;
-      const claim = await prisma.payrollItem.updateMany({
-        where: { id: payrollItemId, paymentStatus: { in: ['PENDING', 'FAILED'] }, updatedAt: item.updatedAt },
-        data: { paymentRef: idempotencyKey, paymentStatus: 'PROCESSING' },
+      const idempotencyKey = `pay_${uuidv4().replace(/-/g, '').slice(0, 24)}`;
+      const claim = await prisma.$transaction(async (tx) => {
+        const result = await tx.payrollItem.updateMany({
+          where: { id: payrollItemId, paymentStatus: { in: ['PENDING', 'FAILED'] }, updatedAt: item.updatedAt },
+          data: { paymentRef: idempotencyKey, paymentStatus: 'PROCESSING', payoutProvider: provider.toUpperCase(), providerTransactionId: null },
+        });
+        if (result.count === 1 && provider === 'hubtel' && isLive) {
+          await enqueueBackgroundJob(tx, {
+            type: 'HUBTEL_PAYOUT_RECONCILIATION',
+            payload: { payrollItemId, reference: idempotencyKey },
+            companyId: item.payrollRun.companyId,
+            idempotencyKey: `hubtel-payout-reconcile:${idempotencyKey}:scheduled`,
+            availableAt: new Date(Date.now() + 5 * 60 * 1000),
+          });
+        }
+        return result;
       });
       if (claim.count !== 1) throw new PayoutStateError(`Item ${payrollItemId} is already being processed.`);
       claimed = true;
@@ -137,7 +137,13 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
 
       if (provider === 'hubtel') {
         gatewayResult = isLive
-          ? await callHubtelTransfer({ employee: item.employee, amountInGHS: netPay, reference: idempotencyKey })
+          ? await submitHubtelBankPayout({
+            bankCode: item.employee.bankCode,
+            bankAccount: item.employee.bankAccount,
+            verifiedAccountName: verifiedBankAccountName,
+            amount: netPay,
+            reference: idempotencyKey,
+          })
           : (logger.warn('PAYMENT_SIMULATION_MODE: Hubtel not configured, faking SENT', { itemId: payrollItemId }),
              { status: 'SENT', reference: idempotencyKey, simulated: true });
       } else {
@@ -152,16 +158,36 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       // A webhook can arrive before the provider request returns. Never overwrite its final state.
       // Paystack transfer acceptance is not proof that the employee has received funds.
       // Keep the item PROCESSING until transfer.success / transfer.failed / transfer.reversed.
-      const finalizationStatus = provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT';
-      await prisma.payrollItem.updateMany({
-        where: { id: payrollItemId, paymentStatus: 'PROCESSING' },
-        data: { paymentStatus: finalizationStatus },
+      const finalizationStatus = isLive && provider === 'hubtel'
+        ? gatewayResult.status
+        : provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT';
+      await prisma.$transaction(async (tx) => {
+        const updated = await tx.payrollItem.updateMany({
+          where: { id: payrollItemId, paymentStatus: 'PROCESSING', paymentRef: idempotencyKey },
+          data: {
+            paymentStatus: finalizationStatus,
+            providerTransactionId: gatewayResult.providerTransactionId || null,
+            payoutSubmittedAt: new Date(),
+            payoutLastCheckedAt: finalizationStatus === 'PAID' ? new Date() : null,
+          },
+        });
+        if (updated.count === 1) {
+          await tx.auditLog.create({
+            data: {
+              companyId: item.payrollRun.companyId,
+              action: 'PAYROLL_PAYOUT_SUBMITTED',
+              resourceType: 'PayrollItem',
+              resourceId: payrollItemId,
+              details: { provider: provider.toUpperCase(), reference: idempotencyKey, status: finalizationStatus, simulated: !isLive },
+            },
+          });
+        }
       });
 
       if (netPay > 100000) logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPay });
 
       span.setAttributes({
-        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT',
+        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': finalizationStatus,
         'payout.reference': idempotencyKey, 'payout.simulated': !isLive,
       });
       return gatewayResult;
@@ -202,14 +228,6 @@ export const verifyPaystackSignature = (rawBody, signatureHeader) => {
   }
 };
 
-/** Constant-time shared-secret comparison (Hubtel placeholder auth). */
-export const verifySharedSecret = (provided, expected) => {
-  if (!provided || !expected) return false;
-  const a = crypto.createHash('sha256').update(String(provided)).digest();
-  const b = crypto.createHash('sha256').update(String(expected)).digest();
-  return crypto.timingSafeEqual(a, b);
-};
-
 /** Promotes SENT -> PAID (or FAILED) once the provider confirms the transfer's final state. */
 export const handlePaymentWebhook = async (payload) => {
   const { reference, status, failureReason } = payload;
@@ -232,7 +250,7 @@ export const handlePaymentWebhook = async (payload) => {
     const nextStatus = successful ? 'PAID' : 'FAILED';
 
     const updated = await prisma.payrollItem.updateMany({
-      where: { paymentRef: reference, paymentStatus: { in: ['SENT', 'PENDING', 'PROCESSING'] } },
+      where: { paymentRef: reference, OR: [{ payoutProvider: 'PAYSTACK' }, { payoutProvider: null }], paymentStatus: { in: ['SENT', 'PENDING', 'PROCESSING'] } },
       data: { paymentStatus: nextStatus },
     });
 
@@ -260,4 +278,51 @@ export const handlePaymentWebhook = async (payload) => {
     logger.error('Webhook processing failed', { reference, error: error.message });
     throw error;
   }
+};
+
+
+/** Verify Hubtel's authoritative payout status before changing payroll payment state. */
+export const reconcileHubtelPayout = async ({ payrollItemId, reference }) => {
+  const item = await prisma.payrollItem.findFirst({
+    where: { id: payrollItemId, paymentRef: reference, payoutProvider: 'HUBTEL', deletedAt: null },
+    include: { payrollRun: { select: { companyId: true } } },
+  });
+  if (!item) {
+    logger.warn('Hubtel reconciliation skipped: payout reference does not match a payroll item', { payrollItemId, reference });
+    return { skipped: true };
+  }
+  if (item.paymentStatus !== 'PROCESSING') return { skipped: true, status: item.paymentStatus };
+
+  const providerResult = await getHubtelPayoutStatus({ reference });
+  if (providerResult.reference !== item.paymentRef) throw new Error('Hubtel payout status reference mismatch.');
+  const expectedAmount = new Prisma.Decimal(item.netPay).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+  if (providerResult.amount === null || providerResult.amount === undefined
+    || !new Prisma.Decimal(providerResult.amount).eq(expectedAmount)) {
+    throw new Error('Hubtel payout status amount does not match the finalized payroll item.');
+  }
+  if (providerResult.status === 'PROCESSING') throw new Error('Hubtel payout is still pending; reconciliation will retry.');
+
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.payrollItem.updateMany({
+      where: { id: item.id, paymentRef: reference, payoutProvider: 'HUBTEL', paymentStatus: 'PROCESSING' },
+      data: {
+        paymentStatus: providerResult.status,
+        providerTransactionId: providerResult.providerTransactionId || item.providerTransactionId,
+        payoutLastCheckedAt: new Date(),
+        payoutSubmittedAt: item.payoutSubmittedAt || new Date(),
+      },
+    });
+    if (updated.count === 1) {
+      await tx.auditLog.create({
+        data: {
+          companyId: item.payrollRun.companyId,
+          action: 'PAYROLL_PAYOUT_RECONCILED',
+          resourceType: 'PayrollItem',
+          resourceId: item.id,
+          details: { provider: 'HUBTEL', reference, status: providerResult.status, providerTransactionId: providerResult.providerTransactionId || null },
+        },
+      });
+    }
+  });
+  return { status: providerResult.status, reference };
 };

@@ -1,9 +1,10 @@
 // Payment provider webhook receiver. NOT behind authMiddleware (providers cannot send a Paylio
-// JWT); protected by signature / shared-secret verification instead. Requires req.rawBody
-// (captured by express.json({ verify }) in server.js).
+// JWT). Paystack uses its documented signature; Hubtel callbacks require trusted ingress and
+// authoritative provider status reconciliation. Requires req.rawBody for Paystack verification.
 import express from 'express';
 import logger from '../config/logger.js';
-import { handlePaymentWebhook, verifyPaystackSignature, verifySharedSecret } from '../services/paymentServices.js';
+import { handlePaymentWebhook, verifyPaystackSignature } from '../services/paymentServices.js';
+import { enqueueHubtelPayoutReconciliation } from '../services/backgroundJobService.js';
 
 const router = express.Router();
 
@@ -35,22 +36,34 @@ router.post('/paystack', async (req, res) => {
 
 router.post('/hubtel', async (req, res) => {
   try {
-    // PLACEHOLDER AUTH: replace with Hubtel's real signature scheme before relying on it.
-    // Header only: a secret in the query string ends up in proxy/access logs.
-    if (!verifySharedSecret(req.get('x-hubtel-webhook-secret'), process.env.HUBTEL_WEBHOOK_SECRET)) {
-      logger.warn('Rejected Hubtel webhook: missing or invalid shared secret', { ip: req.ip });
+    // Hubtel's published production v1 contract does not provide a verifiable signature.
+    // This flag must only be enabled after the trusted ingress/firewall allowlists Hubtel's
+    // documented payout callback source (18.202.122.131) and the proxy chain is verified.
+    if (process.env.HUBTEL_CALLBACK_INGRESS_ALLOWLIST_VERIFIED !== 'true') {
+      logger.error('Rejected Hubtel callback: trusted ingress allowlist has not been verified');
+      return res.status(503).json({ error: 'callback_ingress_not_configured' });
+    }
+    const allowedIps = (process.env.HUBTEL_CALLBACK_SOURCE_IPS || '18.202.122.131')
+      .split(',').map((value) => value.trim()).filter(Boolean);
+    const requestIp = String(req.ip || '').replace(/^::ffff:/, '');
+    if (!allowedIps.includes(requestIp)) {
+      logger.warn('Rejected Hubtel callback from an unapproved source IP', { ip: requestIp });
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Callback content is only a signal. The worker verifies the reference, amount and
+    // authoritative transaction status directly with Hubtel before changing payment state.
     const payload = req.body;
-    await handlePaymentWebhook({
-      reference: payload?.ClientReference || payload?.reference,
-      status: payload?.Status || payload?.status,
-      failureReason: payload?.Reason || null,
-    });
+    const reference = payload?.Data?.ClientReference || payload?.data?.clientReference
+      || payload?.ClientReference || payload?.clientReference;
+    if (typeof reference !== 'string' || !reference.trim() || reference.length > 36) {
+      logger.warn('Rejected Hubtel callback with invalid client reference', { ip: requestIp });
+      return res.status(400).json({ error: 'invalid_callback_reference' });
+    }
+    await enqueueHubtelPayoutReconciliation(reference);
     return res.status(200).json({ received: true });
   } catch (error) {
-    logger.error('Hubtel webhook processing error', { message: error.message, stack: error.stack });
+    logger.error('Hubtel callback processing error', { message: error.message, stack: error.stack });
     return res.status(500).json({ error: 'processing_error' });
   }
 });
