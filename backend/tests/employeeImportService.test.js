@@ -97,12 +97,28 @@ describe('smart employee import parsing and preview', () => {
   });
 
   it('rejects XLSX archives with excessive uncompressed content before workbook parsing', async () => {
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Employees');
-    sheet.addRow(['Name', 'Email', 'Position', 'Basic Salary']);
-    sheet.addRow(['A'.repeat(11 * 1024 * 1024), 'large@example.test', 'Teacher', 3200]);
-    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
-    expect(buffer.length).toBeLessThan(700 * 1024);
+    const buffer = Buffer.alloc(100);
+    buffer.writeUInt32LE(0x04034b50, 0);
+    buffer.writeUInt16LE(20, 4);
+    buffer.writeUInt16LE(1, 26);
+    buffer.write('x', 30, 'ascii');
+
+    const central = 31;
+    buffer.writeUInt32LE(0x02014b50, central);
+    buffer.writeUInt16LE(20, central + 4);
+    buffer.writeUInt16LE(20, central + 6);
+    buffer.writeUInt32LE(0, central + 20);
+    buffer.writeUInt32LE(11 * 1024 * 1024, central + 24);
+    buffer.writeUInt16LE(1, central + 28);
+    buffer.write('x', central + 46, 'ascii');
+
+    const end = 78;
+    buffer.writeUInt32LE(0x06054b50, end);
+    buffer.writeUInt16LE(1, end + 8);
+    buffer.writeUInt16LE(1, end + 10);
+    buffer.writeUInt32LE(47, end + 12);
+    buffer.writeUInt32LE(central, end + 16);
+
     await expect(buildEmployeeImportPreview({
       fileName: 'large-workbook.xlsx', buffer, companyId: 'company-a', client,
     })).rejects.toThrow('10 MB processing limit');
