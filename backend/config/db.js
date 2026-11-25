@@ -12,8 +12,8 @@ const { PrismaClient, Prisma } = pkgPrisma;
 export { Prisma };
 
 /**
- * Production must not serve employee reads/writes until the maintenance backfill has
- * encrypted existing bank accounts, SSNIT numbers and Ghana Card PINs.
+ * Production must not serve encrypted employee or account-security data until the
+ * maintenance backfill has encrypted existing employee sensitive fields.
  * The one-off backfill command opts into a restricted startup mode.
  */
 if (process.env.NODE_ENV === 'production') {
@@ -98,6 +98,9 @@ export const assertDataEncryptionReady = async () => {
   }
   return true;
 };
+
+// Backward-compatible alias for callers/tests using the original employee-only name.
+export const assertEmployeePiiBackfillComplete = assertDataEncryptionReady;
 
 export const disconnectDb = async () => {
   await basePrisma.$disconnect();
