@@ -7,6 +7,7 @@ const prisma = {
     findFirst: jest.fn(),
   },
 };
+const writeAuditSafe = jest.fn().mockResolvedValue(undefined);
 
 jest.unstable_mockModule('../config/db.js', () => ({ default: prisma }));
 jest.unstable_mockModule('../middleware/auth.js', () => ({
@@ -24,7 +25,7 @@ jest.unstable_mockModule('../utils/fetchLogo.js', () => ({
   getLogoBuffer: jest.fn().mockResolvedValue(null),
 }));
 jest.unstable_mockModule('../services/auditService.js', () => ({
-  writeAuditSafe: jest.fn().mockResolvedValue(undefined),
+  writeAuditSafe,
   actorFromReq: jest.fn().mockReturnValue({ userId: 'test-user' }),
 }));
 
@@ -125,6 +126,12 @@ describe('individual payslip route authorization', () => {
     }));
     expect(JSON.stringify(response.body)).not.toContain('employee-user');
     expect(JSON.stringify(response.body)).not.toContain('companyId');
+    expect(writeAuditSafe).toHaveBeenCalledWith(prisma, expect.objectContaining({
+      action: 'PAYSLIP_EXPLAINED',
+      companyId: 'tenant-a',
+      resourceId: 'item-1',
+      details: { payrollRunId: 'run-1', period: '2026-10' },
+    }));
   });
 
   test('does not explain a payslip with inconsistent employee and payroll tenant relationships', async () => {
