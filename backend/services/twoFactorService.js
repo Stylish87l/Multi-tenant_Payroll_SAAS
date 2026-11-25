@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { decryptSensitiveValue } from './employeePiiEncryption.js';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const TOTP_STEP_SECONDS = 30;
@@ -106,4 +107,12 @@ export const consumeRecoveryCode = async (tx, userId, code) => {
     data: { usedAt: new Date() },
   });
   return result.count === 1;
+};
+
+export const verifyUserTwoFactorCode = async ({ tx, user, code }) => {
+  if (!user?.twoFactorEnabled || !user.twoFactorSecretEncrypted) return { valid: false, method: null };
+  const secret = decryptSensitiveValue(user.twoFactorSecretEncrypted);
+  if (verifyTotp(secret, code)) return { valid: true, method: 'totp' };
+  const recoveryCodeUsed = await consumeRecoveryCode(tx, user.id, code);
+  return { valid: recoveryCodeUsed, method: recoveryCodeUsed ? 'recovery_code' : null };
 };
