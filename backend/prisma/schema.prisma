@@ -190,6 +190,7 @@ model PayrollItem {
   @@index([payrollRunId])
   @@index([employeeId])
   @@index([paymentStatus])
+  @@index([payoutProvider, paymentStatus], map: "payroll_items_payout_provider_status_idx")
   @@map("payroll_items")
 }
 
