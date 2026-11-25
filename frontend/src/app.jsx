@@ -20,6 +20,7 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Employees = lazy(() => import('./pages/Employees'));
+const EmployeeImport = lazy(() => import('./pages/EmployeeImport'));
 const Payroll = lazy(() => import('./pages/Payroll'));
 const Reports = lazy(() => import('./pages/Reports'));
 const MyPayslips = lazy(() => import('./pages/MyPayslips'));
@@ -68,6 +69,7 @@ RoleRoute.propTypes = { basePath: PropTypes.string.isRequired, children: PropTyp
 const protectedRoutes = [
   { path: '/dashboard', basePath: '/dashboard', element: <Dashboard /> },
   { path: '/employees/*', basePath: '/employees', element: <Employees /> },
+  { path: '/employee-import/*', basePath: '/employee-import', element: <EmployeeImport /> },
   { path: '/payroll/*', basePath: '/payroll', element: <Payroll /> },
   { path: '/reports/*', basePath: '/reports', element: <Reports /> },
   { path: '/payslips/*', basePath: '/payslips', element: <MyPayslips /> },
