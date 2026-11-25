@@ -7,6 +7,7 @@ import {
 } from '../services/hubtelPayoutService.js';
 
 const originalEnv = { ...process.env };
+const originalFetch = global.fetch;
 const response = (body, status = 200) => ({
   ok: status >= 200 && status < 300,
   status,
@@ -25,6 +26,7 @@ describe('Hubtel bank payout client', () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    global.fetch = originalFetch;
     jest.restoreAllMocks();
   });
 
