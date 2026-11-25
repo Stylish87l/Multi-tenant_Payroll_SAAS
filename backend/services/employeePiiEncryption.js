@@ -7,8 +7,9 @@ const SENSITIVE_FIELDS = ['bankAccount', 'ssnitNumber', 'ghanaCardPin'];
 
 const decodeKey = (value, label) => {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required.`);
-  const key = Buffer.from(value, 'base64');
-  if (key.length !== 32) throw new Error(`${label} must be a base64-encoded 32-byte key.`);
+  const normalized = value.trim();
+  const key = Buffer.from(normalized, 'base64');
+  if (key.length !== 32 || key.toString('base64') !== normalized) throw new Error(`${label} must be a canonical base64-encoded 32-byte key.`);
   return key;
 };
 
