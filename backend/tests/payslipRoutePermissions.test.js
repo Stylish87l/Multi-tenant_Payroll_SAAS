@@ -114,11 +114,13 @@ describe('individual payslip route authorization', () => {
     expect(response.headers['cache-control']).toBe('private, no-store');
     expect(response.body.explanation.netPayGhs).toBe('7950.00');
     expect(response.body.explanation.employerContributions[0].amountGhs).toBe('1300.00');
+    expect(response.body.explanation.ssnitRemittances).toHaveLength(2);
     expect(prisma.payrollItem.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: {
         id: 'item-1',
         employee: { userId: 'employee-user' },
-        payrollRun: { companyId: 'tenant-a', status: 'FINALIZED' },
+        deletedAt: null,
+        payrollRun: { companyId: 'tenant-a', status: 'FINALIZED', deletedAt: null },
       },
       select: expect.objectContaining({
         employee: { select: { companyId: true } },
