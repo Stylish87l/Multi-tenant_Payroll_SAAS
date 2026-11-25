@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 const ENVELOPE_PREFIX = 'enc:v1:';
 const TEST_KEY = Buffer.alloc(32, 0x50).toString('base64');
 const TEST_INDEX_KEY = Buffer.alloc(32, 0x49).toString('base64');
+const SENSITIVE_FIELDS = ['bankAccount', 'ssnitNumber', 'ghanaCardPin'];
 
 const decodeKey = (value, label) => {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required.`);
@@ -17,9 +18,8 @@ const getKeyring = () => {
   const currentKeyId = process.env.DATA_ENCRYPTION_KEY_ID || 'v1';
   if (!/^[A-Za-z0-9_-]{1,32}$/.test(currentKeyId)) throw new Error('DATA_ENCRYPTION_KEY_ID must contain 1-32 letters, numbers, underscores or hyphens.');
   const keys = new Map([[currentKeyId, decodeKey(currentKeyValue, 'DATA_ENCRYPTION_KEY')]]);
-  const previousRaw = process.env.DATA_ENCRYPTION_PREVIOUS_KEYS || '{}';
   let previous;
-  try { previous = JSON.parse(previousRaw); } catch { throw new Error('DATA_ENCRYPTION_PREVIOUS_KEYS must be a JSON object of key IDs to base64 keys.'); }
+  try { previous = JSON.parse(process.env.DATA_ENCRYPTION_PREVIOUS_KEYS || '{}'); } catch { throw new Error('DATA_ENCRYPTION_PREVIOUS_KEYS must be a JSON object of key IDs to base64 keys.'); }
   if (!previous || typeof previous !== 'object' || Array.isArray(previous)) throw new Error('DATA_ENCRYPTION_PREVIOUS_KEYS must be a JSON object.');
   for (const [keyId, value] of Object.entries(previous)) {
     if (!/^[A-Za-z0-9_-]{1,32}$/.test(keyId)) throw new Error('Previous encryption key IDs must contain 1-32 letters, numbers, underscores or hyphens.');
@@ -36,9 +36,11 @@ const getIndexKey = () => decodeKey(
 );
 
 export const validateEmployeePiiEncryptionConfig = () => {
-  const { keys, currentKeyId } = getKeyring();
+  const { keys } = getKeyring();
   const indexKey = getIndexKey();
-  if ([...keys.values()].some((key) => key.equals(indexKey))) throw new Error('DATA_ENCRYPTION_INDEX_KEY must be different from all DATA_ENCRYPTION_KEY values.');
+  if ([...keys.values()].some((key) => key.equals(indexKey))) {
+    throw new Error('DATA_ENCRYPTION_INDEX_KEY must be different from all DATA_ENCRYPTION_KEY values.');
+  }
   return true;
 };
 
@@ -59,15 +61,9 @@ export const getEmployeePiiCiphertextKeyId = (value) => {
 };
 
 export const encryptSensitiveValue = (value) => {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') throw new TypeError('Sensitive employee fields must be strings or null.');
-  if (!value.length) return null;
-  return encryptWithCurrentKey(value);
-};
-
-export const reencryptSensitiveValue = (value) => {
   if (value === null || value === undefined || value === '') return null;
-  return encryptWithCurrentKey(decryptSensitiveValue(value));
+  if (typeof value !== 'string') throw new TypeError('Sensitive employee fields must be strings or null.');
+  return encryptWithCurrentKey(value);
 };
 
 export const decryptSensitiveValue = (value) => {
@@ -102,22 +98,20 @@ export const createEmployeePiiBlindIndex = (value, field) => {
   return `hmac:v1:${digest}`;
 };
 
-export const encryptEmployeeWriteData = (data) => {
+export const encryptEmployeeWriteData = (data, { markVersion = false } = {}) => {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
   const next = { ...data };
-  const fields = [
-    ['bankAccount', 'bankAccountEncrypted', null],
-    ['ssnitNumber', 'ssnitNumberEncrypted', 'ssnitNumberHash'],
-    ['ghanaCardPin', 'ghanaCardPinEncrypted', 'ghanaCardPinHash'],
-  ];
-  for (const [plainField, encryptedField, hashField] of fields) {
-    if (!Object.prototype.hasOwnProperty.call(next, plainField)) continue;
-    const value = next[plainField];
-    if (value === undefined) { delete next[plainField]; continue; }
-    next[encryptedField] = encryptSensitiveValue(value);
-    if (hashField) next[hashField] = createEmployeePiiBlindIndex(value, plainField);
-    delete next[plainField];
+  let sensitiveFieldChanged = false;
+  for (const field of SENSITIVE_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(next, field)) continue;
+    const value = next[field];
+    if (value === undefined) { delete next[field]; continue; }
+    next[field] = encryptSensitiveValue(value);
+    sensitiveFieldChanged = true;
+    if (field === 'ssnitNumber') next.ssnitNumberHash = createEmployeePiiBlindIndex(value, field);
+    if (field === 'ghanaCardPin') next.ghanaCardPinHash = createEmployeePiiBlindIndex(value, field);
   }
+  if (markVersion || sensitiveFieldChanged) next.piiEncryptionVersion = 1;
   return next;
 };
 
@@ -157,40 +151,73 @@ const encryptEmployeeWhere = (where) => {
   return next;
 };
 
-const transformMany = (data) => Array.isArray(data)
-  ? data.map(encryptEmployeeWriteData)
-  : encryptEmployeeWriteData(data);
+const encryptMany = (data, options) => Array.isArray(data)
+  ? data.map((entry) => encryptEmployeeWriteData(entry, options))
+  : encryptEmployeeWriteData(data, options);
+
+const hasNestedEmployeeWrite = (value) => {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some(hasNestedEmployeeWrite);
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'employee' && child && typeof child === 'object'
+      && ['create', 'createMany', 'connectOrCreate', 'update', 'updateMany', 'upsert'].some((operation) => Object.hasOwn(child, operation))) return true;
+    if (hasNestedEmployeeWrite(child)) return true;
+  }
+  return false;
+};
+
+const decryptEmployeeRecords = (value) => {
+  if (Array.isArray(value)) return value.map(decryptEmployeeRecords);
+  if (!value || typeof value !== 'object' || value instanceof Date || Buffer.isBuffer(value) || typeof value.toFixed === 'function') return value;
+
+  const isEmployeeRecord = SENSITIVE_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(value, field))
+    || Object.prototype.hasOwnProperty.call(value, 'piiEncryptionVersion')
+    || Object.prototype.hasOwnProperty.call(value, 'ssnitNumberHash')
+    || Object.prototype.hasOwnProperty.call(value, 'ghanaCardPinHash');
+
+  if (isEmployeeRecord) {
+    if (value.piiEncryptionVersion !== undefined && value.piiEncryptionVersion !== 1
+      && SENSITIVE_FIELDS.some((field) => value[field] !== null && value[field] !== undefined)) {
+      throw new Error('Employee PII record has not completed encryption backfill.');
+    }
+    for (const field of SENSITIVE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(value, field) && value[field] !== null && value[field] !== undefined) {
+        value[field] = decryptSensitiveValue(value[field]);
+      }
+    }
+    delete value.ssnitNumberHash;
+    delete value.ghanaCardPinHash;
+    delete value.piiEncryptionVersion;
+  }
+
+  for (const [key, child] of Object.entries(value)) value[key] = decryptEmployeeRecords(child);
+  return value;
+};
+
+export const decryptEmployeePiiResults = decryptEmployeeRecords;
 
 export const createEmployeePiiEncryptionExtension = () => ({
   name: 'employee-pii-encryption',
   query: {
-    employee: {
-      async $allOperations({ operation, args, query }) {
-        if (args.where) args.where = encryptEmployeeWhere(args.where);
-        if (['create', 'update', 'updateMany', 'createMany', 'createManyAndReturn', 'updateManyAndReturn'].includes(operation) && args.data !== undefined) {
-          args.data = transformMany(args.data);
+    $allModels: {
+      async $allOperations({ model, operation, args, query }) {
+        const writeOperations = ['create', 'update', 'updateMany', 'createMany', 'createManyAndReturn', 'updateManyAndReturn', 'upsert'];
+        if (model !== 'Employee' && writeOperations.includes(operation) && hasNestedEmployeeWrite(args?.data)) {
+          throw new Error('Nested Employee writes are disabled. Use the Employee model directly so PII is encrypted.');
         }
-        if (operation === 'upsert') {
-          args.create = encryptEmployeeWriteData(args.create);
-          args.update = encryptEmployeeWriteData(args.update);
+        if (model === 'Employee') {
+          if (args.where) args.where = encryptEmployeeWhere(args.where);
+          if (operation === 'create') args.data = encryptEmployeeWriteData(args.data, { markVersion: true });
+          else if (operation === 'createMany' || operation === 'createManyAndReturn') args.data = encryptMany(args.data, { markVersion: true });
+          else if (operation === 'upsert') {
+            args.create = encryptEmployeeWriteData(args.create, { markVersion: true });
+            args.update = encryptEmployeeWriteData(args.update);
+          } else if (['update', 'updateMany', 'updateManyAndReturn'].includes(operation)) {
+            args.data = encryptEmployeeWriteData(args.data);
+          }
         }
-        return query(args);
-      },
-    },
-  },
-  result: {
-    employee: {
-      bankAccount: {
-        needs: { bankAccountEncrypted: true },
-        compute: (employee) => decryptSensitiveValue(employee.bankAccountEncrypted),
-      },
-      ssnitNumber: {
-        needs: { ssnitNumberEncrypted: true },
-        compute: (employee) => decryptSensitiveValue(employee.ssnitNumberEncrypted),
-      },
-      ghanaCardPin: {
-        needs: { ghanaCardPinEncrypted: true },
-        compute: (employee) => decryptSensitiveValue(employee.ghanaCardPinEncrypted),
+        const result = await query(args);
+        return decryptEmployeeRecords(result);
       },
     },
   },
