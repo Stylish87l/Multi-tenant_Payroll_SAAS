@@ -115,9 +115,14 @@ model Employee {
   agedDependentsCount Int           @default(0)
   bankName            String?
   bankCode            String?
+  // These three existing columns store AES-256-GCM ciphertext; Prisma query extensions
+  // decrypt them only after reads and encrypt them before writes.
   bankAccount         String?
   ssnitNumber         String?
   ghanaCardPin        String?
+  ssnitNumberHash     String? @map("ssnit_number_hash")
+  ghanaCardPinHash    String? @map("ghana_card_pin_hash")
+  piiEncryptionVersion Int? @map("pii_encryption_version")
   position            String?
   isActive            Boolean       @default(true)
   createdAt           DateTime      @default(now())
@@ -129,8 +134,8 @@ model Employee {
   payrollReviewFindings PayrollReviewFinding[]
 
   @@unique([companyId, email])
-  @@unique([companyId, ssnitNumber])
-  @@unique([companyId, ghanaCardPin])
+  @@unique([companyId, ssnitNumberHash], map: "employees_companyId_ssnitNumberHash_key")
+  @@unique([companyId, ghanaCardPinHash], map: "employees_companyId_ghanaCardPinHash_key")
   @@index([companyId, isActive])
   @@map("employees")
 }

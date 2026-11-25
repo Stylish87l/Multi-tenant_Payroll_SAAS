@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
-import prisma, { disconnectDb } from '../config/db.js';
+import prisma, { assertEmployeePiiBackfillComplete, disconnectDb } from '../config/db.js';
 import logger from '../config/logger.js';
 import { dispatchNotification } from '../services/notificationService.js';
 import { enqueueEmployeeReconciliation } from '../services/backgroundJobService.js';
@@ -96,6 +96,7 @@ const failJob = async (job, error) => {
 };
 
 const run = async () => {
+  if (process.env.NODE_ENV === 'production') await assertEmployeePiiBackfillComplete();
   await enqueueEmployeeReconciliation();
   logger.info('Paylio background worker started');
   let lastReconcileHour = new Date().toISOString().slice(0, 13);
