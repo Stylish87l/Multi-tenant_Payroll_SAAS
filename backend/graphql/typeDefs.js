@@ -280,7 +280,7 @@ const typeDefs = gql`
     updateEmployee(id: ID!, input: UpdateEmployeeInput!): Employee!
     runPayroll(month: String!, companyId: ID): PayrollRun!
     """DRAFT -> FINALIZED. Rejects runs that are not DRAFT."""
-    finalizePayroll(runId: ID!): PayrollRun!
+    finalizePayroll(runId: ID!, overrideReason: String): PayrollRun!
     """Deletes a DRAFT run (and its items) so the month can be re-run. FINALIZED runs cannot be discarded."""
     discardPayrollDraft(runId: ID!): Boolean!
     sendNotification(input: NotificationInput!): Notification!
