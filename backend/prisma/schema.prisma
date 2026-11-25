@@ -115,16 +115,14 @@ model Employee {
   agedDependentsCount Int           @default(0)
   bankName            String?
   bankCode            String?
-  // Legacy plaintext columns are intentionally ignored by Prisma Client. The one-time
-  // backfill script reads them with parameterized SQL and clears them before app startup.
-  bankAccountLegacy   String? @map("bankAccount") @ignore
-  ssnitNumberLegacy   String? @map("ssnitNumber") @ignore
-  ghanaCardPinLegacy  String? @map("ghanaCardPin") @ignore
-  bankAccountEncrypted String? @map("bank_account_encrypted")
-  ssnitNumberEncrypted String? @map("ssnit_number_encrypted")
+  // These three existing columns store AES-256-GCM ciphertext; Prisma query extensions
+  // decrypt them only after reads and encrypt them before writes.
+  bankAccount         String?
+  ssnitNumber         String?
+  ghanaCardPin        String?
   ssnitNumberHash     String? @map("ssnit_number_hash")
-  ghanaCardPinEncrypted String? @map("ghana_card_pin_encrypted")
   ghanaCardPinHash    String? @map("ghana_card_pin_hash")
+  piiEncryptionVersion Int? @map("pii_encryption_version")
   position            String?
   isActive            Boolean       @default(true)
   createdAt           DateTime      @default(now())
