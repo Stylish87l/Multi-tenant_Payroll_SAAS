@@ -173,8 +173,14 @@ export const scanOfficialComplianceSources = async ({ fetchImpl = global.fetch, 
     where: { active: true },
     orderBy: [{ authority: 'asc' }, { name: 'asc' }],
   });
-  const summary = { sources: sources.length, baseline: 0, notices: 0, unchanged: 0, errors: 0 };
-  for (const source of sources) {
+  const now = Date.now();
+  const dueSources = sources.filter((source) => {
+    if (!source.lastCheckedAt) return true;
+    const interval = Math.max(60, Number(source.pollIntervalMinutes) || 360) * 60 * 1000;
+    return now - new Date(source.lastCheckedAt).getTime() >= interval;
+  });
+  const summary = { sources: sources.length, checked: dueSources.length, baseline: 0, notices: 0, unchanged: 0, errors: 0 };
+  for (const source of dueSources) {
     const result = await scanSource(source, { fetchImpl, signalFactory });
     summary.baseline += result.baseline;
     summary.notices += result.notices;
