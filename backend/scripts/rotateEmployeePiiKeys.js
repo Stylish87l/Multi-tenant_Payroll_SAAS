@@ -19,28 +19,27 @@ const main = async () => {
   for (;;) {
     const rows = cursor
       ? await prisma.$queryRaw`
-          SELECT "id", "bank_account_encrypted", "ssnit_number_encrypted", "ghana_card_pin_encrypted"
-          FROM "employees" WHERE "id" > ${cursor}
+          SELECT "id", "bankAccount", "ssnitNumber", "ghanaCardPin"
+          FROM "employees" WHERE "pii_encryption_version" = 1 AND "id" > ${cursor}
           ORDER BY "id" ASC LIMIT ${batchSize}
         `
       : await prisma.$queryRaw`
-          SELECT "id", "bank_account_encrypted", "ssnit_number_encrypted", "ghana_card_pin_encrypted"
-          FROM "employees" ORDER BY "id" ASC LIMIT ${batchSize}
+          SELECT "id", "bankAccount", "ssnitNumber", "ghanaCardPin"
+          FROM "employees" WHERE "pii_encryption_version" = 1
+          ORDER BY "id" ASC LIMIT ${batchSize}
         `;
     if (!rows.length) break;
 
     for (const row of rows) {
       inspected += 1;
-      const bankAccount = getEmployeePiiCiphertextKeyId(row.bank_account_encrypted) === currentKeyId
-        ? row.bank_account_encrypted : reencryptSensitiveValue(row.bank_account_encrypted);
-      const ssnitNumber = getEmployeePiiCiphertextKeyId(row.ssnit_number_encrypted) === currentKeyId
-        ? row.ssnit_number_encrypted : reencryptSensitiveValue(row.ssnit_number_encrypted);
-      const ghanaCardPin = getEmployeePiiCiphertextKeyId(row.ghana_card_pin_encrypted) === currentKeyId
-        ? row.ghana_card_pin_encrypted : reencryptSensitiveValue(row.ghana_card_pin_encrypted);
+      const bankAccount = getEmployeePiiCiphertextKeyId(row.bankAccount) === currentKeyId
+        ? row.bankAccount : reencryptSensitiveValue(row.bankAccount);
+      const ssnitNumber = getEmployeePiiCiphertextKeyId(row.ssnitNumber) === currentKeyId
+        ? row.ssnitNumber : reencryptSensitiveValue(row.ssnitNumber);
+      const ghanaCardPin = getEmployeePiiCiphertextKeyId(row.ghanaCardPin) === currentKeyId
+        ? row.ghanaCardPin : reencryptSensitiveValue(row.ghanaCardPin);
 
-      if (bankAccount === row.bank_account_encrypted
-        && ssnitNumber === row.ssnit_number_encrypted
-        && ghanaCardPin === row.ghana_card_pin_encrypted) continue;
+      if (bankAccount === row.bankAccount && ssnitNumber === row.ssnitNumber && ghanaCardPin === row.ghanaCardPin) continue;
       if (dryRun) {
         rotated += 1;
         continue;
@@ -48,10 +47,9 @@ const main = async () => {
 
       await prisma.$executeRaw`
         UPDATE "employees"
-        SET
-          "bank_account_encrypted" = ${bankAccount},
-          "ssnit_number_encrypted" = ${ssnitNumber},
-          "ghana_card_pin_encrypted" = ${ghanaCardPin}
+        SET "bankAccount" = ${bankAccount},
+            "ssnitNumber" = ${ssnitNumber},
+            "ghanaCardPin" = ${ghanaCardPin}
         WHERE "id" = ${row.id}
       `;
       rotated += 1;
