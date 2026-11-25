@@ -15,7 +15,7 @@ import { makeExecutableSchema } from '@graphql-tools/schema';
 import { useServer } from 'graphql-ws/use/ws';
 import depthLimit from 'graphql-depth-limit';
 
-import prisma, { assertEmployeePiiBackfillComplete, disconnectDb } from './config/db.js';
+import prisma, { assertDataEncryptionReady, disconnectDb } from './config/db.js';
 import logger from './config/logger.js';
 import authMiddleware from './middleware/auth.js';
 import authMiddlewareGraphQL from './middleware/authMiddlewareGraphQL.js';
@@ -245,7 +245,7 @@ const startMaintenance = () => {
 
 (async () => {
   try {
-    if (process.env.NODE_ENV === 'production') await assertEmployeePiiBackfillComplete();
+    if (process.env.NODE_ENV === 'production') await assertDataEncryptionReady();
     await apolloServer.start();
 
     app.use(
