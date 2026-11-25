@@ -87,6 +87,7 @@ model User {
   notifications          Notification[]
   processedRuns          PayrollRun[]          @relation("RunProcessor")
   refreshTokens          RefreshToken[]
+  passwordResetTokens    PasswordResetToken[]
   company                Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
   employeeProfile        Employee?
   notificationPreference NotificationPreference?
@@ -218,6 +219,20 @@ model AuditLog {
   @@index([companyId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model RefreshToken {
