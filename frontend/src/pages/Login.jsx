@@ -11,6 +11,8 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
@@ -23,11 +25,25 @@ const Login = () => {
     setIsSubmitting(true);
     setError(null);
 
-    const result = await login({ email, password });
+    const result = await login({
+      email,
+      password,
+      ...(requiresTwoFactor && twoFactorCode ? { twoFactorCode } : {}),
+    });
 
     if (result.success) {
       setPassword('');
+      setTwoFactorCode('');
       navigate('/dashboard', { replace: true });
+    } else if (result.code === 'TWO_FACTOR_REQUIRED') {
+      setRequiresTwoFactor(true);
+      setError('Enter the six-digit code from your authenticator app, or use one of your recovery codes.');
+      setIsSubmitting(false);
+    } else if (result.code === 'INVALID_TWO_FACTOR_CODE') {
+      setRequiresTwoFactor(true);
+      setTwoFactorCode('');
+      setError(result.message || 'The authenticator or recovery code is invalid or has already been used.');
+      setIsSubmitting(false);
     } else {
       setPassword('');
       setError(result.message || 'Invalid email or password. Please try again.');
@@ -57,12 +73,27 @@ const Login = () => {
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors" size={18} />
                 <input
                   id="email" name="email" type="email" autoComplete="username"
-                  value={email} onChange={(e) => setEmail(e.target.value)}
+                  value={email} onChange={(e) => { setEmail(e.target.value); setRequiresTwoFactor(false); setTwoFactorCode(''); }}
                   className="w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-4 text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
                   placeholder="name@company.com" required
                 />
               </div>
             </div>
+
+            {requiresTwoFactor && (
+              <div className="space-y-2">
+                <label htmlFor="two-factor-code" className="text-xs font-semibold tracking-wider text-slate-500 ml-1">Authenticator or recovery code</label>
+                <input
+                  id="two-factor-code" name="twoFactorCode" type="text" autoComplete="one-time-code"
+                  inputMode="text" maxLength={40} value={twoFactorCode}
+                  onChange={(e) => setTwoFactorCode(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-slate-900 dark:text-white tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="123456 or recovery code" required
+                />
+                <button type="button" onClick={() => { setRequiresTwoFactor(false); setTwoFactorCode(''); setPassword(''); setError(null); }}
+                  className="text-xs font-semibold text-primary hover:underline">Use a different account</button>
+              </div>
+            )}
 
             <div className="flex justify-end -mb-2">
               <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">Forgot password?</Link>
