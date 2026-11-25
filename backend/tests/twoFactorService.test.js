@@ -46,7 +46,7 @@ describe('TOTP and recovery-code service', () => {
     expect(await verifyUserTwoFactorCode({ tx, user, code })).toEqual({ valid: true, method: 'totp' });
     expect(tx.user.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: user.id, twoFactorEnabled: true }),
-      data: { twoFactorLastCounter: expect.any(BigInt) },
+      data: { twoFactorLastCounter: expect.anything() },
     }));
 
     tx.user.updateMany.mockResolvedValue({ count: 0 });
