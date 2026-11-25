@@ -19,6 +19,7 @@ const ComplianceCenter = () => {
   const companies = companiesData?.companies || [];
 
   const [notices, setNotices] = useState([]);
+  const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeNoticeId, setActiveNoticeId] = useState('');
@@ -42,6 +43,7 @@ const ComplianceCenter = () => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Could not load compliance notices.');
       setNotices(payload.notices || []);
+      setSources(payload.sources || []);
     } catch (err) {
       setError(err.message || 'Compliance notices are temporarily unavailable.');
     } finally {
@@ -136,6 +138,20 @@ const ComplianceCenter = () => {
 
       {companyId && !loading && notices.length === 0 && (
         <Card className="p-6 text-sm text-slate-600 dark:text-slate-300">No statutory changes have been detected yet. The watcher establishes a baseline on its first scan and records later content changes for review.</Card>
+      )}
+
+      {companyId && sources.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {sources.map((source) => (
+            <Card key={source.id} className="space-y-2 p-4">
+              <p className="text-xs font-semibold text-slate-900 dark:text-white">{source.authority} · {source.topic}</p>
+              <p className="text-sm text-slate-700 dark:text-slate-300">{source.name}</p>
+              <p className="text-[11px] text-slate-500">Last scan: {source.lastCheckedAt ? new Date(source.lastCheckedAt).toLocaleString() : 'Not scanned yet'}</p>
+              <p className={`text-[11px] font-semibold ${source.lastStatus === 'ERROR' || source.lastStatus === 'BLOCKED' ? 'text-rose-600' : 'text-emerald-600'}`}>{source.lastStatus || 'PENDING'}</p>
+              {source.lastError && <p className="text-[11px] text-rose-600">{source.lastError}</p>}
+            </Card>
+          ))}
+        </div>
       )}
 
       <div className="space-y-4">
