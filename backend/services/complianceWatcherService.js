@@ -79,7 +79,7 @@ const updateSourceStatus = (sourceId, data) => prisma.complianceSource.update({
   data: { ...data, lastCheckedAt: new Date() },
 });
 
-const scanSource = async (source) => {
+const scanSource = async (source, { fetchImpl, signalFactory }) => {
   if (!ALLOWED_SOURCE_URLS.has(source.url)) {
     await updateSourceStatus(source.id, {
       lastStatus: 'BLOCKED',
@@ -93,11 +93,11 @@ const scanSource = async (source) => {
   if (source.lastModified) headers['If-Modified-Since'] = source.lastModified;
 
   try {
-    const response = await fetch(source.url, {
+    const response = await fetchImpl(source.url, {
       method: 'GET',
       headers,
       redirect: 'error',
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: signalFactory(FETCH_TIMEOUT_MS),
     });
 
     if (response.status === 304) {
@@ -168,14 +168,14 @@ const scanSource = async (source) => {
   }
 };
 
-export const scanOfficialComplianceSources = async () => {
+export const scanOfficialComplianceSources = async ({ fetchImpl = global.fetch, signalFactory = AbortSignal.timeout } = {}) => {
   const sources = await prisma.complianceSource.findMany({
     where: { active: true },
     orderBy: [{ authority: 'asc' }, { name: 'asc' }],
   });
   const summary = { sources: sources.length, baseline: 0, notices: 0, unchanged: 0, errors: 0 };
   for (const source of sources) {
-    const result = await scanSource(source);
+    const result = await scanSource(source, { fetchImpl, signalFactory });
     summary.baseline += result.baseline;
     summary.notices += result.notices;
     summary.unchanged += result.unchanged;
