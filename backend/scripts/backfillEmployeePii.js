@@ -11,34 +11,22 @@ const dryRun = process.argv.includes('--dry-run');
 const main = async () => {
   validateEmployeePiiEncryptionConfig();
   let processed = 0;
+
   if (dryRun) {
     const total = await prisma.$queryRaw`
       SELECT COUNT(*)::int AS "count"
       FROM "employees"
-      WHERE "bankAccount" IS NOT NULL
-         OR "ssnitNumber" IS NOT NULL
-         OR "ghanaCardPin" IS NOT NULL
+      WHERE "pii_encryption_version" IS DISTINCT FROM 1
     `;
-    process.stdout.write(`Employee PII backfill dry run: ${Number(total[0]?.count || 0)} row(s) require migration.\\n`);
+    process.stdout.write(`Employee PII backfill dry run: ${Number(total[0]?.count || 0)} row(s) require migration.\n`);
     return;
   }
 
   for (;;) {
     const rows = await prisma.$queryRaw`
-      SELECT
-        "id",
-        "bankAccount",
-        "ssnitNumber",
-        "ghanaCardPin",
-        "bank_account_encrypted" AS "bankAccountEncrypted",
-        "ssnit_number_encrypted" AS "ssnitNumberEncrypted",
-        "ssnit_number_hash" AS "ssnitNumberHash",
-        "ghana_card_pin_encrypted" AS "ghanaCardPinEncrypted",
-        "ghana_card_pin_hash" AS "ghanaCardPinHash"
+      SELECT "id", "bankAccount", "ssnitNumber", "ghanaCardPin"
       FROM "employees"
-      WHERE "bankAccount" IS NOT NULL
-         OR "ssnitNumber" IS NOT NULL
-         OR "ghanaCardPin" IS NOT NULL
+      WHERE "pii_encryption_version" IS DISTINCT FROM 1
       ORDER BY "id" ASC
       LIMIT ${batchSize}
     `;
@@ -46,23 +34,20 @@ const main = async () => {
 
     await prisma.$transaction(async (tx) => {
       for (const row of rows) {
-        const bankAccountEncrypted = row.bankAccountEncrypted || encryptSensitiveValue(row.bankAccount);
-        const ssnitNumberEncrypted = row.ssnitNumberEncrypted || encryptSensitiveValue(row.ssnitNumber);
-        const ssnitNumberHash = row.ssnitNumberHash || createEmployeePiiBlindIndex(row.ssnitNumber, 'ssnitNumber');
-        const ghanaCardPinEncrypted = row.ghanaCardPinEncrypted || encryptSensitiveValue(row.ghanaCardPin);
-        const ghanaCardPinHash = row.ghanaCardPinHash || createEmployeePiiBlindIndex(row.ghanaCardPin, 'ghanaCardPin');
+        const bankAccount = encryptSensitiveValue(row.bankAccount);
+        const ssnitNumber = encryptSensitiveValue(row.ssnitNumber);
+        const ssnitNumberHash = createEmployeePiiBlindIndex(row.ssnitNumber, 'ssnitNumber');
+        const ghanaCardPin = encryptSensitiveValue(row.ghanaCardPin);
+        const ghanaCardPinHash = createEmployeePiiBlindIndex(row.ghanaCardPin, 'ghanaCardPin');
 
         await tx.$executeRaw`
           UPDATE "employees"
           SET
-            "bank_account_encrypted" = COALESCE("bank_account_encrypted", ${bankAccountEncrypted}),
-            "ssnit_number_encrypted" = COALESCE("ssnit_number_encrypted", ${ssnitNumberEncrypted}),
-            "ssnit_number_hash" = COALESCE("ssnit_number_hash", ${ssnitNumberHash}),
-            "ghana_card_pin_encrypted" = COALESCE("ghana_card_pin_encrypted", ${ghanaCardPinEncrypted}),
-            "ghana_card_pin_hash" = COALESCE("ghana_card_pin_hash", ${ghanaCardPinHash}),
-            "bankAccount" = NULL,
-            "ssnitNumber" = NULL,
-            "ghanaCardPin" = NULL
+            "bankAccount" = ${bankAccount},
+            "ssnitNumber" = ${ssnitNumber},
+            "ssnit_number_hash" = ${ssnitNumberHash},
+            "ghana_card_pin_hash" = ${ghanaCardPinHash},
+            "pii_encryption_version" = 1
           WHERE "id" = ${row.id}
         `;
       }
@@ -70,20 +55,19 @@ const main = async () => {
     processed += rows.length;
   }
 
-  if (!dryRun) {
-    const remaining = await prisma.$queryRaw`
-      SELECT COUNT(*)::int AS "count"
-      FROM "employees"
-      WHERE "bankAccount" IS NOT NULL
-         OR "ssnitNumber" IS NOT NULL
-         OR "ghanaCardPin" IS NOT NULL
-    `;
-    if (Number(remaining[0]?.count || 0) !== 0) {
-      throw new Error('Employee PII backfill incomplete; plaintext values remain in legacy columns.');
-    }
+  const remaining = await prisma.$queryRaw`
+    SELECT COUNT(*)::int AS "count"
+    FROM "employees"
+    WHERE "pii_encryption_version" IS DISTINCT FROM 1
+       OR ("bankAccount" IS NOT NULL AND "bankAccount" NOT LIKE 'enc:v1:%')
+       OR ("ssnitNumber" IS NOT NULL AND "ssnitNumber" NOT LIKE 'enc:v1:%')
+       OR ("ghanaCardPin" IS NOT NULL AND "ghanaCardPin" NOT LIKE 'enc:v1:%')
+  `;
+  if (Number(remaining[0]?.count || 0) !== 0) {
+    throw new Error('Employee PII backfill incomplete; unencrypted employee records remain.');
   }
 
-  process.stdout.write(`Employee PII backfill ${dryRun ? 'dry run' : 'completed'}: ${processed} row(s) inspected.\n`);
+  process.stdout.write(`Employee PII backfill completed: ${processed} row(s) encrypted.\n`);
 };
 
 try {
