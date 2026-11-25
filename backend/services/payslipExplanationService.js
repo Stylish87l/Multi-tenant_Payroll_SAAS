@@ -37,7 +37,10 @@ export const buildPayslipExplanation = (item) => {
 
   const notes = [
     'This explanation uses the amounts and payroll snapshots saved when this payroll was finalized. It does not recalculate statutory deductions or use today’s tax settings.',
+    'The saved SSNIT calculation uses basic salary as its contribution base; allowances are not part of that base.',
     'Employer SSNIT is paid by the company separately; it is not deducted from your take-home pay.',
+    'Tier 1 and Tier 2 are the SSNIT remittance split recorded for this payroll. They are shown separately from the employee deduction and employer contribution, not added as extra deductions from your pay.',
+    'PAYE is the income-tax amount recorded by payroll. The saved taxable-income, relief-input and historical tax-configuration snapshots provide context; this explanation does not recalculate the tax bands or relief amount.',
   ];
 
   if (!earningsAvailable) {
@@ -68,6 +71,8 @@ export const buildPayslipExplanation = (item) => {
     taxableIncomeGhs: money(item.taxableIncome),
     employerContributions: [
       { label: 'Employer SSNIT contribution', amountGhs: money(item.ssnitEmployer) },
+    ],
+    ssnitRemittances: [
       { label: 'SSNIT Tier 1 remittance', amountGhs: money(item.ssnitTier1) },
       { label: 'SSNIT Tier 2 remittance', amountGhs: money(item.ssnitTier2) },
     ],
