@@ -65,7 +65,7 @@ export const normalizeAccountHolderName = (value) => String(value || '')
   .join(' ');
 
 export const verifyHubtelBankAccountName = async ({ bankCode, bankAccount, employeeName }) => {
-  if (!/^\d{6}$/.test(String(bankCode || ''))) throw new PayoutStateError('A valid Hubtel/GhIPSS bank code is required for a live bank payout.');
+  if (!/^\d{6}$/.test(String(bankCode || '')) || !HUBTEL_BANK_NAMES[bankCode]) throw new PayoutStateError('A supported Hubtel/GhIPSS bank code is required for a live bank payout.');
   if (!/^\d{1,24}$/.test(String(bankAccount || ''))) throw new PayoutStateError('A valid bank account number is required for a live bank payout.');
   if (!employeeName) throw new PayoutStateError('The employee name is required for bank account verification.');
 
@@ -85,7 +85,7 @@ export const verifyHubtelBankAccountName = async ({ bankCode, bankAccount, emplo
 };
 
 export const submitHubtelBankPayout = async ({
-  bankCode, bankName, bankAccount, verifiedAccountName, amount, reference,
+  bankCode, bankAccount, verifiedAccountName, amount, reference,
 }) => {
   if (!/^\d{6}$/.test(String(bankCode || '')) || !HUBTEL_BANK_NAMES[bankCode]) throw new PayoutStateError('A supported Hubtel/GhIPSS bank code is required for a live bank payout.');
   if (!Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100) {
