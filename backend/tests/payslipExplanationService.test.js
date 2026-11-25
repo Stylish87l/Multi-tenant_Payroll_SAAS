@@ -70,6 +70,18 @@ describe('deterministic employee payslip explanation', () => {
     expect(JSON.stringify(result)).not.toContain('companyId');
   });
 
+  it('does not call an incomplete historical tax snapshot available', () => {
+    const legacy = {
+      ...finalizedItem,
+      payrollRun: {
+        ...finalizedItem.payrollRun,
+        taxConfigSnapshot: { year: 2026, PAYE: { bands: [] }, SSNIT: {} },
+      },
+    };
+    const result = buildPayslipExplanation(legacy);
+    expect(result.taxContext.historicalSnapshotAvailable).toBe(false);
+  });
+
   it('does not reconstruct missing historical snapshots from current profile data', () => {
     const legacy = {
       ...finalizedItem,
