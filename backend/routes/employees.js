@@ -225,7 +225,7 @@ router.post('/import/preview', async (req, res) => {
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
     const created = await prisma.$transaction(async (tx) => {
       await tx.employeeImportPreview.deleteMany({
-        where: { userId: req.userId, companyId, status: 'PREVIEWED', expiresAt: { lt: new Date() } },
+        where: { status: 'PREVIEWED', expiresAt: { lt: new Date() } },
       });
       const record = await tx.employeeImportPreview.create({
         data: {
