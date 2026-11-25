@@ -33,22 +33,30 @@ router.use(rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']));
 
 router.get('/notices', readLimiter, async (req, res, next) => {
   try {
-    const notices = await prisma.complianceNotice.findMany({
-      orderBy: { detectedAt: 'desc' },
-      take: 100,
-      include: {
-        source: { select: { name: true, authority: true, topic: true, url: true } },
-        assessments: {
-          where: { companyId: req.reviewCompanyId },
-          take: 1,
-          select: {
-            id: true, summary: true, impactAreas: true, proposedActions: true,
-            status: true, createdAt: true,
+    const [notices, sources] = await Promise.all([
+      prisma.complianceNotice.findMany({
+        orderBy: { detectedAt: 'desc' },
+        take: 100,
+        include: {
+          source: { select: { name: true, authority: true, topic: true, url: true } },
+          assessments: {
+            where: { companyId: req.reviewCompanyId },
+            take: 1,
+            select: {
+              id: true, summary: true, impactAreas: true, proposedActions: true,
+              status: true, createdAt: true,
+            },
           },
         },
-      },
-    });
+      }),
+      prisma.complianceSource.findMany({
+        where: { active: true },
+        orderBy: [{ authority: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true, authority: true, topic: true, url: true, lastCheckedAt: true, lastStatus: true, lastError: true },
+      }),
+    ]);
     return res.json({
+      sources,
       notices: notices.map((notice) => ({
         id: notice.id,
         title: notice.title,
