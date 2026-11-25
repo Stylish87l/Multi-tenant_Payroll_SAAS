@@ -9,7 +9,8 @@ On My Payslips, the employee can expand **Explain this payslip** to view:
 - Gross pay.
 - Employee SSNIT and PAYE deductions and their recorded total.
 - The recorded taxable income used for PAYE.
-- Employer SSNIT contributions, clearly separated from employee deductions.
+- Employer SSNIT contribution, clearly separated from employee deductions.
+- Tier 1 and Tier 2 SSNIT remittance values in a separate section; these are not shown as extra employee deductions or as additional employer contributions.
 - The recorded take-home pay and payment status.
 - Whether the historical tax-configuration and relief-input snapshots are available.
 
@@ -20,6 +21,7 @@ On My Payslips, the employee can expand **Explain this payslip** to view:
 - It never reads the employee's current salary, current bank profile, current identity fields, or current tax configuration to reconstruct historical payroll.
 - It does not recalculate PAYE, SSNIT, net pay or statutory rates. The saved payroll amounts remain authoritative.
 - Employer SSNIT is shown separately and is never described as a deduction from employee take-home pay.
+- Tier 1 and Tier 2 are displayed as remittance categories, not as additional deductions or as additional employer-only contributions.
 - Legacy payroll rows without earnings, relief-input or tax-configuration snapshots are clearly identified; missing historical values are not guessed or backfilled from today's profile.
 - The explanation is deterministic and stays inside Paylio. No employee salary, tax, payslip or question data is sent to an external AI provider.
 
