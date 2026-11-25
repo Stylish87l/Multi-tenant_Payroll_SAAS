@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 const ENVELOPE_PREFIX = 'enc:v1:';
 const TEST_KEY = Buffer.alloc(32, 0x50).toString('base64');
+const TEST_INDEX_KEY = Buffer.alloc(32, 0x49).toString('base64');
 
 const decodeKey = (value, label) => {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required.`);
@@ -30,13 +31,14 @@ const getKeyring = () => {
 
 const getIndexKey = () => decodeKey(
   process.env.DATA_ENCRYPTION_INDEX_KEY
-    || (process.env.NODE_ENV === 'test' ? TEST_KEY : null),
+    || (process.env.NODE_ENV === 'test' ? TEST_INDEX_KEY : null),
   'DATA_ENCRYPTION_INDEX_KEY',
 );
 
 export const validateEmployeePiiEncryptionConfig = () => {
-  getKeyring();
-  getIndexKey();
+  const { keys, currentKeyId } = getKeyring();
+  const indexKey = getIndexKey();
+  if (keys.get(currentKeyId).equals(indexKey)) throw new Error('DATA_ENCRYPTION_INDEX_KEY must be different from DATA_ENCRYPTION_KEY.');
   return true;
 };
 
