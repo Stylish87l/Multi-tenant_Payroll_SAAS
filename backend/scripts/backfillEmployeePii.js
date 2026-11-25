@@ -45,6 +45,7 @@ const main = async () => {
           SET
             "bankAccount" = ${bankAccount},
             "ssnitNumber" = ${ssnitNumber},
+            "ghanaCardPin" = ${ghanaCardPin},
             "ssnit_number_hash" = ${ssnitNumberHash},
             "ghana_card_pin_hash" = ${ghanaCardPinHash},
             "pii_encryption_version" = 1
