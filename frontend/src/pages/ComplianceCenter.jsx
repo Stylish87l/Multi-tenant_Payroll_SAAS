@@ -27,7 +27,6 @@ const ComplianceCenter = () => {
   const [impactAreas, setImpactAreas] = useState(['PAYE']);
   const [proposedActions, setProposedActions] = useState('');
   const [saving, setSaving] = useState(false);
-  const [noticeSaving, setNoticeSaving] = useState('');
 
   const loadNotices = useCallback(async () => {
     if (!companyId) {
