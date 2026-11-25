@@ -1,7 +1,8 @@
 ALTER TABLE "users"
   ADD COLUMN "two_factor_enabled" BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN "two_factor_secret_encrypted" TEXT,
-  ADD COLUMN "two_factor_verified_at" TIMESTAMP(3);
+  ADD COLUMN "two_factor_verified_at" TIMESTAMP(3),
+  ADD COLUMN "two_factor_last_counter" BIGINT;
 
 CREATE TABLE "two_factor_recovery_codes" (
   "id" TEXT NOT NULL,
