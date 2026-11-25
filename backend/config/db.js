@@ -74,6 +74,33 @@ basePrisma.$on('error', (e) => logger.error('Prisma Error', { message: e.message
 
 const prisma = basePrisma.$extends(createEmployeePiiEncryptionExtension());
 
+export const assertEmployeePiiBackfillComplete = async () => {
+  const columns = await basePrisma.$queryRaw`
+    SELECT COUNT(*)::int AS "count"
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'employees'
+      AND column_name IN (
+        'bank_account_encrypted', 'ssnit_number_encrypted', 'ssnit_number_hash',
+        'ghana_card_pin_encrypted', 'ghana_card_pin_hash'
+      )
+  `;
+  if (Number(columns[0]?.count || 0) !== 5) {
+    throw new Error('Employee PII encryption migration is not fully applied.');
+  }
+  const remaining = await basePrisma.$queryRaw`
+    SELECT COUNT(*)::int AS "count"
+    FROM "employees"
+    WHERE "bankAccount" IS NOT NULL
+       OR "ssnitNumber" IS NOT NULL
+       OR "ghanaCardPin" IS NOT NULL
+  `;
+  if (Number(remaining[0]?.count || 0) !== 0) {
+    throw new Error('Employee PII plaintext remains in legacy columns. Complete the maintenance backfill before serving traffic.');
+  }
+  return true;
+};
+
 export const disconnectDb = async () => {
   await basePrisma.$disconnect();
   await pool.end();
