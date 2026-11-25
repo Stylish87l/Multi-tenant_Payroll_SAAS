@@ -51,7 +51,7 @@ const main = async () => {
           WHERE "id" = ${row.id}
         `;
       }
-    });
+    }, { maxWait: 10_000, timeout: 60_000 });
     processed += rows.length;
   }
 
