@@ -318,10 +318,8 @@ router.post('/import/commit', async (req, res) => {
         createdEmployees.push(created.id);
       }
 
-      await tx.employeeImportPreview.update({
-        where: { id: preview.id },
-        data: { status: 'IMPORTED' },
-      });
+      // The encrypted staged payload is deleted after a successful import; only the audit summary remains.
+      await tx.employeeImportPreview.delete({ where: { id: preview.id } });
       await writeAudit(tx, {
         actor: actorFromReq(req),
         companyId,
