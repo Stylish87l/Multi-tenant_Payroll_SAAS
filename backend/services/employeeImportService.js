@@ -7,6 +7,8 @@ export class EmployeeImportInputError extends Error {}
 export const MAX_IMPORT_FILE_BYTES = 700 * 1024;
 export const MAX_IMPORT_ROWS = 500;
 const MAX_IMPORT_COLUMNS = 40;
+const MAX_XLSX_UNCOMPRESSED_BYTES = 10 * 1024 * 1024;
+const MAX_XLSX_ENTRIES = 2000;
 
 const aliases = {
   name: ['name', 'full name', 'employee name', 'employee full name'],
@@ -89,11 +91,58 @@ export const parseCsvRecords = (source) => {
   return records;
 };
 
+const assertSafeXlsxArchive = (buffer) => {
+  const endSignature = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+  const endOffset = buffer.lastIndexOf(endSignature);
+  if (endOffset < 0 || endOffset + 22 > buffer.length) {
+    throw new EmployeeImportInputError('The XLSX file is not a valid ZIP workbook.');
+  }
+
+  const diskNumber = buffer.readUInt16LE(endOffset + 4);
+  const centralDirectoryDisk = buffer.readUInt16LE(endOffset + 6);
+  const entriesOnDisk = buffer.readUInt16LE(endOffset + 8);
+  const entryCount = buffer.readUInt16LE(endOffset + 10);
+  const centralDirectorySize = buffer.readUInt32LE(endOffset + 12);
+  const centralDirectoryOffset = buffer.readUInt32LE(endOffset + 16);
+  if (diskNumber !== 0 || centralDirectoryDisk !== 0 || entriesOnDisk !== entryCount
+    || entryCount === 0 || entryCount > MAX_XLSX_ENTRIES
+    || centralDirectoryOffset + centralDirectorySize > endOffset) {
+    throw new EmployeeImportInputError('The XLSX archive structure is invalid or exceeds supported limits.');
+  }
+
+  let cursor = centralDirectoryOffset;
+  let uncompressedTotal = 0;
+  for (let index = 0; index < entryCount; index += 1) {
+    if (cursor + 46 > endOffset || buffer.readUInt32LE(cursor) !== 0x02014b50) {
+      throw new EmployeeImportInputError('The XLSX archive contains an invalid directory entry.');
+    }
+    const flags = buffer.readUInt16LE(cursor + 8);
+    const compressedSize = buffer.readUInt32LE(cursor + 20);
+    const uncompressedSize = buffer.readUInt32LE(cursor + 24);
+    const fileNameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    if ((flags & 1) !== 0 || compressedSize > buffer.length
+      || cursor + 46 + fileNameLength + extraLength + commentLength > endOffset) {
+      throw new EmployeeImportInputError('The XLSX archive contains an unsupported or invalid entry.');
+    }
+    uncompressedTotal += uncompressedSize;
+    if (uncompressedTotal > MAX_XLSX_UNCOMPRESSED_BYTES) {
+      throw new EmployeeImportInputError('The XLSX workbook expands beyond the 10 MB processing limit.');
+    }
+    cursor += 46 + fileNameLength + extraLength + commentLength;
+  }
+  if (cursor !== centralDirectoryOffset + centralDirectorySize) {
+    throw new EmployeeImportInputError('The XLSX archive directory is malformed.');
+  }
+};
+
 const parseFileRecords = async ({ fileName, buffer }) => {
   const extension = String(fileName || '').toLowerCase().split('.').pop();
   if (extension === 'csv') return parseCsvRecords(buffer.toString('utf8'));
   if (extension !== 'xlsx') throw new EmployeeImportInputError('Upload a .csv or .xlsx file. Legacy .xls files are not supported.');
 
+  assertSafeXlsxArchive(buffer);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const worksheet = workbook.worksheets[0];
