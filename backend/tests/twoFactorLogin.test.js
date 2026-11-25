@@ -15,7 +15,7 @@ jest.unstable_mockModule('../config/db.js', () => ({
   default: prisma,
   Prisma: { TransactionIsolationLevel: { Serializable: 'Serializable' } },
 }));
-jest.unstable_mockModule('bcrypt', () => ({ default: { compare: bcryptCompare } }));
+jest.unstable_mockModule('bcrypt', () => ({ default: { compare: bcryptCompare, hashSync: () => 'dummy-bcrypt-hash' } }));
 jest.unstable_mockModule('../utils/authTokens.js', () => ({
   signAccessToken: jest.fn(),
   signRefreshToken: jest.fn(),
