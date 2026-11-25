@@ -80,20 +80,7 @@ const Login = () => {
               </div>
             </div>
 
-            {requiresTwoFactor && (
-              <div className="space-y-2">
-                <label htmlFor="two-factor-code" className="text-xs font-semibold tracking-wider text-slate-500 ml-1">Authenticator or recovery code</label>
-                <input
-                  id="two-factor-code" name="twoFactorCode" type="text" autoComplete="one-time-code"
-                  inputMode="text" maxLength={40} value={twoFactorCode}
-                  onChange={(e) => setTwoFactorCode(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-slate-900 dark:text-white tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="123456 or recovery code" required
-                />
-                <button type="button" onClick={() => { setRequiresTwoFactor(false); setTwoFactorCode(''); setPassword(''); setError(null); }}
-                  className="text-xs font-semibold text-primary hover:underline">Use a different account</button>
-              </div>
-            )}
+
 
             <div className="flex justify-end -mb-2">
               <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">Forgot password?</Link>
@@ -118,6 +105,21 @@ const Login = () => {
                 </button>
               </div>
             </div>
+
+            {requiresTwoFactor && (
+              <div className="space-y-2">
+                <label htmlFor="two-factor-code" className="text-xs font-semibold tracking-wider text-slate-500 ml-1">Authenticator or recovery code</label>
+                <input
+                  id="two-factor-code" name="twoFactorCode" type="text" autoComplete="one-time-code"
+                  inputMode="text" maxLength={40} value={twoFactorCode}
+                  onChange={(e) => setTwoFactorCode(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 text-slate-900 dark:text-white tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="123456 or recovery code" required
+                />
+                <button type="button" onClick={() => { setRequiresTwoFactor(false); setTwoFactorCode(''); setPassword(''); setError(null); }}
+                  className="text-xs font-semibold text-primary hover:underline">Use a different account</button>
+              </div>
+            )}
 
             {/* Inline spinner: the shared <Loader> has min-h-[200px] and made this button 200px tall. */}
             <button
