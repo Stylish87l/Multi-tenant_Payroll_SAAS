@@ -123,6 +123,7 @@ describe('employee PII encryption', () => {
 
   it('validates that both encryption and blind-index keys are configured', () => {
     expect(validateEmployeePiiEncryptionConfig()).toBe(true);
+    process.env.NODE_ENV = 'production';
     delete process.env.DATA_ENCRYPTION_INDEX_KEY;
     expect(() => validateEmployeePiiEncryptionConfig()).toThrow(/DATA_ENCRYPTION_INDEX_KEY/);
   });
