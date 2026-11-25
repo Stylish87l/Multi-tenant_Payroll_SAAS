@@ -172,7 +172,8 @@ const findPayslip = async (req, itemId) => {
   const where = buildPayslipItemWhere({
     userRole: req.userRole, companyId: req.companyId, userId: req.userId,
   }, itemId);
-  where.payrollRun = { ...(where.payrollRun || {}), status: 'FINALIZED' };
+  where.deletedAt = null;
+  where.payrollRun = { ...(where.payrollRun || {}), status: 'FINALIZED', deletedAt: null };
   const item = await prisma.payrollItem.findFirst({ where, select: ITEM_SELECT });
   return hasConsistentPayslipTenant(item) ? item : null;
 };
@@ -185,7 +186,8 @@ router.get('/item/:itemId/explanation', rbac(['EMPLOYEE']), async (req, res) => 
     const where = buildPayslipItemWhere({
       userRole: req.userRole, companyId: req.companyId, userId: req.userId,
     }, req.params.itemId);
-    where.payrollRun = { ...(where.payrollRun || {}), status: 'FINALIZED' };
+    where.deletedAt = null;
+    where.payrollRun = { ...(where.payrollRun || {}), status: 'FINALIZED', deletedAt: null };
     const item = await prisma.payrollItem.findFirst({ where, select: EXPLANATION_SELECT });
     if (!hasConsistentPayslipTenant(item)) {
       return res.status(404).json({ error: 'Payslip not found or access denied.' });
@@ -216,7 +218,8 @@ router.get('/mine', rbac(['EMPLOYEE']), async (req, res) => {
     const items = await prisma.payrollItem.findMany({
       where: {
         employee: { userId: req.userId, companyId: req.companyId },
-        payrollRun: { companyId: req.companyId, status: 'FINALIZED' },
+        deletedAt: null,
+        payrollRun: { companyId: req.companyId, status: 'FINALIZED', deletedAt: null },
       },
       select: {
         id: true, netPay: true, paymentStatus: true, paymentRef: true,
