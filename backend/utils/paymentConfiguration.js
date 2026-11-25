@@ -46,6 +46,9 @@ export const resolvePayoutMode = ({ provider, employee, env = process.env }) => 
     if (env.HUBTEL_TRANSFER_CONTRACT_VERIFIED !== 'true') {
       throw new PayoutStateError('Hubtel transfers are blocked until the current Send to Bank contract has been verified in the Hubtel sandbox.');
     }
+    let callbackUrl;
+    try { callbackUrl = new URL(env.HUBTEL_PAYOUT_CALLBACK_URL); } catch { throw new PayoutStateError('HUBTEL_PAYOUT_CALLBACK_URL must be a valid HTTPS URL.'); }
+    if (callbackUrl.protocol !== 'https:') throw new PayoutStateError('HUBTEL_PAYOUT_CALLBACK_URL must use HTTPS.');
     if (env.HUBTEL_CALLBACK_INGRESS_ALLOWLIST_VERIFIED !== 'true') {
       throw new PayoutStateError('Hubtel payouts are blocked until the callback ingress is restricted to Hubtel source IPs and the trusted proxy chain is verified.');
     }
