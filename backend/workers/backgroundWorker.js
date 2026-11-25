@@ -5,6 +5,7 @@ import logger from '../config/logger.js';
 import { dispatchNotification } from '../services/notificationService.js';
 import { enqueueEmployeeReconciliation } from '../services/backgroundJobService.js';
 import { reconcileEmployeeAccountLinks } from '../services/employeeIdentityService.js';
+import { reconcileHubtelPayout } from '../services/paymentServices.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_ATTEMPTS = 8;
@@ -52,6 +53,13 @@ const processJob = async (job) => {
       await dispatchNotification({ ...notification, status: 'PENDING' });
       const latest = await prisma.notification.findUnique({ where: { id }, select: { status: true } });
       if (latest?.status === 'FAILED') throw new Error('Notification delivery failed; retry scheduled');
+      return;
+    }
+    case 'HUBTEL_PAYOUT_RECONCILIATION': {
+      const { payrollItemId, reference } = job.payload || {};
+      if (!payrollItemId || !reference) throw new Error('Hubtel payout reconciliation job is missing its payout identifiers.');
+      const result = await reconcileHubtelPayout({ payrollItemId, reference });
+      logger.info('Hubtel payout reconciliation completed', { jobId: job.id, ...result });
       return;
     }
     case 'EMPLOYEE_ACCOUNT_RECONCILIATION': {
