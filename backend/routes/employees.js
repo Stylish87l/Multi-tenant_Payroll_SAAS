@@ -64,6 +64,8 @@ router.get('/', async (req, res) => {
         OR: [
           { name: { contains: String(search), mode: 'insensitive' } },
           { email: { contains: String(search), mode: 'insensitive' } },
+          { ssnitNumber: String(search) },
+          { ghanaCardPin: String(search) },
 
         ],
       }),
