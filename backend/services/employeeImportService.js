@@ -2,6 +2,8 @@ import ExcelJS from 'exceljs';
 import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employeeSchema.js';
 import { createEmployeePiiBlindIndex } from './employeePiiEncryption.js';
 
+export class EmployeeImportInputError extends Error {}
+
 export const MAX_IMPORT_FILE_BYTES = 700 * 1024;
 export const MAX_IMPORT_ROWS = 500;
 const MAX_IMPORT_COLUMNS = 40;
@@ -81,7 +83,7 @@ export const parseCsvRecords = (source) => {
     } else field += char;
   }
 
-  if (quoted) throw new Error('The CSV file contains an unclosed quoted field.');
+  if (quoted) throw new EmployeeImportInputError('The CSV file contains an unclosed quoted field.');
   record.push(field);
   if (record.some((cell) => String(cell).trim() !== '')) records.push(record);
   return records;
@@ -90,7 +92,7 @@ export const parseCsvRecords = (source) => {
 const parseFileRecords = async ({ fileName, buffer }) => {
   const extension = String(fileName || '').toLowerCase().split('.').pop();
   if (extension === 'csv') return parseCsvRecords(buffer.toString('utf8'));
-  if (extension !== 'xlsx') throw new Error('Upload a .csv or .xlsx file. Legacy .xls files are not supported.');
+  if (extension !== 'xlsx') throw new EmployeeImportInputError('Upload a .csv or .xlsx file. Legacy .xls files are not supported.');
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
@@ -205,13 +207,19 @@ const validateRows = async ({ rows, companyId, client }) => {
 };
 
 export const buildEmployeeImportPreview = async ({ fileName, buffer, companyId, client }) => {
-  if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error('The uploaded file is empty.');
-  if (buffer.length > MAX_IMPORT_FILE_BYTES) throw new Error('The file is too large. Maximum upload size is 700 KB.');
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new EmployeeImportInputError('The uploaded file is empty.');
+  if (buffer.length > MAX_IMPORT_FILE_BYTES) throw new EmployeeImportInputError('The file is too large. Maximum upload size is 700 KB.');
 
-  const records = await parseFileRecords({ fileName, buffer });
-  if (records.length < 2) throw new Error('The file must include a header row and at least one employee row.');
+  let records;
+  try {
+    records = await parseFileRecords({ fileName, buffer });
+  } catch (error) {
+    if (error instanceof EmployeeImportInputError) throw error;
+    throw new EmployeeImportInputError('The uploaded file could not be read. Check that it is a valid CSV or XLSX workbook.');
+  }
+  if (records.length < 2) throw new EmployeeImportInputError('The file must include a header row and at least one employee row.');
   const headers = records[0].map(cellText);
-  if (headers.length > MAX_IMPORT_COLUMNS) throw new Error(`The file may contain at most ${MAX_IMPORT_COLUMNS} columns.`);
+  if (headers.length > MAX_IMPORT_COLUMNS) throw new EmployeeImportInputError(`The file may contain at most ${MAX_IMPORT_COLUMNS} columns.`);
 
   const mapping = {};
   const mappedHeaderIndexes = new Set();
@@ -225,14 +233,14 @@ export const buildEmployeeImportPreview = async ({ fileName, buffer, companyId, 
       mappedHeaderIndexes.add(index);
     }
   });
-  if (duplicateMappings.length) throw new Error(`Multiple columns map to the same field: ${[...new Set(duplicateMappings)].join(', ')}.`);
+  if (duplicateMappings.length) throw new EmployeeImportInputError(`Multiple columns map to the same field: ${[...new Set(duplicateMappings)].join(', ')}.`);
 
   const required = ['name', 'email', 'position', 'basicSalary'];
   const missing = required.filter((field) => !Object.hasOwn(mapping, field));
-  if (missing.length) throw new Error(`Missing required columns: ${missing.join(', ')}.`);
+  if (missing.length) throw new EmployeeImportInputError(`Missing required columns: ${missing.join(', ')}.`);
 
   const rawRows = records.slice(1).filter((record) => record.some((value) => cellText(value) !== ''));
-  if (rawRows.length > MAX_IMPORT_ROWS) throw new Error(`The file contains too many rows. Maximum is ${MAX_IMPORT_ROWS}.`);
+  if (rawRows.length > MAX_IMPORT_ROWS) throw new EmployeeImportInputError(`The file contains too many rows. Maximum is ${MAX_IMPORT_ROWS}.`);
   const rows = rawRows.map((record, index) => ({
     rowNumber: index + 2,
     data: toEmployeeInput(record, mapping),
