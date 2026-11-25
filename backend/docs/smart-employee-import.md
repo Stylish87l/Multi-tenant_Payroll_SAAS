@@ -6,6 +6,7 @@ Smart Employee Import supports administrator-led onboarding from CSV and XLSX fi
 
 - CSV and XLSX; the first worksheet is used for XLSX.
 - Maximum file size: 700 KB.
+- XLSX archives are checked before parsing and limited to 10 MB of uncompressed content and 2,000 ZIP entries.
 - Maximum rows: 500 employees.
 - Maximum columns: 40.
 - Required mapped fields: name, email, position and basic salary.
