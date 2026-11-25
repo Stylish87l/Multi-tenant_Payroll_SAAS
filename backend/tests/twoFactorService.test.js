@@ -5,10 +5,13 @@ import {
   consumeRecoveryCode,
   createOtpAuthUri,
   generateRecoveryCodes,
+  generateTotpCode,
   generateTotpSecret,
   hashRecoveryCode,
   verifyTotp,
+  verifyUserTwoFactorCode,
 } from '../services/twoFactorService.js';
+import { encryptSensitiveValue } from '../services/employeePiiEncryption.js';
 
 describe('TOTP and recovery-code service', () => {
   it('round-trips Base32 secrets and generates 160-bit TOTP secrets', () => {
@@ -23,6 +26,31 @@ describe('TOTP and recovery-code service', () => {
     expect(verifyTotp(secret, '287083', 59_000, 0)).toBe(false);
     expect(verifyTotp(secret, '287082', 59_000 + 120_000, 0)).toBe(false);
     expect(verifyTotp(secret, '12AB56', 59_000, 1)).toBe(false);
+  });
+
+  it('atomically consumes each TOTP time step so the same code cannot be replayed', async () => {
+    const secret = generateTotpSecret();
+    const user = {
+      id: 'user-1',
+      twoFactorEnabled: true,
+      twoFactorSecretEncrypted: encryptSensitiveValue(secret),
+    };
+    const tx = {
+      user: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      twoFactorRecoveryCode: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn(),
+      },
+    };
+    const code = generateTotpCode(secret);
+    expect(await verifyUserTwoFactorCode({ tx, user, code })).toEqual({ valid: true, method: 'totp' });
+    expect(tx.user.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: user.id, twoFactorEnabled: true }),
+      data: { twoFactorLastCounter: expect.any(BigInt) },
+    }));
+
+    tx.user.updateMany.mockResolvedValue({ count: 0 });
+    expect(await verifyUserTwoFactorCode({ tx, user, code })).toEqual({ valid: false, method: null });
   });
 
   it('creates an authenticator URI with issuer and account label', () => {
