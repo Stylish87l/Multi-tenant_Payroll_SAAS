@@ -13,7 +13,7 @@ import { sendPasswordResetEmail } from '../services/emailService.js';
 import { decryptSensitiveValue, encryptSensitiveValue } from '../services/employeePiiEncryption.js';
 import {
   createOtpAuthUri, generateRecoveryCodes, generateTotpSecret, hashRecoveryCode,
-  verifyTotp, verifyUserTwoFactorCode,
+  matchTotpCounter, verifyUserTwoFactorCode,
 } from '../services/twoFactorService.js';
 
 const router = express.Router();
@@ -464,6 +464,7 @@ router.post('/2fa/enroll', authMiddleware, twoFactorLimiter, async (req, res, ne
           twoFactorEnabled: false,
           twoFactorSecretEncrypted: encryptSensitiveValue(secret),
           twoFactorVerifiedAt: null,
+          twoFactorLastCounter: null,
         },
       });
       await writeTwoFactorAudit(tx, user, req, 'TWO_FACTOR_ENROLLMENT_STARTED', { method: 'totp' });
@@ -486,14 +487,23 @@ router.post('/2fa/verify-enrollment', authMiddleware, twoFactorLimiter, async (r
     if (!user.twoFactorSecretEncrypted) return res.status(409).json({ error: 'Start two-factor setup before verifying a code.' });
     if (user.twoFactorEnabled) return res.status(409).json({ error: 'Two-factor authentication is already enabled.' });
     const secret = decryptSensitiveValue(user.twoFactorSecretEncrypted);
-    if (!verifyTotp(secret, parsed.data.code)) return res.status(400).json({ error: 'The authenticator code is invalid or expired.' });
+    const matchedCounter = matchTotpCounter(secret, parsed.data.code);
+    if (matchedCounter === null) return res.status(400).json({ error: 'The authenticator code is invalid or expired.' });
 
     const recoveryCodes = generateRecoveryCodes();
     const now = new Date();
     await prisma.$transaction(async (tx) => {
       const updated = await tx.user.updateMany({
-        where: { id: user.id, twoFactorEnabled: false, twoFactorSecretEncrypted: user.twoFactorSecretEncrypted },
-        data: { twoFactorEnabled: true, twoFactorVerifiedAt: now },
+        where: {
+          id: user.id,
+          twoFactorEnabled: false,
+          twoFactorSecretEncrypted: user.twoFactorSecretEncrypted,
+          OR: [
+            { twoFactorLastCounter: null },
+            { twoFactorLastCounter: { lt: BigInt(matchedCounter) } },
+          ],
+        },
+        data: { twoFactorEnabled: true, twoFactorVerifiedAt: now, twoFactorLastCounter: BigInt(matchedCounter) },
       });
       if (updated.count !== 1) throw new Error('TWO_FACTOR_ENROLLMENT_CHANGED');
       await tx.twoFactorRecoveryCode.deleteMany({ where: { userId: user.id } });
@@ -531,7 +541,7 @@ router.post('/2fa/disable', authMiddleware, twoFactorLimiter, async (req, res, n
       if (!verification.valid) throw new Error('INVALID_TWO_FACTOR_CODE');
       await tx.user.update({
         where: { id: user.id },
-        data: { twoFactorEnabled: false, twoFactorSecretEncrypted: null, twoFactorVerifiedAt: null },
+        data: { twoFactorEnabled: false, twoFactorSecretEncrypted: null, twoFactorVerifiedAt: null, twoFactorLastCounter: null },
       });
       await tx.twoFactorRecoveryCode.deleteMany({ where: { userId: user.id } });
       await writeTwoFactorAudit(tx, user, req, 'TWO_FACTOR_DISABLED', { verificationMethod: verification.method });
