@@ -9,6 +9,8 @@ import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employ
 import { csvLine } from '../utils/csv.js';
 import { writeAudit, actorFromReq } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
+import { buildEmployeeImportPreview, validateEmployeeImportCommitRows, MAX_IMPORT_FILE_BYTES } from '../services/employeeImportService.js';
+import { encryptSensitiveValue, decryptSensitiveValue } from '../services/employeePiiEncryption.js';
 import { canReadEmployeeField, assertEmployeeInputPermissions, redactEmployeeForRole } from '../policies/permissions.js';
 
 const router = express.Router();
@@ -182,6 +184,171 @@ router.get('/export', async (req, res) => {
     logger.error('Employee Export Error', { companyId: req.companyId, role: req.userRole, stack: error.stack });
     if (!res.headersSent) return res.status(500).json({ error: 'Export failed' });
     return res.end();
+  }
+});
+
+// Smart employee import: only ADMIN and SUPER_ADMIN may import compensation/identity fields.
+const canImportEmployees = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN';
+const resolveImportCompanyId = (req) => (
+  req.userRole === 'SUPER_ADMIN' ? req.body?.companyId : req.companyId
+);
+
+router.post('/import/preview', async (req, res) => {
+  if (!canImportEmployees(req.userRole)) {
+    return res.status(403).json({ error: 'Only company administrators can import employee records.' });
+  }
+  try {
+    const companyId = resolveImportCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: 'Select a company before importing employees.' });
+    const company = await prisma.company.findFirst({
+      where: { id: companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!company) return res.status(404).json({ error: 'Company not found or inactive.' });
+
+    const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName.slice(0, 160) : '';
+    let encoded = typeof req.body?.fileBase64 === 'string' ? req.body.fileBase64.trim() : '';
+    if (encoded.startsWith('data:')) encoded = encoded.slice(encoded.indexOf(',') + 1);
+    if (!encoded || encoded.length > Math.ceil(MAX_IMPORT_FILE_BYTES * 4 / 3) + 8
+      || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+      return res.status(400).json({ error: 'Upload a valid CSV or XLSX file no larger than 700 KB.' });
+    }
+    const buffer = Buffer.from(encoded, 'base64');
+    if (!buffer.length || buffer.length > MAX_IMPORT_FILE_BYTES
+      || buffer.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) {
+      return res.status(400).json({ error: 'The uploaded file is invalid or exceeds the 700 KB limit.' });
+    }
+
+    const preview = await buildEmployeeImportPreview({
+      fileName, buffer, companyId, client: prisma,
+    });
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    const created = await prisma.$transaction(async (tx) => {
+      await tx.employeeImportPreview.deleteMany({
+        where: { userId: req.userId, companyId, status: 'PREVIEWED', expiresAt: { lt: new Date() } },
+      });
+      const record = await tx.employeeImportPreview.create({
+        data: {
+          companyId,
+          userId: req.userId,
+          payloadEncrypted: encryptSensitiveValue(JSON.stringify(preview.payload)),
+          rowCount: preview.response.summary.totalRows,
+          expiresAt,
+        },
+      });
+      await writeAudit(tx, {
+        actor: actorFromReq(req),
+        companyId,
+        action: 'EMPLOYEE_IMPORT_PREVIEWED',
+        resourceType: 'EmployeeImportPreview',
+        resourceId: record.id,
+        details: {
+          rowCount: preview.response.summary.totalRows,
+          validRows: preview.response.summary.validRows,
+          invalidRows: preview.response.summary.invalidRows,
+        },
+      });
+      return record;
+    });
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.status(201).json({
+      previewId: created.id,
+      expiresAt: created.expiresAt,
+      ...preview.response,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: 'The file contains invalid employee values.' });
+    logger.warn('Employee import preview rejected', { userId: req.userId, companyId: req.companyId, message: error.message });
+    return res.status(400).json({ error: error.message || 'Unable to preview employee import.' });
+  }
+});
+
+router.post('/import/commit', async (req, res) => {
+  if (!canImportEmployees(req.userRole)) {
+    return res.status(403).json({ error: 'Only company administrators can import employee records.' });
+  }
+  const companyId = resolveImportCompanyId(req);
+  const previewId = typeof req.body?.previewId === 'string' ? req.body.previewId : '';
+  if (!companyId || !previewId) {
+    return res.status(400).json({ error: 'A selected company and preview ID are required.' });
+  }
+
+  try {
+    const preview = await prisma.employeeImportPreview.findFirst({
+      where: {
+        id: previewId, companyId, userId: req.userId,
+        status: 'PREVIEWED', expiresAt: { gt: new Date() },
+      },
+      select: { id: true, payloadEncrypted: true, rowCount: true },
+    });
+    if (!preview) return res.status(410).json({ error: 'This import preview has expired or is no longer available. Upload the file again.' });
+
+    const payload = JSON.parse(decryptSensitiveValue(preview.payloadEncrypted));
+    const result = await prisma.$transaction(async (tx) => {
+      const claim = await tx.employeeImportPreview.updateMany({
+        where: {
+          id: preview.id, companyId, userId: req.userId,
+          status: 'PREVIEWED', expiresAt: { gt: new Date() },
+        },
+        data: { status: 'IMPORTING' },
+      });
+      if (claim.count !== 1) {
+        const error = new Error('This import preview has already been used or expired.');
+        error.code = 'IMPORT_PREVIEW_UNAVAILABLE';
+        throw error;
+      }
+
+      const rows = await validateEmployeeImportCommitRows({
+        rows: payload.rows, companyId, client: tx,
+      });
+      const createdEmployees = [];
+      for (const row of rows) {
+        const employeeUserId = await findEmployeeLoginUserId(tx, {
+          email: row.data.email, companyId,
+        });
+        const created = await tx.employee.create({
+          data: {
+            ...row.data,
+            companyId,
+            ...(employeeUserId ? { userId: employeeUserId } : {}),
+          },
+          select: { id: true },
+        });
+        createdEmployees.push(created.id);
+      }
+
+      await tx.employeeImportPreview.update({
+        where: { id: preview.id },
+        data: { status: 'IMPORTED' },
+      });
+      await writeAudit(tx, {
+        actor: actorFromReq(req),
+        companyId,
+        action: 'EMPLOYEES_IMPORTED',
+        resourceType: 'EmployeeImportPreview',
+        resourceId: preview.id,
+        details: {
+          importedCount: createdEmployees.length,
+          skippedInvalidCount: payload.rows.length - createdEmployees.length,
+        },
+      });
+      return {
+        importedCount: createdEmployees.length,
+        skippedInvalidCount: payload.rows.length - createdEmployees.length,
+      };
+    }, { isolationLevel: 'Serializable' });
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json({ message: 'Employee import completed.', ...result });
+  } catch (error) {
+    if (error.code === 'IMPORT_NO_VALID_ROWS') return res.status(400).json({ error: error.message });
+    if (error.code === 'IMPORT_DUPLICATES_CHANGED' || error.code === 'P2002') {
+      return res.status(409).json({ error: error.message || 'An employee record now conflicts with an existing employee. Generate a new preview.' });
+    }
+    if (error.code === 'IMPORT_PREVIEW_UNAVAILABLE') return res.status(409).json({ error: error.message });
+    logger.error('Employee import commit failed', { userId: req.userId, companyId, code: error.code, message: error.message });
+    return res.status(500).json({ error: 'Employee import failed. Generate a new preview and try again.' });
   }
 });
 
