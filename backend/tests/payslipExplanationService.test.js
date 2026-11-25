@@ -57,6 +57,13 @@ describe('deterministic employee payslip explanation', () => {
       taxYear: 2026,
       effectiveAt: '2026-10-01',
       reliefInputsSnapshotAvailable: true,
+      reliefInputs: {
+        familyReliefInput: false,
+        childrenCount: 0,
+        disabilityReliefInput: false,
+        oldAgeReliefEligible: false,
+        agedDependentsCount: 0,
+      },
     });
     expect(result.taxContext.reliefInputs).toEqual({
       familyReliefInput: false,
