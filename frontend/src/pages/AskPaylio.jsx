@@ -6,9 +6,8 @@ import Loader from '../components/Loader';
 import { useAuth } from '../context/AuthContext';
 import { GET_COMPANIES } from '../graphql/queries';
 import authFetch from '../lib/authFetch';
+import { REST_BASE } from '../lib/apolloClient';
 
-const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_API_URL || '';
-const REST_BASE = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
 const SUGGESTIONS = [
   'How many active employees do we have?',
   'Summarise the latest finalized payroll.',
