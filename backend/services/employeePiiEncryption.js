@@ -111,8 +111,9 @@ export const encryptEmployeeWriteData = (data) => {
     ['ghanaCardPin', 'ghanaCardPinEncrypted', 'ghanaCardPinHash'],
   ];
   for (const [plainField, encryptedField, hashField] of fields) {
-    if (!Object.prototype.hasOwnProperty.call(next, plainField) || next[plainField] === undefined) continue;
+    if (!Object.prototype.hasOwnProperty.call(next, plainField)) continue;
     const value = next[plainField];
+    if (value === undefined) { delete next[plainField]; continue; }
     next[encryptedField] = encryptSensitiveValue(value);
     if (hashField) next[hashField] = createEmployeePiiBlindIndex(value, plainField);
     delete next[plainField];
