@@ -152,6 +152,16 @@ describe('employee PII encryption', () => {
     expect(where.OR[1]).toEqual({ ghanaCardPinHash: { equals: createEmployeePiiBlindIndex('GHA-123', 'ghanaCardPin') } });
   });
 
+  it('rewrites exact filters through nested Employee relations', async () => {
+    const extension = createEmployeePiiEncryptionExtension();
+    const query = jest.fn(async () => ({ count: 0 }));
+    const args = { where: { employee: { is: { ssnitNumber: '123-456' } } } };
+    await extension.query.$allModels.$allOperations({ model: 'PayrollItem', operation: 'findMany', args, query });
+    expect(query.mock.calls[0][0].where.employee.is).toEqual({
+      ssnitNumberHash: createEmployeePiiBlindIndex('123-456', 'ssnitNumber'),
+    });
+  });
+
   it('rejects nested Employee writes that could bypass encryption', async () => {
     const extension = createEmployeePiiEncryptionExtension();
     const query = jest.fn();
