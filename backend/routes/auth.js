@@ -10,7 +10,7 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken, computeExpiryDat
 import { REFRESH_COOKIE_NAME, getRefreshCookieOptions, getClearCookieOptions } from '../config/cookies.js';
 import { passwordSchema } from '../schemas/authSchema.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
-import { encryptSensitiveValue } from '../services/employeePiiEncryption.js';
+import { decryptSensitiveValue, encryptSensitiveValue } from '../services/employeePiiEncryption.js';
 import {
   createOtpAuthUri, generateRecoveryCodes, generateTotpSecret, hashRecoveryCode,
   verifyTotp, verifyUserTwoFactorCode,
@@ -445,6 +445,7 @@ router.get('/2fa/status', authMiddleware, async (req, res, next) => {
 
 router.post('/2fa/enroll', authMiddleware, twoFactorLimiter, async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const parsed = twoFactorEnrollmentSchema.safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: 'Your current password is required to start two-factor setup.' });
     const user = await prisma.user.findUnique({
@@ -479,11 +480,12 @@ router.post('/2fa/verify-enrollment', authMiddleware, twoFactorLimiter, async (r
     }
     const user = await prisma.user.findUnique({
       where: { id: req.userId },
-      select: { id: true, companyId: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
+      select: { id: true, companyId: true, status: true, deletedAt: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
     });
-    if (!user || !user.twoFactorSecretEncrypted) return res.status(409).json({ error: 'Start two-factor setup before verifying a code.' });
+    if (!user || user.status !== 'ACTIVE' || user.deletedAt) return res.status(404).json({ error: 'Active account not found.' });
+    if (!user.twoFactorSecretEncrypted) return res.status(409).json({ error: 'Start two-factor setup before verifying a code.' });
     if (user.twoFactorEnabled) return res.status(409).json({ error: 'Two-factor authentication is already enabled.' });
-    const secret = (await import('../services/employeePiiEncryption.js')).decryptSensitiveValue(user.twoFactorSecretEncrypted);
+    const secret = decryptSensitiveValue(user.twoFactorSecretEncrypted);
     if (!verifyTotp(secret, parsed.data.code)) return res.status(400).json({ error: 'The authenticator code is invalid or expired.' });
 
     const recoveryCodes = generateRecoveryCodes();
@@ -513,13 +515,15 @@ router.post('/2fa/verify-enrollment', authMiddleware, twoFactorLimiter, async (r
 
 router.post('/2fa/disable', authMiddleware, twoFactorLimiter, async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const parsed = twoFactorDisableSchema.safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: 'Current password and authenticator or recovery code are required.' });
     const user = await prisma.user.findUnique({
       where: { id: req.userId },
-      select: { id: true, companyId: true, password: true, status: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
+      select: { id: true, companyId: true, password: true, status: true, deletedAt: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
     });
-    if (!user || !user.twoFactorEnabled) return res.status(409).json({ error: 'Two-factor authentication is not enabled.' });
+    if (!user || user.status !== 'ACTIVE' || user.deletedAt) return res.status(404).json({ error: 'Active account not found.' });
+    if (!user.twoFactorEnabled) return res.status(409).json({ error: 'Two-factor authentication is not enabled.' });
     if (!(await bcrypt.compare(parsed.data.password, user.password))) return res.status(401).json({ error: 'Current password is incorrect.' });
 
     await prisma.$transaction(async (tx) => {
@@ -541,13 +545,15 @@ router.post('/2fa/disable', authMiddleware, twoFactorLimiter, async (req, res, n
 
 router.post('/2fa/recovery-codes/regenerate', authMiddleware, twoFactorLimiter, async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const parsed = twoFactorCodeSchema.safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: 'Enter your authenticator or recovery code.' });
     const user = await prisma.user.findUnique({
       where: { id: req.userId },
-      select: { id: true, companyId: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
+      select: { id: true, companyId: true, status: true, deletedAt: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
     });
-    if (!user || !user.twoFactorEnabled) return res.status(409).json({ error: 'Enable two-factor authentication first.' });
+    if (!user || user.status !== 'ACTIVE' || user.deletedAt) return res.status(404).json({ error: 'Active account not found.' });
+    if (!user.twoFactorEnabled) return res.status(409).json({ error: 'Enable two-factor authentication first.' });
 
     const recoveryCodes = generateRecoveryCodes();
     await prisma.$transaction(async (tx) => {
