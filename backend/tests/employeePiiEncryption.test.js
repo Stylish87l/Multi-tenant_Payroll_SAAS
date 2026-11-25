@@ -35,11 +35,13 @@ describe('employee PII encryption', () => {
     expect(decryptSensitiveValue(encrypted)).toBe('123-45-6789');
   });
 
-  it('uses a fresh nonce for each encryption and is idempotent for existing envelopes', () => {
+  it('uses a fresh nonce for every value, including ciphertext-looking user input', () => {
     const first = encryptSensitiveValue('GHA-123456789-0');
     const second = encryptSensitiveValue('GHA-123456789-0');
     expect(first).not.toBe(second);
-    expect(encryptSensitiveValue(first)).toBe(first);
+    const nested = encryptSensitiveValue(first);
+    expect(nested).not.toBe(first);
+    expect(decryptSensitiveValue(nested)).toBe(first);
   });
 
   it('supports decrypting old encryption keys during key rotation', () => {
