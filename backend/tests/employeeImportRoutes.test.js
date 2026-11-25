@@ -9,7 +9,7 @@ const prisma = {
   user: { findFirst: jest.fn() },
   employeeImportPreview: {
     create: jest.fn(), deleteMany: jest.fn(), findFirst: jest.fn(),
-    updateMany: jest.fn(), update: jest.fn(),
+    updateMany: jest.fn(), update: jest.fn(), delete: jest.fn(),
   },
   auditLog: { create: jest.fn() },
   $transaction: jest.fn(),
@@ -67,6 +67,7 @@ beforeEach(() => {
   });
   prisma.employeeImportPreview.updateMany.mockResolvedValue({ count: 1 });
   prisma.employeeImportPreview.update.mockResolvedValue({ id: 'preview-1', status: 'IMPORTED' });
+  prisma.employeeImportPreview.delete.mockResolvedValue({ id: 'preview-1' });
 });
 
 describe('employee import preview and commit routes', () => {
@@ -124,9 +125,7 @@ describe('employee import preview and commit routes', () => {
       data: expect.objectContaining({ name: 'Ama Mensah', email: 'ama@example.test', companyId: 'tenant-a' }),
       select: { id: true },
     }));
-    expect(prisma.employeeImportPreview.update).toHaveBeenCalledWith({
-      where: { id: 'preview-1' }, data: { status: 'IMPORTED' },
-    });
+    expect(prisma.employeeImportPreview.delete).toHaveBeenCalledWith({ where: { id: 'preview-1' } });
     expect(writeAudit).toHaveBeenCalledWith(tx, expect.objectContaining({
       action: 'EMPLOYEES_IMPORTED',
       details: { importedCount: 1, skippedInvalidCount: 0 },
