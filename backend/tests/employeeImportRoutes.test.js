@@ -104,6 +104,7 @@ describe('employee import preview and commit routes', () => {
       .set('x-test-role', 'HR')
       .send({ fileName: 'employees.csv', fileBase64 });
     expect(response.status).toBe(403);
+    expect(response.headers['cache-control']).toBe('private, no-store');
     expect(prisma.employeeImportPreview.create).not.toHaveBeenCalled();
   });
 
@@ -140,6 +141,7 @@ describe('employee import preview and commit routes', () => {
       .set('x-test-user', 'another-admin')
       .send({ previewId: 'preview-1' });
     expect(response.status).toBe(410);
+    expect(response.headers['cache-control']).toBe('private, no-store');
     expect(prisma.employeeImportPreview.updateMany).not.toHaveBeenCalled();
     expect(prisma.employee.create).not.toHaveBeenCalled();
   });
