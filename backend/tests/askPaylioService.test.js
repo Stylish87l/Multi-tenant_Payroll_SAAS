@@ -16,6 +16,7 @@ describe('Ask Paylio read-only reporting tools', () => {
     prisma.employee.count.mockReset();
     prisma.payrollRun.findFirst.mockReset();
     prisma.payrollRun.findMany.mockReset();
+    prisma.payrollRun.groupBy.mockResolvedValue([]);
     prisma.payrollRun.groupBy.mockReset();
     prisma.payrollItem.aggregate.mockReset();
     prisma.payrollItem.groupBy.mockReset();
@@ -109,7 +110,7 @@ describe('Ask Paylio read-only reporting tools', () => {
     global.fetch = fetchMock;
     try {
       prisma.employee.count.mockResolvedValueOnce(3).mockResolvedValueOnce(0);
-      const rawQuestion = 'How many employees? My Ghana Card PIN is SECRET-123';
+      const rawQuestion = 'How many active employees? Also remember SECRET-123';
       await askPaylio({ companyId: 'tenant-a', role: 'HR', question: rawQuestion });
       const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(JSON.stringify(sentBody)).not.toContain('SECRET-123');
