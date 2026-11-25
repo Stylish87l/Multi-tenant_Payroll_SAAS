@@ -32,6 +32,7 @@ const ComplianceCenter = () => {
   const loadNotices = useCallback(async () => {
     if (!companyId) {
       setNotices([]);
+      setSources([]);
       return;
     }
     setLoading(true);
