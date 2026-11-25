@@ -229,7 +229,10 @@ export const createEmployeePiiEncryptionExtension = () => ({
       async $allOperations({ model, operation, args, query }) {
         const writeOperations = ['create', 'update', 'updateMany', 'createMany', 'createManyAndReturn', 'updateManyAndReturn', 'upsert'];
         const isEmployeeModel = String(model || '').toLowerCase() === 'employee';
-        if (!isEmployeeModel && writeOperations.includes(operation) && hasNestedEmployeeWrite(args?.data)) {
+        const writePayload = operation === 'upsert'
+          ? { create: args?.create, update: args?.update }
+          : args?.data;
+        if (!isEmployeeModel && writeOperations.includes(operation) && hasNestedEmployeeWrite(writePayload)) {
           throw new Error('Nested Employee writes are disabled. Use the Employee model directly so PII is encrypted.');
         }
         if (isEmployeeModel) {
