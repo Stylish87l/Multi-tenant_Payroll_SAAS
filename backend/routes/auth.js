@@ -475,6 +475,7 @@ router.post('/2fa/enroll', authMiddleware, twoFactorLimiter, async (req, res, ne
 
 router.post('/2fa/verify-enrollment', authMiddleware, twoFactorLimiter, async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const parsed = twoFactorCodeSchema.safeParse(req.body ?? {});
     if (!parsed.success || !/^\d{6}$/.test(parsed.data?.code || '')) {
       return res.status(400).json({ error: 'Enter the six-digit code from your authenticator app.' });
