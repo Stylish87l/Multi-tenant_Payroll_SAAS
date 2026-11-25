@@ -43,9 +43,14 @@ describe('deterministic employee payslip explanation', () => {
       { label: 'PAYE income tax', amountGhs: '1200.00' },
     ]);
     expect(result.totalEmployeeDeductionsGhs).toBe('1750.00');
-    expect(result.employerContributions[0]).toEqual({
-      label: 'Employer SSNIT contribution', amountGhs: '1300.00',
-    });
+    expect(result.employerContributions).toEqual([
+      { label: 'Employer SSNIT contribution', amountGhs: '1300.00' },
+    ]);
+    expect(result.ssnitRemittances).toEqual([
+      { label: 'SSNIT Tier 1 remittance', amountGhs: '1350.00' },
+      { label: 'SSNIT Tier 2 remittance', amountGhs: '500.00' },
+    ]);
+    expect(result.notes.join(' ')).toContain('remittance split');
     expect(result.netPayGhs).toBe('7950.00');
     expect(result.taxContext).toEqual({
       historicalSnapshotAvailable: true,
