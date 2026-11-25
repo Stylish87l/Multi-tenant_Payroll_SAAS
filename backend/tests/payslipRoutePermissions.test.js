@@ -64,7 +64,8 @@ describe('individual payslip route authorization', () => {
       where: {
         id: 'item-1',
         employee: { userId: 'employee-user' },
-        payrollRun: { companyId: 'tenant-a', status: 'FINALIZED' },
+        deletedAt: null,
+        payrollRun: { companyId: 'tenant-a', status: 'FINALIZED', deletedAt: null },
       },
     }));
   });
