@@ -57,17 +57,22 @@ const generateTotpAtCounter = (secret, counter) => {
   return String(binary % (10 ** TOTP_DIGITS)).padStart(TOTP_DIGITS, '0');
 };
 
-export const verifyTotp = (secret, code, timestamp = Date.now(), window = 1) => {
+export const matchTotpCounter = (secret, code, timestamp = Date.now(), window = 1) => {
   const candidate = String(code || '').replace(/\s+/g, '');
-  if (!/^\d{6}$/.test(candidate) || !secret) return false;
+  if (!/^\d{6}$/.test(candidate) || !secret) return null;
   const candidateBuffer = Buffer.from(candidate);
   const counter = Math.floor(timestamp / 1000 / TOTP_STEP_SECONDS);
   for (let offset = -window; offset <= window; offset += 1) {
-    const expected = Buffer.from(generateTotpAtCounter(secret, counter + offset));
-    if (expected.length === candidateBuffer.length && crypto.timingSafeEqual(expected, candidateBuffer)) return true;
+    const matchedCounter = counter + offset;
+    if (matchedCounter < 0) continue;
+    const expected = Buffer.from(generateTotpAtCounter(secret, matchedCounter));
+    if (expected.length === candidateBuffer.length && crypto.timingSafeEqual(expected, candidateBuffer)) return matchedCounter;
   }
-  return false;
+  return null;
 };
+
+export const verifyTotp = (secret, code, timestamp = Date.now(), window = 1) =>
+  matchTotpCounter(secret, code, timestamp, window) !== null;
 
 export const createOtpAuthUri = ({ email, secret, issuer = 'Paylio' }) => {
   const label = encodeURIComponent(`${issuer}:${email}`);
@@ -112,7 +117,21 @@ export const consumeRecoveryCode = async (tx, userId, code) => {
 export const verifyUserTwoFactorCode = async ({ tx, user, code }) => {
   if (!user?.twoFactorEnabled || !user.twoFactorSecretEncrypted) return { valid: false, method: null };
   const secret = decryptSensitiveValue(user.twoFactorSecretEncrypted);
-  if (verifyTotp(secret, code)) return { valid: true, method: 'totp' };
+  const matchedCounter = matchTotpCounter(secret, code);
+  if (matchedCounter !== null) {
+    const consumed = await tx.user.updateMany({
+      where: {
+        id: user.id,
+        twoFactorEnabled: true,
+        OR: [
+          { twoFactorLastCounter: null },
+          { twoFactorLastCounter: { lt: BigInt(matchedCounter) } },
+        ],
+      },
+      data: { twoFactorLastCounter: BigInt(matchedCounter) },
+    });
+    if (consumed.count === 1) return { valid: true, method: 'totp' };
+  }
   const recoveryCodeUsed = await consumeRecoveryCode(tx, user.id, code);
   return { valid: recoveryCodeUsed, method: recoveryCodeUsed ? 'recovery_code' : null };
 };
