@@ -155,11 +155,34 @@ const encryptMany = (data, options) => Array.isArray(data)
   ? data.map((entry) => encryptEmployeeWriteData(entry, options))
   : encryptEmployeeWriteData(data, options);
 
+const encryptNestedEmployeeWhere = (value, relationKey = null) => {
+  if (Array.isArray(value)) return value.map((entry) => encryptNestedEmployeeWhere(entry));
+  if (!value || typeof value !== 'object') return value;
+  if (relationKey === 'employee' || relationKey === 'employees') {
+    const next = { ...value };
+    const relationOperators = ['is', 'isNot', 'some', 'none', 'every'];
+    let usedRelationOperator = false;
+    for (const operator of relationOperators) {
+      if (next[operator] && typeof next[operator] === 'object') {
+        next[operator] = encryptEmployeeWhere(next[operator]);
+        usedRelationOperator = true;
+      }
+    }
+    return usedRelationOperator ? next : encryptEmployeeWhere(next);
+  }
+  const next = { ...value };
+  for (const [key, child] of Object.entries(next)) {
+    if (Array.isArray(child)) next[key] = child.map((entry) => encryptNestedEmployeeWhere(entry));
+    else if (child && typeof child === 'object') next[key] = encryptNestedEmployeeWhere(child, key);
+  }
+  return next;
+};
+
 const hasNestedEmployeeWrite = (value) => {
   if (!value || typeof value !== 'object') return false;
   if (Array.isArray(value)) return value.some(hasNestedEmployeeWrite);
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'employee' && child && typeof child === 'object'
+    if ((key === 'employee' || key === 'employees') && child && typeof child === 'object'
       && ['create', 'createMany', 'connectOrCreate', 'update', 'updateMany', 'upsert'].some((operation) => Object.hasOwn(child, operation))) return true;
     if (hasNestedEmployeeWrite(child)) return true;
   }
@@ -206,7 +229,7 @@ export const createEmployeePiiEncryptionExtension = () => ({
           throw new Error('Nested Employee writes are disabled. Use the Employee model directly so PII is encrypted.');
         }
         if (model === 'Employee') {
-          if (args.where) args.where = encryptEmployeeWhere(args.where);
+          if (args.where) args.where = model === 'Employee' ? encryptEmployeeWhere(args.where) : encryptNestedEmployeeWhere(args.where);
           if (operation === 'create') args.data = encryptEmployeeWriteData(args.data, { markVersion: true });
           else if (operation === 'createMany' || operation === 'createManyAndReturn') args.data = encryptMany(args.data, { markVersion: true });
           else if (operation === 'upsert') {
