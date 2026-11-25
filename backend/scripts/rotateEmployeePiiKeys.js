@@ -60,8 +60,15 @@ const main = async () => {
 
   let usersInspected = 0;
   let userSecretsRotated = 0;
+  const userSecretColumn = await prisma.$queryRaw`
+    SELECT COUNT(*)::int AS "count"
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'users'
+      AND column_name = 'two_factor_secret_encrypted'
+  `;
   let userCursor = null;
-  for (;;) {
+  for (; Number(userSecretColumn[0]?.count || 0) === 1;) {
     const users = userCursor
       ? await prisma.$queryRaw`
           SELECT "id", "two_factor_secret_encrypted"
