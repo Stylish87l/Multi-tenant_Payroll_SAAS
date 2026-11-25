@@ -5,6 +5,7 @@ import request from 'supertest';
 const prisma = {
   complianceNotice: { findMany: jest.fn(), findUnique: jest.fn() },
   complianceAssessment: { findFirst: jest.fn() },
+  complianceSource: { findMany: jest.fn() },
   $transaction: jest.fn(),
 };
 const writeAudit = jest.fn();
@@ -36,6 +37,7 @@ describe('company compliance notice and draft assessment routes', () => {
     prisma.complianceNotice.findMany.mockReset();
     prisma.complianceNotice.findUnique.mockReset();
     prisma.complianceAssessment.findFirst.mockReset();
+    prisma.complianceSource.findMany.mockReset().mockResolvedValue([]);
     prisma.$transaction.mockReset();
     writeAudit.mockReset();
     actorFromReq.mockClear();
@@ -57,6 +59,7 @@ describe('company compliance notice and draft assessment routes', () => {
     expect(response.status).toBe(200);
     expect(response.headers['cache-control']).toBe('private, no-store');
     expect(response.body.notices[0].assessment.id).toBe('assessment-1');
+    expect(response.body.sources).toEqual([]);
     expect(prisma.complianceNotice.findMany).toHaveBeenCalledWith(expect.objectContaining({
       include: expect.objectContaining({
         assessments: expect.objectContaining({ where: { companyId: 'tenant-a' }, take: 1 }),
