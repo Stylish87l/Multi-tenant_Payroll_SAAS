@@ -7,6 +7,8 @@ import { signAccessToken, signRefreshToken, computeExpiryDate } from '../utils/a
 import { REFRESH_COOKIE_NAME, getRefreshCookieOptions } from '../config/cookies.js';
 import { processPayout as processPayoutService } from '../services/paymentServices.js';
 import { createDraftPayrollRun } from '../services/payrollService.js';
+import { getPayrollReviewInputFingerprint } from '../services/payrollAnomalyService.js';
+import { assertPayrollReviewGate } from '../services/payrollFinalizationGate.js';
 import { createNotification } from '../services/notificationService.js';
 import { writeAudit, writeAuditSafe, actorFromCtx } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
@@ -472,16 +474,35 @@ const resolvers = {
       return run;
     },
 
-    finalizePayroll: async (_, { runId }, ctx) => {
+    finalizePayroll: async (_, { runId, overrideReason }, ctx) => {
       requireRole(ctx, ['SUPER_ADMIN', 'ADMIN'], 'finalize payroll');
-
       const run = await prisma.payrollRun.findFirst({
         where: ctx.userRole === 'SUPER_ADMIN' ? { id: runId, deletedAt: null } : { id: runId, companyId: ctx.companyId, deletedAt: null },
       });
       if (!run) throw notFound('Payroll run not found');
-
-      // FIXED: no status guard - cancelled or already-finalized runs could be "finalized" again.
       const updated = await prisma.$transaction(async (tx) => {
+        const latestReview = await tx.payrollReview.findFirst({
+          where: { companyId: run.companyId, payrollRunId: runId },
+          orderBy: { createdAt: 'desc' },
+          include: { findings: { select: { id: true, severity: true, status: true } } },
+        });
+        const currentFingerprint = await getPayrollReviewInputFingerprint({ companyId: run.companyId, payrollRunId: runId, client: tx });
+        const { blockingFindings, normalizedOverrideReason } = assertPayrollReviewGate({
+          review: latestReview, currentFingerprint, overrideReason,
+        });
+        if (blockingFindings.length) {
+          await writeAudit(tx, {
+            actor: actorFromCtx(ctx), companyId: run.companyId,
+            action: 'PAYROLL_FINALIZATION_REVIEW_OVERRIDE', resourceType: 'PayrollRun', resourceId: runId,
+            details: {
+              runId, reviewId: latestReview.id,
+              unresolvedFindingIds: blockingFindings.map((finding) => finding.id),
+              unresolvedCriticalCount: blockingFindings.filter((finding) => finding.severity === 'CRITICAL').length,
+              unresolvedHighCount: blockingFindings.filter((finding) => finding.severity === 'HIGH').length,
+              reason: normalizedOverrideReason,
+            },
+          });
+        }
         const result = await tx.payrollRun.updateMany({
           where: { id: runId, status: 'DRAFT', deletedAt: null },
           data: { status: 'FINALIZED', processedAt: new Date() },
@@ -489,11 +510,11 @@ const resolvers = {
         if (result.count !== 1) throw conflict(`Only DRAFT payroll runs can be finalized (this run is ${run.status}).`);
         await writeAudit(tx, {
           actor: actorFromCtx(ctx), companyId: run.companyId, action: 'PAYROLL_RUN_FINALIZED',
-          resourceType: 'PayrollRun', resourceId: runId, details: { runId, month: run.month },
+          resourceType: 'PayrollRun', resourceId: runId,
+          details: { runId, month: run.month, copilotReviewId: latestReview.id, reviewOverrideUsed: blockingFindings.length > 0 },
         });
         return tx.payrollRun.findUnique({ where: { id: runId } });
-      });
-
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       pubsub.publish('PAYROLL_UPDATED', { payrollUpdated: updated });
       return updated;
     },

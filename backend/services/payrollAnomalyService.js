@@ -1,5 +1,6 @@
+import crypto from 'node:crypto';
 import prisma from '../config/db.js';
-import { badInput, notFound } from '../utils/appError.js';
+import { badInput, conflict, notFound } from '../utils/appError.js';
 import { explainPayrollFindings } from './aiReviewService.js';
 
 const money = (value) => Number(value || 0);
@@ -10,6 +11,48 @@ const configuredThreshold = (name, fallback) => {
 const CHANGE_THRESHOLD_PERCENT = configuredThreshold('PAYROLL_REVIEW_CHANGE_PERCENT', 20);
 const CHANGE_THRESHOLD_GHS = configuredThreshold('PAYROLL_REVIEW_CHANGE_ABSOLUTE_GHS', 100);
 const pctChange = (current, previous) => previous === 0 ? (current === 0 ? 0 : 100) : ((current - previous) / Math.abs(previous)) * 100;
+
+const REVIEW_PROMPT_VERSION = 'payroll-review-v2';
+const canonicalizeFingerprintValue = (value) => {
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map(canonicalizeFingerprintValue);
+  if (value && typeof value === 'object') {
+    if (typeof value.toFixed === 'function') return value.toString();
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeFingerprintValue(value[key])]));
+  }
+  return value;
+};
+export const getPayrollReviewInputFingerprint = async ({ companyId, payrollRunId, client = prisma }) => {
+  const run = await client.payrollRun.findFirst({
+    where: { id: payrollRunId, companyId, deletedAt: null },
+    include: { items: { include: { employee: { select: {
+      id: true, isActive: true, deletedAt: true, updatedAt: true, bankName: true, bankCode: true, bankAccount: true,
+    } } } } },
+  });
+  if (!run) throw notFound('Payroll run not found for this company.');
+  const activeEmployees = await client.employee.findMany({
+    where: { companyId, isActive: true, deletedAt: null },
+    select: { id: true, isActive: true, deletedAt: true, updatedAt: true },
+    orderBy: { id: 'asc' },
+  });
+  const payload = canonicalizeFingerprintValue({
+    run: { id: run.id, companyId: run.companyId, month: run.month, runType: run.runType, taxConfigSnapshot: run.taxConfigSnapshot },
+    items: run.items.map((item) => ({
+      id: item.id, employeeId: item.employeeId, deletedAt: item.deletedAt, updatedAt: item.updatedAt,
+      grossSalary: item.grossSalary, basicSalarySnapshot: item.basicSalarySnapshot,
+      housingAllowanceSnapshot: item.housingAllowanceSnapshot, transportAllowanceSnapshot: item.transportAllowanceSnapshot,
+      otherAllowanceSnapshot: item.otherAllowanceSnapshot, taxableIncome: item.taxableIncome,
+      ssnitEmployee: item.ssnitEmployee, ssnitEmployer: item.ssnitEmployer, ssnitTier1: item.ssnitTier1,
+      ssnitTier2: item.ssnitTier2, payeTax: item.payeTax, netPay: item.netPay,
+      reliefInputsSnapshot: item.reliefInputsSnapshot, employee: item.employee,
+    })).sort((a,b)=>a.id.localeCompare(b.id)),
+    activeEmployees,
+  });
+  const secret = process.env.PAYROLL_REVIEW_FINGERPRINT_SECRET || process.env.CSRF_SECRET;
+  if (!secret || Buffer.byteLength(secret) < 32) throw new Error('PAYROLL_REVIEW_FINGERPRINT_SECRET or a 32-byte CSRF_SECRET is required for payroll review integrity.');
+  return crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+};
+
 
 /**
  * Deterministic review rules. These findings are advisory and never mutate a
@@ -30,6 +73,8 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
     },
   });
   if (!run) throw notFound('Payroll run not found for this company.');
+  if (run.status !== 'DRAFT') throw conflict('Copilot reviews can only be created for DRAFT payroll runs.');
+  const inputFingerprint = await getPayrollReviewInputFingerprint({ companyId, payrollRunId });
   if (!run.items.length) throw badInput('This payroll run has no payroll items to review.');
 
   const previousRun = await prisma.payrollRun.findFirst({
@@ -57,17 +102,18 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
   }
 
   if (run.runType === 'REGULAR') {
-    const activeEmployeeCount = await prisma.employee.count({
+    const activeEmployees = await prisma.employee.findMany({
       where: { companyId, isActive: true, deletedAt: null, createdAt: { lte: run.createdAt } },
+      select: { id: true },
     });
-    if (activeEmployeeCount > run.items.length) {
+    const payrollEmployeeIds = new Set(run.items.map((item) => item.employeeId));
+    const missingEmployeeIds = activeEmployees.filter((employee) => !payrollEmployeeIds.has(employee.id)).map((employee) => employee.id);
+    if (missingEmployeeIds.length) {
       add({
-        code: 'ACTIVE_EMPLOYEES_MISSING_FROM_PAYROLL',
-        category: 'EMPLOYEE_COVERAGE',
-        severity: 'HIGH',
+        code: 'ACTIVE_EMPLOYEES_MISSING_FROM_PAYROLL', category: 'EMPLOYEE_COVERAGE', severity: 'HIGH',
         title: 'Active employees missing from payroll',
-        description: 'The regular payroll run contains fewer employees than the company currently has active employee records.',
-        evidence: { activeEmployeeCount, payrollItemCount: run.items.length },
+        description: 'One or more active employees created before this payroll run are missing from its payroll items.',
+        evidence: { activeEmployeeCount: activeEmployees.length, payrollItemCount: run.items.length, missingEmployeeCount: missingEmployeeIds.length, missingEmployeeIds },
         recommendation: 'Reconcile the active employee roster against this payroll run and confirm any approved exclusions.',
       });
     }
@@ -165,6 +211,8 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
   }
 
   const ai = await explainPayrollFindings(findings);
+  const currentFingerprint = await getPayrollReviewInputFingerprint({ companyId, payrollRunId });
+  if (currentFingerprint !== inputFingerprint) throw conflict('Payroll inputs changed while the Copilot review was running. Run the review again before finalizing.');
   const explanationByCode = new Map(ai.explanations.map((item) => [item.code, item.explanation.slice(0, 2000)]));
   const created = await prisma.$transaction(async (tx) => {
     const review = await tx.payrollReview.create({
@@ -172,6 +220,7 @@ export const reviewPayrollRun = async ({ companyId, payrollRunId, actor }) => {
         companyId, payrollRunId, requestedById: actor?.userId || null,
         status: 'COMPLETED', summary: ai.summary,
         provider: ai.provider, model: ai.model,
+        inputFingerprint, promptVersion: REVIEW_PROMPT_VERSION,
         findings: {
           create: findings.map((finding) => ({
             companyId, employeeId: finding.employeeId, code: finding.code,

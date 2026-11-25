@@ -10,7 +10,8 @@ import { PAYROLL_UPDATED_SUB } from '../graphql/subscriptions';
 import Card from '../components/Card';
 import Loader from '../components/Loader';
 import { useAuth } from '../context/AuthContext';
-import { REST_BASE, TOKEN_KEY } from '../lib/apolloClient';
+import { REST_BASE } from '../lib/apolloClient';
+import authFetch from '../lib/authFetch';
 
 // Mirrors the server: runPayroll = finance roles; finalize/discard = ADMIN tier (segregation of duties).
 const RUN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'];
@@ -43,14 +44,12 @@ const Payroll = () => {
   const [reviewError, setReviewError] = useState(null);
 
   const requestReviewApi = useCallback(async (path, options = {}) => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    const response = await fetch(`${REST_BASE}${path}`, {
+    const response = await authFetch(`${REST_BASE}${path}`, {
       ...options,
       credentials: 'include',
       headers: {
         Accept: 'application/json',
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     });
@@ -170,7 +169,18 @@ const Payroll = () => {
     setActionError(null);
     setBusyRunId(run.id);
     try {
-      await finalizePayroll({ variables: { runId: run.id } });
+      try {
+        await finalizePayroll({ variables: { runId: run.id } });
+      } catch (err) {
+        const message = errMsg(err, '');
+        if (!message.includes('unresolved CRITICAL/HIGH Copilot findings')) throw err;
+        const overrideReason = window.prompt('CRITICAL or HIGH Copilot findings remain unresolved. Enter a reason for an audited administrator override (at least 10 characters):');
+        if (!overrideReason || overrideReason.trim().length < 10) {
+          setActionError('Finalization was not overridden. Resolve the findings or provide a valid audit reason.');
+          return;
+        }
+        await finalizePayroll({ variables: { runId: run.id, overrideReason: overrideReason.trim() } });
+      }
       await refetch();
     } catch (err) {
       setActionError(errMsg(err, 'Could not finalize this payroll run.'));
@@ -293,6 +303,11 @@ const Payroll = () => {
                 </div>
                 <button type="button" onClick={() => setActiveReview(null)} className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-white">Close review</button>
               </div>
+              {activeReview.isStale && (
+                <div role="alert" className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+                  This review is stale because payroll inputs changed after it was created. Run a new Copilot review before finalizing or recording more decisions.
+                </div>
+              )}
               {activeReview.findings?.length ? (
                 <div className="mt-4 space-y-3">
                   {activeReview.findings.map((finding) => (
