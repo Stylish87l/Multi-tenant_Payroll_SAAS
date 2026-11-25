@@ -4,6 +4,33 @@ import { PayoutStateError } from '../utils/paymentConfiguration.js';
 const HUBTEL_SEND_HOST = 'https://smp.hubtel.com';
 const HUBTEL_VERIFY_HOST = 'https://cs.hubtel.com';
 
+const HUBTEL_BANK_NAMES = Object.freeze({
+  '300302': 'STANDARD CHARTERED BANK',
+  '300303': 'ABSA BANK GHANA LIMITED',
+  '300304': 'GCB BANK LIMITED',
+  '300305': 'NATIONAL INVESTMENT BANK',
+  '300306': 'ARB APEX BANK LIMITED',
+  '300307': 'AGRICULTURAL DEVELOPMENT BANK',
+  '300309': 'UNIVERSAL MERCHANT BANK',
+  '300310': 'REPUBLIC BANK LIMITED',
+  '300311': 'ZENITH BANK GHANA LTD',
+  '300312': 'ECOBANK GHANA LTD',
+  '300313': 'CAL BANK LIMITED',
+  '300316': 'FIRST ATLANTIC BANK',
+  '300317': 'PRUDENTIAL BANK LTD',
+  '300318': 'STANBIC BANK',
+  '300319': 'FIRST BANK OF NIGERIA',
+  '300320': 'BANK OF AFRICA',
+  '300322': 'GUARANTY TRUST BANK',
+  '300323': 'FIDELITY BANK LIMITED',
+  '300324': 'SAHEL - SAHARA BANK (BSIC)',
+  '300325': 'UNITED BANK OF AFRICA',
+  '300329': 'ACCESS BANK LTD',
+  '300331': 'CONSOLIDATED BANK GHANA',
+  '300334': 'FIRST NATIONAL BANK',
+  '300362': 'GHL BANK',
+});
+
 const requiredEnv = (name) => {
   const value = process.env[name];
   if (!value) throw new PayoutStateError(`Missing required Hubtel setting: ${name}`);
@@ -60,7 +87,7 @@ export const verifyHubtelBankAccountName = async ({ bankCode, bankAccount, emplo
 export const submitHubtelBankPayout = async ({
   bankCode, bankName, bankAccount, verifiedAccountName, amount, reference,
 }) => {
-  if (!/^\d{6}$/.test(String(bankCode || ''))) throw new PayoutStateError('A valid Hubtel/GhIPSS bank code is required for a live bank payout.');
+  if (!/^\d{6}$/.test(String(bankCode || '')) || !HUBTEL_BANK_NAMES[bankCode]) throw new PayoutStateError('A supported Hubtel/GhIPSS bank code is required for a live bank payout.');
   if (!Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100) {
     throw new PayoutStateError('Hubtel bank payouts must be a positive GHS amount with no more than two decimal places.');
   }
@@ -78,7 +105,7 @@ export const submitHubtelBankPayout = async ({
     signal: AbortSignal.timeout(15000),
     body: JSON.stringify({
       Amount: amount,
-      BankName: bankName,
+      BankName: HUBTEL_BANK_NAMES[bankCode],
       BankAccountNumber: bankAccount,
       BankAccountName: verifiedAccountName,
       ClientReference: reference,
