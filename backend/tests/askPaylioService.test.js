@@ -16,8 +16,8 @@ describe('Ask Paylio read-only reporting tools', () => {
     prisma.employee.count.mockReset();
     prisma.payrollRun.findFirst.mockReset();
     prisma.payrollRun.findMany.mockReset();
-    prisma.payrollRun.groupBy.mockResolvedValue([]);
     prisma.payrollRun.groupBy.mockReset();
+    prisma.payrollRun.groupBy.mockResolvedValue([]);
     prisma.payrollItem.aggregate.mockReset();
     prisma.payrollItem.groupBy.mockReset();
   });
