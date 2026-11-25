@@ -99,9 +99,182 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
 
       // Atomic claim. @updatedAt changes on every write, so a concurrent claimer's `updatedAt` filter fails.
       const idempotencyKey = `pay_${uuidv4().replace(/-/g, '').slice(0, 24)}`;
-      const claim = await prisma.payrollItem.updateMany({
-        where: { id: payrollItemId, paymentStatus: { in: ['PENDING', 'FAILED'] }, updatedAt: item.updatedAt },
-        data: { paymentRef: idempotencyKey, paymentStatus: 'PROCESSING', payoutProvider: provider.toUpperCase(), providerTransactionId: null },
+      const claim = await prisma.$transaction(async (tx) => {
+        const result = await tx.payrollItem.updateMany({
+          where: { id: payrollItemId, paymentStatus: { in: ['PENDING', 'FAILED'] }, updatedAt: item.updatedAt },
+          data: { paymentRef: idempotencyKey, paymentStatus: 'PROCESSING', payoutProvider: provider.toUpperCase(), providerTransactionId: null },
+        });
+        if (result.count === 1 && provider === 'hubtel' && isLive) {
+          // Persist the 5-minute status check before calling Hubtel, so a DB write failure
+          // after provider acceptance cannot strand a payout without reconciliation.
+          await enqueueBackgroundJob(tx, {
+            type: 'HUBTEL_PAYOUT_RECONCILIATION',
+            payload: { payrollItemId, reference: idempotencyKey },
+            companyId: item.payrollRun.companyId,
+            idempotencyKey: `hubtel-payout-reconcile:${idempotencyKey}:scheduled`,
+            availableAt: new Date(Date.now() + 5 * 60 * 1000),
+          });
+        }
+        return result;
+      });
+      if (claim.count !== 1) throw new PayoutStateError(`Item ${payrollItemId} is already being processed.`);
+      claimed = true;
+
+      // Decimal validation above; convert only at the external provider boundary.
+      const netPay = netPayDecimal.toNumber();
+      let gatewayResult;
+
+      if (provider === 'hubtel') {
+        gatewayResult = isLive
+          ? await submitHubtelBankPayout({
+            bankCode: item.employee.bankCode, bankName: item.employee.bankName, bankAccount: item.employee.bankAccount,
+            verifiedAccountName: verifiedBankAccountName, amount: netPay, reference: idempotencyKey,
+          })
+          : (logger.warn('PAYMENT_SIMULATION_MODE: Hubtel not configured, faking SENT', { itemId: payrollItemId }),
+             { status: 'SENT', reference: idempotencyKey, simulated: true });
+      } else {
+        const amountInSubunit = netPayDecimal.mul(100).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP).toNumber();
+        gatewayResult = isLive
+          ? await callPaystackTransfer({ employee: item.employee, amountInSubunit, reference: idempotencyKey })
+          : (logger.warn('PAYMENT_SIMULATION_MODE: Paystack not configured, faking SENT', { itemId: payrollItemId }),
+             { status: 'SENT', reference: idempotencyKey, amount: amountInSubunit, simulated: true });
+      }
+      providerSucceeded = true;
+
+      // A webhook can arrive before the provider request returns. Never overwrite its final state.
+      // Paystack transfer acceptance is not proof that the employee has received funds.
+      // Keep the item PROCESSING until transfer.success / transfer.failed / transfer.reversed.
+      const finalizationStatus = isLive && provider === 'hubtel'
+        ? gatewayResult.status
+        : provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT';
+      await prisma.$transaction(async (tx) => {
+        const updated = await tx.payrollItem.updateMany({
+          where: { id: payrollItemId, paymentStatus: 'PROCESSING', paymentRef: idempotencyKey },
+          data: {
+            paymentStatus: finalizationStatus,
+            providerTransactionId: gatewayResult.providerTransactionId || null,
+            payoutSubmittedAt: new Date(),
+            payoutLastCheckedAt: finalizationStatus === 'PAID' ? new Date() : null,
+          },
+        });
+race } from '@opentelemetry/api';
+import { AbortError } from 'p-retry';
+import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
+import prisma, { Prisma } from '../config/db.js';
+import logger from '../config/logger.js';
+import { enqueueBackgroundJob } from './backgroundJobService.js';
+import { PayoutStateError, resolvePayoutMode } from '../utils/paymentConfiguration.js';
+import { getHubtelPayoutStatus, submitHubtelBankPayout, verifyHubtelBankAccountName } from './hubtelPayoutService.js';
+
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || null;
+const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET || PAYSTACK_SECRET_KEY;
+
+/**
+ * Simulation is restricted to development/test. Live transfers require an explicit
+ * global opt-in plus provider-specific verification (see utils/paymentConfiguration.js).
+ */
+
+/** 4xx responses are deterministic: retrying cannot help and risks duplicate transfers. */
+const assertOk = (res, json, label) => {
+  if (res.ok && json?.status !== false) return;
+  const message = `${label} failed: ${json?.message || json?.Message || res.status}`;
+  if (res.status >= 400 && res.status < 500) throw new AbortError(message);
+  throw new Error(message);
+};
+
+/**
+ * Paystack Transfer (recipient creation + transfer).
+ * VERIFY before production: Paystack needs a bank CODE (not free-text bankName), and recipient
+ * `type` depends on payout method. Left unmapped on purpose to avoid silently misrouting funds.
+ */
+const callPaystackTransfer = async ({ employee, amountInSubunit, reference }) => {
+  const headers = { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' };
+
+  const recipientRes = await fetch('https://api.paystack.co/transferrecipient', {
+    method: 'POST',
+    headers,
+    signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({
+      type: 'nuban', name: employee.name, account_number: employee.bankAccount,
+      bank_code: employee.bankCode, currency: 'GHS',
+    }),
+  });
+  const recipientJson = await recipientRes.json().catch(() => ({}));
+  assertOk(recipientRes, recipientJson, 'Paystack recipient creation');
+
+  const transferRes = await fetch('https://api.paystack.co/transfer', {
+    method: 'POST',
+    headers,
+    signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({
+      source: 'balance', amount: amountInSubunit, recipient: recipientJson.data.recipient_code,
+      reference, reason: 'Payroll disbursement',
+    }),
+  });
+  const transferJson = await transferRes.json().catch(() => ({}));
+  assertOk(transferRes, transferJson, 'Paystack transfer');
+
+  return { status: 'PROCESSING', reference, providerTransferCode: transferJson.data?.transfer_code, providerStatus: transferJson.data?.status || 'pending' };
+};
+
+export const processPayout = async (payrollItemId, provider = 'hubtel') => {
+  const tracer = trace.getTracer('payment-service');
+  return await tracer.startActiveSpan('processPayout', async (span) => {
+    let claimed = false;
+    let providerSucceeded = false;
+    try {
+      const item = await prisma.payrollItem.findUnique({
+        where: { id: payrollItemId },
+        include: { employee: { select: { bankAccount: true, bankName: true, bankCode: true, name: true } }, payrollRun: { select: { status: true, companyId: true } } },
+      });
+
+      if (!item) throw new PayoutStateError('Payroll item not found.');
+      if (item.payrollRun?.status !== 'FINALIZED') {
+        throw new PayoutStateError('Payroll must be FINALIZED before any payout can be processed.');
+      }
+      const netPayDecimal = new Prisma.Decimal(item.netPay);
+      if (!netPayDecimal.isFinite() || netPayDecimal.lte(0)) {
+        throw new PayoutStateError('Payout amount must be a finite positive amount.');
+      }
+      if (['PAID', 'SENT', 'PROCESSING'].includes(item.paymentStatus)) {
+        throw new PayoutStateError(`Item ${payrollItemId} has already been processed.`);
+      }
+      if (!item.employee?.bankAccount || !item.employee?.bankName) {
+        throw new PayoutStateError(`Cannot disburse: ${item.employee?.name || item.employeeId} has no bank account on file.`);
+      }
+
+      const payoutMode = resolvePayoutMode({ provider, employee: item.employee });
+      const isLive = payoutMode === 'LIVE';
+      let verifiedBankAccountName = null;
+      if (provider === 'hubtel' && isLive) {
+        if (netPayDecimal.decimalPlaces() > 2) throw new PayoutStateError('Hubtel bank payouts require a net pay amount with no more than two decimal places.');
+        verifiedBankAccountName = await verifyHubtelBankAccountName({
+          bankCode: item.employee.bankCode,
+          bankAccount: item.employee.bankAccount,
+          employeeName: item.employee.name,
+        });
+      }
+
+      // Atomic claim. @updatedAt changes on every write, so a concurrent claimer's `updatedAt` filter fails.
+      const idempotencyKey = `pay_${uuidv4().replace(/-/g, '').slice(0, 24)}`;
+      const claim = await prisma.$transaction(async (tx) => {
+        const result = await tx.payrollItem.updateMany({
+          where: { id: payrollItemId, paymentStatus: { in: ['PENDING', 'FAILED'] }, updatedAt: item.updatedAt },
+          data: { paymentRef: idempotencyKey, paymentStatus: 'PROCESSING', payoutProvider: provider.toUpperCase(), providerTransactionId: null },
+        });
+        if (result.count === 1 && provider === 'hubtel' && isLive) {
+          // Persist the 5-minute status check before calling Hubtel, so a DB write failure
+          // after provider acceptance cannot strand a payout without reconciliation.
+          await enqueueBackgroundJob(tx, {
+            type: 'HUBTEL_PAYOUT_RECONCILIATION',
+            payload: { payrollItemId, reference: idempotencyKey },
+            companyId: item.payrollRun.companyId,
+            idempotencyKey: `hubtel-payout-reconcile:${idempotencyKey}:scheduled`,
+            availableAt: new Date(Date.now() + 5 * 60 * 1000),
+          });
+        }
+        return result;
       });
       if (claim.count !== 1) throw new PayoutStateError(`Item ${payrollItemId} is already being processed.`);
       claimed = true;
