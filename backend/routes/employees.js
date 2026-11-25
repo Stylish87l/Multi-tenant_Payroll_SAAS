@@ -341,7 +341,7 @@ router.post('/import/commit', async (req, res) => {
     return res.json({ message: 'Employee import completed.', ...result });
   } catch (error) {
     if (error.code === 'IMPORT_NO_VALID_ROWS') return res.status(400).json({ error: error.message });
-    if (error.code === 'IMPORT_DUPLICATES_CHANGED' || error.code === 'P2002') {
+    if (error.code === 'IMPORT_DUPLICATES_CHANGED' || error.code === 'P2002' || error.code === 'P2034') {
       return res.status(409).json({ error: error.message || 'An employee record now conflicts with an existing employee. Generate a new preview.' });
     }
     if (error.code === 'IMPORT_PREVIEW_UNAVAILABLE') return res.status(409).json({ error: error.message });
