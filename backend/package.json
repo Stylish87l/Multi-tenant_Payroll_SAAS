@@ -18,7 +18,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "node prisma/seed.js",
-    "employee-pii:backfill": "node scripts/backfillEmployeePii.js"
+    "employee-pii:backfill": "node scripts/backfillEmployeePii.js",
+    "employee-pii:rotate": "node scripts/rotateEmployeePiiKeys.js"
   },
   "keywords": [
     "payroll",
