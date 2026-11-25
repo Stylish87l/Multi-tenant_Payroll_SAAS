@@ -187,7 +187,7 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
       if (netPay > 100000) logger.warn('HIGH_VALUE_PAYOUT_DETECTED', { itemId: item.id, amount: netPay });
 
       span.setAttributes({
-        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': provider === 'paystack' && isLive ? 'PROCESSING' : 'SENT',
+        'payout.itemId': payrollItemId, 'payout.provider': provider, 'payout.status': finalizationStatus,
         'payout.reference': idempotencyKey, 'payout.simulated': !isLive,
       });
       return gatewayResult;
@@ -317,6 +317,7 @@ export const reconcileHubtelPayout = async ({ payrollItemId, reference }) => {
         paymentStatus: providerResult.status,
         providerTransactionId: providerResult.providerTransactionId || item.providerTransactionId,
         payoutLastCheckedAt: new Date(),
+        payoutSubmittedAt: item.payoutSubmittedAt || new Date(),
       },
     });
     if (updated.count === 1) {
