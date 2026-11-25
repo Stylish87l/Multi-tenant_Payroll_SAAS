@@ -132,7 +132,11 @@ export const AuthProvider = ({ children }) => {
       await client.resetStore();
       return { success: true };
     } catch (err) {
-      return { success: false, message: err.graphQLErrors?.[0]?.message || err.message || 'Login failed' };
+      return {
+        success: false,
+        code: err.graphQLErrors?.[0]?.extensions?.code || err.networkError?.result?.errors?.[0]?.extensions?.code,
+        message: err.graphQLErrors?.[0]?.message || err.message || 'Login failed',
+      };
     }
   }, [loginMutation, client, scheduleRefresh]);
 
