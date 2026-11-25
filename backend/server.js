@@ -89,7 +89,7 @@ app.get('/health', async (req, res) => {
 
 app.use(cookieParser());
 
-// Capture the raw body for webhook signature verification (HMAC is over the exact bytes sent).
+// Capture the raw body for Paystack's documented webhook HMAC verification.
 app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 
 app.use(helmet({
