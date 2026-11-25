@@ -8,6 +8,7 @@ import logger from '../config/logger.js';
 import { getLogoBuffer } from '../utils/fetchLogo.js';
 import { writeAuditSafe, actorFromReq } from '../services/auditService.js';
 import { buildPayslipItemWhere, hasConsistentPayslipTenant } from '../utils/payslipAccess.js';
+import { buildPayslipExplanation } from '../services/payslipExplanationService.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -33,6 +34,15 @@ const ITEM_SELECT = {
       company: { select: COMPANY_SELECT },
     },
   },
+};
+
+const EXPLANATION_SELECT = {
+  id: true, grossSalary: true, basicSalarySnapshot: true,
+  housingAllowanceSnapshot: true, transportAllowanceSnapshot: true, otherAllowanceSnapshot: true,
+  taxableIncome: true, ssnitEmployee: true, ssnitEmployer: true, ssnitTier1: true, ssnitTier2: true,
+  payeTax: true, netPay: true, paymentStatus: true, reliefInputsSnapshot: true,
+  employee: { select: { companyId: true } },
+  payrollRun: { select: { id: true, month: true, companyId: true, status: true, taxConfigSnapshot: true } },
 };
 
 const INDIVIDUAL_PAYSLIP_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'EMPLOYEE'];
@@ -167,6 +177,38 @@ const findPayslip = async (req, itemId) => {
   return hasConsistentPayslipTenant(item) ? item : null;
 };
 
+
+// Employee self-service explanation. This endpoint intentionally selects no employee PII.
+router.get('/item/:itemId/explanation', rbac(['EMPLOYEE']), async (req, res) => {
+  if (req.userRole !== 'EMPLOYEE') return res.status(403).json({ error: 'Employee access only.' });
+  try {
+    const where = buildPayslipItemWhere({
+      userRole: req.userRole, companyId: req.companyId, userId: req.userId,
+    }, req.params.itemId);
+    where.payrollRun = { ...(where.payrollRun || {}), status: 'FINALIZED' };
+    const item = await prisma.payrollItem.findFirst({ where, select: EXPLANATION_SELECT });
+    if (!hasConsistentPayslipTenant(item)) {
+      return res.status(404).json({ error: 'Payslip not found or access denied.' });
+    }
+
+    const explanation = buildPayslipExplanation(item);
+    res.setHeader('Cache-Control', 'private, no-store');
+    await writeAuditSafe(prisma, {
+      actor: actorFromReq(req),
+      companyId: item.payrollRun.companyId,
+      action: 'PAYSLIP_EXPLAINED',
+      resourceType: 'PayrollItem',
+      resourceId: item.id,
+      details: { payrollRunId: item.payrollRun.id, period: explanation.period },
+    });
+    return res.json({ explanation });
+  } catch (error) {
+    logger.error('Employee payslip explanation failed', {
+      userId: req.userId, companyId: req.companyId, message: error.message,
+    });
+    return res.status(500).json({ error: 'Unable to explain this payslip.' });
+  }
+});
 
 router.get('/mine', rbac(['EMPLOYEE']), async (req, res) => {
   if (req.userRole !== 'EMPLOYEE') return res.status(403).json({ error: 'Employee access only.' });
