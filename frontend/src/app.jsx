@@ -23,6 +23,7 @@ const Employees = lazy(() => import('./pages/Employees'));
 const EmployeeImport = lazy(() => import('./pages/EmployeeImport'));
 const Payroll = lazy(() => import('./pages/Payroll'));
 const Reports = lazy(() => import('./pages/Reports'));
+const AskPaylio = lazy(() => import('./pages/AskPaylio'));
 const MyPayslips = lazy(() => import('./pages/MyPayslips'));
 const Branding = lazy(() => import('./pages/Branding'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
@@ -72,6 +73,7 @@ const protectedRoutes = [
   { path: '/employee-import/*', basePath: '/employee-import', element: <EmployeeImport /> },
   { path: '/payroll/*', basePath: '/payroll', element: <Payroll /> },
   { path: '/reports/*', basePath: '/reports', element: <Reports /> },
+  { path: '/ask-paylio/*', basePath: '/ask-paylio', element: <AskPaylio /> },
   { path: '/payslips/*', basePath: '/payslips', element: <MyPayslips /> },
   { path: '/branding/*', basePath: '/branding', element: <Branding /> },
   { path: '/users/*', basePath: '/users', element: <UserManagement /> },
