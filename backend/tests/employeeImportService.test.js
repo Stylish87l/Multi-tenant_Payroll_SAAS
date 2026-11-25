@@ -96,6 +96,18 @@ describe('smart employee import parsing and preview', () => {
     })).rejects.toThrow('700 KB');
   });
 
+  it('rejects XLSX archives with excessive uncompressed content before workbook parsing', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Employees');
+    sheet.addRow(['Name', 'Email', 'Position', 'Basic Salary']);
+    sheet.addRow(['A'.repeat(11 * 1024 * 1024), 'large@example.test', 'Teacher', 3200]);
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    expect(buffer.length).toBeLessThan(700 * 1024);
+    await expect(buildEmployeeImportPreview({
+      fileName: 'large-workbook.xlsx', buffer, companyId: 'company-a', client,
+    })).rejects.toThrow('10 MB processing limit');
+  });
+
   it('reads the first worksheet of an XLSX workbook', async () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Employees');
