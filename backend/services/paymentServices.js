@@ -10,9 +10,6 @@ import { getHubtelPayoutStatus, submitHubtelBankPayout, verifyHubtelBankAccountN
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || null;
 const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET || PAYSTACK_SECRET_KEY;
-const HUBTEL_CLIENT_ID = process.env.HUBTEL_CLIENT_ID || null;
-const HUBTEL_CLIENT_SECRET = process.env.HUBTEL_CLIENT_SECRET || null;
-const HUBTEL_MERCHANT_ACCOUNT = process.env.HUBTEL_MERCHANT_ACCOUNT || null;
 
 /**
  * Simulation is restricted to development/test. Live transfers require an explicit
@@ -90,6 +87,15 @@ export const processPayout = async (payrollItemId, provider = 'hubtel') => {
 
       const payoutMode = resolvePayoutMode({ provider, employee: item.employee });
       const isLive = payoutMode === 'LIVE';
+      let verifiedBankAccountName = null;
+      if (provider === 'hubtel' && isLive) {
+        if (netPayDecimal.decimalPlaces() > 2) throw new PayoutStateError('Hubtel bank payouts require a net pay amount with no more than two decimal places.');
+        verifiedBankAccountName = await verifyHubtelBankAccountName({
+          bankCode: item.employee.bankCode,
+          bankAccount: item.employee.bankAccount,
+          employeeName: item.employee.name,
+        });
+      }
 
       // Atomic claim. @updatedAt changes on every write, so a concurrent claimer's `updatedAt` filter fails.
       const idempotencyKey = `pay_${uuidv4().replace(/-/g, '').slice(0, 24)}`;
