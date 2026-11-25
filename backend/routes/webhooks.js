@@ -1,6 +1,6 @@
 // Payment provider webhook receiver. NOT behind authMiddleware (providers cannot send a Paylio
-// JWT); protected by signature / shared-secret verification instead. Requires req.rawBody
-// (captured by express.json({ verify }) in server.js).
+// JWT). Paystack uses its documented signature; Hubtel callbacks require trusted ingress and
+// authoritative provider status reconciliation. Requires req.rawBody for Paystack verification.
 import express from 'express';
 import logger from '../config/logger.js';
 import { handlePaymentWebhook, verifyPaystackSignature } from '../services/paymentServices.js';
