@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import ExcelJS from 'exceljs';
+import { createEmployeePiiBlindIndex } from '../services/employeePiiEncryption.js';
 import {
   buildEmployeeImportPreview,
   parseCsvRecords,
@@ -68,7 +69,7 @@ describe('smart employee import parsing and preview', () => {
   it('marks identifiers already present in the tenant using blind indexes', async () => {
     client.employee.findMany
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ssnitNumberHash: expect.any(String) }])
+      .mockResolvedValueOnce([{ ssnitNumberHash: createEmployeePiiBlindIndex('1234567890123', 'ssnitNumber') }])
       .mockResolvedValueOnce([]);
     const result = await buildEmployeeImportPreview({
       fileName: 'staff.csv', buffer: Buffer.from(csv),
