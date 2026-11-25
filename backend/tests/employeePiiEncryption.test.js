@@ -5,6 +5,8 @@ import {
   decryptSensitiveValue,
   encryptEmployeeWriteData,
   encryptSensitiveValue,
+  getEmployeePiiCiphertextKeyId,
+  reencryptSensitiveValue,
   validateEmployeePiiEncryptionConfig,
 } from '../services/employeePiiEncryption.js';
 
@@ -47,6 +49,9 @@ describe('employee PII encryption', () => {
     process.env.DATA_ENCRYPTION_KEY = Buffer.alloc(32, 0x77).toString('base64');
     process.env.DATA_ENCRYPTION_PREVIOUS_KEYS = JSON.stringify({ 'old-key': key });
     expect(decryptSensitiveValue(oldCiphertext)).toBe('old-value');
+    const rotated = reencryptSensitiveValue(oldCiphertext);
+    expect(getEmployeePiiCiphertextKeyId(rotated)).toBe('new-key');
+    expect(decryptSensitiveValue(rotated)).toBe('old-value');
     expect(decryptSensitiveValue(encryptSensitiveValue('new-value'))).toBe('new-value');
   });
 
