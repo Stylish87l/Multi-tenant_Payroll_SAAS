@@ -44,6 +44,15 @@ pool.on('error', (err) => logger.error('Postgres pool error (idle client)', { me
 const adapter = new PrismaPg(pool);
 const basePrisma = new PrismaClient({
   adapter,
+  omit: {
+    employee: {
+      bankAccountEncrypted: true,
+      ssnitNumberEncrypted: true,
+      ssnitNumberHash: true,
+      ghanaCardPinEncrypted: true,
+      ghanaCardPinHash: true,
+    },
+  },
   log: [
     { emit: 'event', level: 'query' },
     { emit: 'event', level: 'info' },
