@@ -38,7 +38,7 @@ const getIndexKey = () => decodeKey(
 export const validateEmployeePiiEncryptionConfig = () => {
   const { keys, currentKeyId } = getKeyring();
   const indexKey = getIndexKey();
-  if (keys.get(currentKeyId).equals(indexKey)) throw new Error('DATA_ENCRYPTION_INDEX_KEY must be different from DATA_ENCRYPTION_KEY.');
+  if ([...keys.values()].some((key) => key.equals(indexKey))) throw new Error('DATA_ENCRYPTION_INDEX_KEY must be different from all DATA_ENCRYPTION_KEY values.');
   return true;
 };
 
@@ -62,7 +62,6 @@ export const encryptSensitiveValue = (value) => {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'string') throw new TypeError('Sensitive employee fields must be strings or null.');
   if (!value.length) return null;
-  if (value.startsWith(ENVELOPE_PREFIX)) return value;
   return encryptWithCurrentKey(value);
 };
 
