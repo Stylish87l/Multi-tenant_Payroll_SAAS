@@ -1,8 +1,8 @@
 import prisma from '../config/db.js';
 import { z } from 'zod';
-import { reviewPayrollRun } from '../services/payrollAnomalyService.js';
+import { getPayrollReviewInputFingerprint, reviewPayrollRun } from '../services/payrollAnomalyService.js';
 import { actorFromReq, writeAudit } from '../services/auditService.js';
-import { badInput, notFound } from '../utils/appError.js';
+import { badInput, conflict, notFound } from '../utils/appError.js';
 
 const decisionSchema = z.object({
   decision: z.enum(['CONFIRMED', 'DISMISSED', 'NEEDS_INVESTIGATION', 'RESOLVED']),
@@ -16,7 +16,8 @@ export const createPayrollReview = async (req, res, next) => {
       payrollRunId: req.params.payrollRunId,
       actor: actorFromReq(req),
     });
-    return res.status(201).json(review);
+    const { inputFingerprint: _inputFingerprint, ...publicReview } = review;
+    return res.status(201).json({ ...publicReview, isStale: false });
   } catch (error) {
     return next(error);
   }
@@ -59,9 +60,12 @@ export const getPayrollReview = async (req, res, next) => {
       },
     });
     if (!review) throw notFound('Payroll review not found.');
+    const currentFingerprint = await getPayrollReviewInputFingerprint({ companyId: req.reviewCompanyId, payrollRunId: review.payrollRunId });
+    const isStale = !review.inputFingerprint || currentFingerprint !== review.inputFingerprint;
+    const { inputFingerprint: _inputFingerprint, ...publicReview } = review;
     const severityRank = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
-    review.findings.sort((a, b) => severityRank[b.severity] - severityRank[a.severity] || a.createdAt - b.createdAt);
-    return res.json(review);
+    publicReview.findings.sort((a, b) => severityRank[b.severity] - severityRank[a.severity] || a.createdAt - b.createdAt);
+    return res.json({ ...publicReview, isStale });
   } catch (error) {
     return next(error);
   }
@@ -80,9 +84,11 @@ export const recordPayrollFindingDecision = async (req, res, next) => {
         reviewId: req.params.reviewId,
         companyId: req.reviewCompanyId,
       },
-      select: { id: true, status: true, reviewId: true },
+      select: { id: true, status: true, reviewId: true, review: { select: { payrollRunId: true, inputFingerprint: true } } },
     });
     if (!finding) throw notFound('Finding not found.');
+    const currentFingerprint = await getPayrollReviewInputFingerprint({ companyId: req.reviewCompanyId, payrollRunId: finding.review.payrollRunId });
+    if (!finding.review.inputFingerprint || currentFingerprint !== finding.review.inputFingerprint) throw conflict('This Copilot review is stale. Run a new review before recording decisions.');
 
     const statusByDecision = {
       CONFIRMED: 'CONFIRMED',
