@@ -87,6 +87,15 @@ export const assertEmployeePiiBackfillComplete = async () => {
   if (Number(remaining[0]?.count || 0) !== 0) {
     throw new Error('Employee PII is not fully encrypted. Complete the maintenance backfill before serving traffic.');
   }
+  const invalidUserSecrets = await basePrisma.$queryRaw`
+    SELECT COUNT(*)::int AS "count"
+    FROM "users"
+    WHERE "two_factor_secret_encrypted" IS NOT NULL
+      AND "two_factor_secret_encrypted" NOT LIKE 'enc:v1:%'
+  `;
+  if (Number(invalidUserSecrets[0]?.count || 0) !== 0) {
+    throw new Error('Two-factor secrets are not fully encrypted. Refusing to start the API or worker.');
+  }
   return true;
 };
 
