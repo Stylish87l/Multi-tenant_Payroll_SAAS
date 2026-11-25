@@ -58,6 +58,13 @@ describe('deterministic employee payslip explanation', () => {
       effectiveAt: '2026-10-01',
       reliefInputsSnapshotAvailable: true,
     });
+    expect(result.taxContext.reliefInputs).toEqual({
+      familyReliefInput: false,
+      childrenCount: 0,
+      disabilityReliefInput: false,
+      oldAgeReliefEligible: false,
+      agedDependentsCount: 0,
+    });
     expect(result.notes.join(' ')).toContain('does not recalculate statutory deductions');
     expect(JSON.stringify(result)).not.toContain('employeeId');
     expect(JSON.stringify(result)).not.toContain('companyId');
@@ -77,6 +84,7 @@ describe('deterministic employee payslip explanation', () => {
     expect(result.earnings).toBeNull();
     expect(result.taxContext.historicalSnapshotAvailable).toBe(false);
     expect(result.taxContext.reliefInputsSnapshotAvailable).toBe(false);
+    expect(result.taxContext.reliefInputs).toBeNull();
     expect(result.notes.join(' ')).toContain('cannot safely be reconstructed');
     expect(result.notes.join(' ')).toContain('Current tax settings have not been substituted');
   });
