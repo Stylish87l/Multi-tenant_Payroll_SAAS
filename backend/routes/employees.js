@@ -188,12 +188,16 @@ router.get('/export', async (req, res) => {
 });
 
 // Smart employee import: only ADMIN and SUPER_ADMIN may import compensation/identity fields.
+const noStoreImportResponse = (_req, res, next) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  next();
+};
 const canImportEmployees = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN';
 const resolveImportCompanyId = (req) => (
   req.userRole === 'SUPER_ADMIN' ? req.body?.companyId : req.companyId
 );
 
-router.post('/import/preview', async (req, res) => {
+router.post('/import/preview', noStoreImportResponse, async (req, res) => {
   if (!canImportEmployees(req.userRole)) {
     return res.status(403).json({ error: 'Only company administrators can import employee records.' });
   }
@@ -251,7 +255,6 @@ router.post('/import/preview', async (req, res) => {
       return record;
     });
 
-    res.setHeader('Cache-Control', 'private, no-store');
     return res.status(201).json({
       previewId: created.id,
       expiresAt: created.expiresAt,
@@ -264,7 +267,7 @@ router.post('/import/preview', async (req, res) => {
   }
 });
 
-router.post('/import/commit', async (req, res) => {
+router.post('/import/commit', noStoreImportResponse, async (req, res) => {
   if (!canImportEmployees(req.userRole)) {
     return res.status(403).json({ error: 'Only company administrators can import employee records.' });
   }
@@ -343,7 +346,6 @@ router.post('/import/commit', async (req, res) => {
       };
     }, { isolationLevel: 'Serializable' });
 
-    res.setHeader('Cache-Control', 'private, no-store');
     return res.json({ message: 'Employee import completed.', ...result });
   } catch (error) {
     if (error.code === 'IMPORT_NO_VALID_ROWS') return res.status(400).json({ error: error.message });
