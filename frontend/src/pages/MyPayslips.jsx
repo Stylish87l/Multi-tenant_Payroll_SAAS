@@ -158,7 +158,10 @@ const MyPayslips = () => {
                   </div>
                   <div className="flex justify-between rounded-lg bg-primary/10 p-3 text-sm font-bold text-slate-900 dark:text-white"><span>Your recorded take-home pay</span><span>GHS {explanations[item.id].netPayGhs}</span></div>
                   <div className="space-y-1 text-xs text-slate-500">
-                    <p>{explanations[item.id].taxContext.historicalSnapshotAvailable ? `Historical tax configuration saved for ${explanations[item.id].taxContext.taxYear}.` : 'Historical tax configuration is unavailable for this older payroll record.'}</p>
+                    <p>{explanations[item.id].taxContext.historicalSnapshotAvailable ? `Historical tax configuration saved for ${explanations[item.id].taxContext.taxYear} (effective ${explanations[item.id].taxContext.effectiveAt || 'date not recorded'}).` : 'Historical tax configuration is unavailable for this older payroll record.'}</p>
+                    {explanations[item.id].taxContext.reliefInputs && (
+                      <p>Tax-relief inputs saved at the time: family relief {explanations[item.id].taxContext.reliefInputs.familyReliefInput ? 'yes' : 'no'}, children {explanations[item.id].taxContext.reliefInputs.childrenCount}, disability relief {explanations[item.id].taxContext.reliefInputs.disabilityReliefInput ? 'yes' : 'no'}, old-age relief eligibility {explanations[item.id].taxContext.reliefInputs.oldAgeReliefEligible ? 'yes' : 'no'}, aged dependents {explanations[item.id].taxContext.reliefInputs.agedDependentsCount}.</p>
+                    )}
                     {explanations[item.id].notes.map((note, index) => <p key={index}>• {note}</p>)}
                   </div>
                 </section>
