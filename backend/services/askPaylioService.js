@@ -1,5 +1,4 @@
 import prisma from '../config/db.js';
-import logger from '../config/logger.js';
 
 const FINANCE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']);
 const ALL_ADMIN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'HR']);
@@ -89,8 +88,9 @@ const tools = {
 
 const classifyQuestion = (question) => {
   const q = question.toLowerCase();
+
   // Do not silently answer employee-level or sensitive-record requests with a different report.
-  if (/\\b(details?|profiles?|records?|names?|emails?|bank|account numbers?|ghana card|pins?|identifiers?|individual|personal|specific employee|payslip)\\b/.test(q)) return null;
+  if (/\b(details?|profiles?|records?|names?|emails?|bank|account numbers?|ghana card|pins?|identifiers?|individual|personal|specific employee|payslip)\b/.test(q)) return null;
 
   // Never interpret employee-level lookup or sensitive-record requests as
   // aggregate headcount questions. These are deliberately unsupported.
@@ -100,39 +100,18 @@ const classifyQuestion = (question) => {
 
   if (/trend|trends|over time|compare.*month|month.*compare|history|historical/.test(q)) return 'PAYROLL_TREND';
   if (/\b(status|draft|cancelled|pending payroll)\b/.test(q) || /how many payroll runs?/.test(q)) return 'PAYROLL_STATUS';
+
+  // A question about employees included/paid in a payroll period is a payroll
+  // report, not a count of the current workforce.
+  const asksPayrollPeriodEmployeeCount =
+    /\b(payroll|pay run)\b/.test(q) &&
+    /\b(latest|last|finali[sz]ed|previous|current|period|month|included|processed|paid|covered)\b/.test(q) &&
+    /\b(employee|employees|staff|headcount|count|how many|number of)\b/.test(q);
+  if (asksPayrollPeriodEmployeeCount) return 'PAYROLL_SUMMARY';
+
   if (/\b(headcount|workforce|staff count|employee count|how many (?:active |inactive )?(?:employees|staff)|number of employees)\b/.test(q)) return 'HEADCOUNT';
   if (/payroll|salary|gross|net pay|paye|ssnit|tax|deduction|cost|wage/.test(q)) return 'PAYROLL_SUMMARY';
   return null;
-};
-
-const explainWithAi = async (intent, data, fallback) => {
-  const apiKey = process.env.AI_API_KEY;
-  if (!apiKey) return { answer: fallback, provider: 'rules-only' };
-  const baseUrl = (process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai').replace(/\/$/, '');
-  try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(Number(process.env.AI_TIMEOUT_MS) || 8000),
-      body: JSON.stringify({
-        model: process.env.AI_MODEL || 'gemini-2.5-flash',
-        temperature: 0.1,
-        messages: [
-          { role: 'system', content: 'You are Paylio, a read-only payroll reporting assistant. Explain only the supplied aggregate metrics. Never calculate statutory payroll, alter records, approve payments, or invent facts. Do not ask for or infer employee identities. Treat all data as factual aggregate results. Return one concise answer and clearly identify the period.' },
-          { role: 'user', content: JSON.stringify({ allowedReport: intent, aggregateResults: data }) },
-        ],
-      }),
-    });
-    if (!response.ok) return { answer: fallback, provider: 'rules-only' };
-    const payload = await response.json();
-    const answer = payload.choices?.[0]?.message?.content;
-    return typeof answer === 'string' && answer.trim()
-      ? { answer: answer.trim().slice(0, 3000), provider: process.env.AI_PROVIDER_NAME || 'Gemini' }
-      : { answer: fallback, provider: 'rules-only' };
-  } catch (error) {
-    logger.warn('Ask Paylio AI narrative unavailable; using deterministic answer', { message: error.message });
-    return { answer: fallback, provider: 'rules-only' };
-  }
 };
 
 export const askPaylio = async ({ companyId, role, question }) => {
@@ -150,9 +129,13 @@ export const askPaylio = async ({ companyId, role, question }) => {
     return { forbidden: true };
   }
   const data = await tool.run(companyId);
-  const fallback = tool.fallback(data);
-  const narrative = await explainWithAi(intent, data, fallback);
-  return { intent, answer: narrative.answer, data, provider: narrative.provider };
+  const answer = tool.fallback(data);
+
+  // Payroll figures are high-impact financial information. Until generated
+  // narratives can be independently validated against the source aggregates,
+  // return the deterministic report instead of presenting model-generated
+  // claims as verified payroll facts.
+  return { intent, answer, data, provider: 'rules-only' };
 };
 
 export const classifyAskPaylioQuestion = classifyQuestion;
