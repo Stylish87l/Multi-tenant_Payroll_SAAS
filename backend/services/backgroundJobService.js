@@ -48,3 +48,20 @@ export const enqueueHubtelPayoutReconciliation = async (reference) => {
     throw error;
   }
 };
+
+/** Schedule one compliance-source scan per six-hour UTC bucket. */
+export const enqueueComplianceWatcherScan = async () => {
+  const bucket = Math.floor(Date.now() / (6 * 60 * 60 * 1000));
+  try {
+    return await prisma.backgroundJob.create({
+      data: {
+        type: 'COMPLIANCE_WATCHER_SCAN',
+        payload: {},
+        idempotencyKey: `compliance-watcher-scan:${bucket}`,
+      },
+    });
+  } catch (error) {
+    if (error?.code === 'P2002') return null;
+    throw error;
+  }
+};
