@@ -275,7 +275,7 @@ const typeDefs = gql`
 
   type Mutation {
     register(email: String!, password: String!, name: String!, companyName: String!): AuthPayload!
-    login(email: String!, password: String!): AuthPayload!
+    login(email: String!, password: String!, twoFactorCode: String): AuthPayload!
     createEmployee(input: EmployeeInput!): Employee!
     updateEmployee(id: ID!, input: UpdateEmployeeInput!): Employee!
     runPayroll(month: String!, companyId: ID): PayrollRun!
