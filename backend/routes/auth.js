@@ -10,6 +10,11 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken, computeExpiryDat
 import { REFRESH_COOKIE_NAME, getRefreshCookieOptions, getClearCookieOptions } from '../config/cookies.js';
 import { passwordSchema } from '../schemas/authSchema.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
+import { encryptSensitiveValue } from '../services/employeePiiEncryption.js';
+import {
+  createOtpAuthUri, generateRecoveryCodes, generateTotpSecret, hashRecoveryCode,
+  verifyTotp, verifyUserTwoFactorCode,
+} from '../services/twoFactorService.js';
 
 const router = express.Router();
 const passwordResetLimiter = rateLimit({
@@ -30,6 +35,34 @@ const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 const PASSWORD_RESET_GENERIC_MESSAGE = 'If an active account exists for that email, a password reset link will be sent.';
 const INVALID_RESET_MESSAGE = 'This password reset link is invalid or has expired. Request a new link and try again.';
 const hashPasswordResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many two-factor attempts. Please try again later.' },
+});
+const twoFactorEnrollmentSchema = z.object({ password: z.string().min(1).max(128) }).strict();
+const twoFactorCodeSchema = z.object({ code: z.string().trim().min(6).max(40) }).strict();
+const twoFactorDisableSchema = z.object({
+  password: z.string().min(1).max(128),
+  code: z.string().trim().min(6).max(40),
+}).strict();
+
+const writeTwoFactorAudit = (tx, user, req, action, details = {}) => tx.auditLog.create({
+  data: {
+    userId: user.id,
+    companyId: user.companyId,
+    action,
+    details,
+    ipAddress: req.ip || null,
+    userAgent: req.get('User-Agent') || null,
+    resourceType: 'User',
+    resourceId: user.id,
+    performedBy: 'user',
+  },
+});
+
 
 
 // 60s grace for parallel requests racing a rotation (multiple tabs, Apollo retries).
@@ -388,6 +421,151 @@ router.post('/reset-password', passwordResetLimiter, async (req, res) => {
     if (error.message === 'RESET_TOKEN_INVALID') return res.status(400).json({ error: INVALID_RESET_MESSAGE });
     logger.error('Password reset completion failed', { message: error.message });
     return res.status(500).json({ error: 'Unable to reset password right now. Please try again.' });
+  }
+});
+
+
+router.get('/2fa/status', authMiddleware, async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { id: true, twoFactorEnabled: true, twoFactorVerifiedAt: true },
+    });
+    if (!user) return res.status(404).json({ error: 'Account not found.' });
+    const recoveryCodesRemaining = user.twoFactorEnabled
+      ? await prisma.twoFactorRecoveryCode.count({ where: { userId: user.id, usedAt: null } })
+      : 0;
+    return res.json({
+      enabled: user.twoFactorEnabled,
+      verifiedAt: user.twoFactorVerifiedAt,
+      recoveryCodesRemaining,
+    });
+  } catch (error) { return next(error); }
+});
+
+router.post('/2fa/enroll', authMiddleware, twoFactorLimiter, async (req, res, next) => {
+  try {
+    const parsed = twoFactorEnrollmentSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: 'Your current password is required to start two-factor setup.' });
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { id: true, email: true, password: true, companyId: true, status: true, deletedAt: true, twoFactorEnabled: true },
+    });
+    if (!user || user.deletedAt || user.status !== 'ACTIVE') return res.status(404).json({ error: 'Active account not found.' });
+    if (user.twoFactorEnabled) return res.status(409).json({ error: 'Two-factor authentication is already enabled.' });
+    if (!(await bcrypt.compare(parsed.data.password, user.password))) return res.status(401).json({ error: 'Current password is incorrect.' });
+
+    const secret = generateTotpSecret();
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          twoFactorEnabled: false,
+          twoFactorSecretEncrypted: encryptSensitiveValue(secret),
+          twoFactorVerifiedAt: null,
+        },
+      });
+      await writeTwoFactorAudit(tx, user, req, 'TWO_FACTOR_ENROLLMENT_STARTED', { method: 'totp' });
+    });
+    return res.json({ secret, otpauthUrl: createOtpAuthUri({ email: user.email, secret }) });
+  } catch (error) { return next(error); }
+});
+
+router.post('/2fa/verify-enrollment', authMiddleware, twoFactorLimiter, async (req, res, next) => {
+  try {
+    const parsed = twoFactorCodeSchema.safeParse(req.body ?? {});
+    if (!parsed.success || !/^\d{6}$/.test(parsed.data?.code || '')) {
+      return res.status(400).json({ error: 'Enter the six-digit code from your authenticator app.' });
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { id: true, companyId: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
+    });
+    if (!user || !user.twoFactorSecretEncrypted) return res.status(409).json({ error: 'Start two-factor setup before verifying a code.' });
+    if (user.twoFactorEnabled) return res.status(409).json({ error: 'Two-factor authentication is already enabled.' });
+    const secret = (await import('../services/employeePiiEncryption.js')).decryptSensitiveValue(user.twoFactorSecretEncrypted);
+    if (!verifyTotp(secret, parsed.data.code)) return res.status(400).json({ error: 'The authenticator code is invalid or expired.' });
+
+    const recoveryCodes = generateRecoveryCodes();
+    const now = new Date();
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: { id: user.id, twoFactorEnabled: false, twoFactorSecretEncrypted: user.twoFactorSecretEncrypted },
+        data: { twoFactorEnabled: true, twoFactorVerifiedAt: now },
+      });
+      if (updated.count !== 1) throw new Error('TWO_FACTOR_ENROLLMENT_CHANGED');
+      await tx.twoFactorRecoveryCode.deleteMany({ where: { userId: user.id } });
+      await tx.twoFactorRecoveryCode.createMany({
+        data: recoveryCodes.map((code) => ({ userId: user.id, codeHash: hashRecoveryCode(code) })),
+      });
+      await writeTwoFactorAudit(tx, user, req, 'TWO_FACTOR_ENABLED', { recoveryCodesIssued: recoveryCodes.length });
+    });
+    return res.json({
+      enabled: true,
+      recoveryCodes,
+      message: 'Two-factor authentication is enabled. Save these recovery codes now; they will not be shown again.',
+    });
+  } catch (error) {
+    if (error.message === 'TWO_FACTOR_ENROLLMENT_CHANGED') return res.status(409).json({ error: 'Two-factor setup changed. Start again.' });
+    return next(error);
+  }
+});
+
+router.post('/2fa/disable', authMiddleware, twoFactorLimiter, async (req, res, next) => {
+  try {
+    const parsed = twoFactorDisableSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: 'Current password and authenticator or recovery code are required.' });
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { id: true, companyId: true, password: true, status: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
+    });
+    if (!user || !user.twoFactorEnabled) return res.status(409).json({ error: 'Two-factor authentication is not enabled.' });
+    if (!(await bcrypt.compare(parsed.data.password, user.password))) return res.status(401).json({ error: 'Current password is incorrect.' });
+
+    await prisma.$transaction(async (tx) => {
+      const verification = await verifyUserTwoFactorCode({ tx, user, code: parsed.data.code });
+      if (!verification.valid) throw new Error('INVALID_TWO_FACTOR_CODE');
+      await tx.user.update({
+        where: { id: user.id },
+        data: { twoFactorEnabled: false, twoFactorSecretEncrypted: null, twoFactorVerifiedAt: null },
+      });
+      await tx.twoFactorRecoveryCode.deleteMany({ where: { userId: user.id } });
+      await writeTwoFactorAudit(tx, user, req, 'TWO_FACTOR_DISABLED', { verificationMethod: verification.method });
+    });
+    return res.json({ enabled: false, message: 'Two-factor authentication has been disabled.' });
+  } catch (error) {
+    if (error.message === 'INVALID_TWO_FACTOR_CODE') return res.status(400).json({ error: 'The authenticator or recovery code is invalid or already used.' });
+    return next(error);
+  }
+});
+
+router.post('/2fa/recovery-codes/regenerate', authMiddleware, twoFactorLimiter, async (req, res, next) => {
+  try {
+    const parsed = twoFactorCodeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: 'Enter your authenticator or recovery code.' });
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { id: true, companyId: true, twoFactorEnabled: true, twoFactorSecretEncrypted: true },
+    });
+    if (!user || !user.twoFactorEnabled) return res.status(409).json({ error: 'Enable two-factor authentication first.' });
+
+    const recoveryCodes = generateRecoveryCodes();
+    await prisma.$transaction(async (tx) => {
+      const verification = await verifyUserTwoFactorCode({ tx, user, code: parsed.data.code });
+      if (!verification.valid) throw new Error('INVALID_TWO_FACTOR_CODE');
+      await tx.twoFactorRecoveryCode.deleteMany({ where: { userId: user.id } });
+      await tx.twoFactorRecoveryCode.createMany({
+        data: recoveryCodes.map((code) => ({ userId: user.id, codeHash: hashRecoveryCode(code) })),
+      });
+      await writeTwoFactorAudit(tx, user, req, 'TWO_FACTOR_RECOVERY_CODES_REGENERATED', { recoveryCodesIssued: recoveryCodes.length, verificationMethod: verification.method });
+    });
+    return res.json({
+      recoveryCodes,
+      message: 'New recovery codes generated. Previous recovery codes are no longer valid. Save these codes now.',
+    });
+  } catch (error) {
+    if (error.message === 'INVALID_TWO_FACTOR_CODE') return res.status(400).json({ error: 'The authenticator or recovery code is invalid or already used.' });
+    return next(error);
   }
 });
 
