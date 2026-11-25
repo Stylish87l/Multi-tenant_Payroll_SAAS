@@ -40,23 +40,33 @@ export const validateEmployeePiiEncryptionConfig = () => {
   return true;
 };
 
-export const encryptSensitiveValue = (value) => {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') throw new TypeError('Sensitive employee fields must be strings or null.');
-  if (!value.length) return null;
-  if (value.startsWith(ENVELOPE_PREFIX)) return value;
-
+const encryptWithCurrentKey = (value) => {
   const { currentKeyId, keys } = getKeyring();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', keys.get(currentKeyId), iv);
   const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return [
-    'enc', 'v1', currentKeyId,
-    iv.toString('base64url'),
-    tag.toString('base64url'),
-    ciphertext.toString('base64url'),
-  ].join(':');
+  return ['enc', 'v1', currentKeyId, iv.toString('base64url'), tag.toString('base64url'), ciphertext.toString('base64url')].join(':');
+};
+
+export const getCurrentEmployeePiiKeyId = () => getKeyring().currentKeyId;
+
+export const getEmployeePiiCiphertextKeyId = (value) => {
+  if (typeof value !== 'string' || !value.startsWith(ENVELOPE_PREFIX)) return null;
+  return value.split(':')[2] || null;
+};
+
+export const encryptSensitiveValue = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') throw new TypeError('Sensitive employee fields must be strings or null.');
+  if (!value.length) return null;
+  if (value.startsWith(ENVELOPE_PREFIX)) return value;
+  return encryptWithCurrentKey(value);
+};
+
+export const reencryptSensitiveValue = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  return encryptWithCurrentKey(decryptSensitiveValue(value));
 };
 
 export const decryptSensitiveValue = (value) => {
