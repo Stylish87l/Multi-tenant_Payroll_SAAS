@@ -53,6 +53,14 @@ export const buildPayslipExplanation = (item) => {
     notes.push('The personal tax-relief input snapshot is unavailable, so this explanation cannot identify which relief inputs were applied at the time.');
   }
 
+  const reliefInputs = item.reliefInputsSnapshot ? {
+    familyReliefInput: Boolean(item.reliefInputsSnapshot.isMarried || item.reliefInputsSnapshot.hasResponsibility),
+    childrenCount: Number(item.reliefInputsSnapshot.childrenCount || 0),
+    disabilityReliefInput: Boolean(item.reliefInputsSnapshot.isDisabled),
+    oldAgeReliefEligible: Number(item.reliefInputsSnapshot.age || 0) >= 60,
+    agedDependentsCount: Number(item.reliefInputsSnapshot.agedDependentsCount || 0),
+  } : null;
+
   const paymentStatus = item.paymentStatus || 'PENDING';
   if (paymentStatus === 'PAID') notes.push('The payroll record marks this payment as paid.');
   else if (paymentStatus === 'SENT') notes.push('The payment has been sent according to the payroll record; check with your employer or bank if it has not arrived.');
@@ -83,6 +91,7 @@ export const buildPayslipExplanation = (item) => {
       taxYear: Number.isInteger(taxSnapshot?.year) ? taxSnapshot.year : null,
       effectiveAt: typeof taxSnapshot?.effectiveAt === 'string' ? taxSnapshot.effectiveAt : null,
       reliefInputsSnapshotAvailable: Boolean(item.reliefInputsSnapshot),
+      reliefInputs,
     },
     notes,
   };
