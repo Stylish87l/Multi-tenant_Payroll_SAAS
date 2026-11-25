@@ -26,3 +26,16 @@ export const downloadMyPayslipPdf = async (itemId) => {
   if (!response.ok) throw await readError(response, 'Payslip download failed.');
   return response.blob();
 };
+
+
+/** Fetch an explanation of the authenticated employee's own finalized payslip. */
+export const getMyPayslipExplanation = async (itemId) => {
+  const response = await authFetch(
+    `${REST_BASE}/api/payslips/item/${encodeURIComponent(itemId)}/explanation`,
+    { headers: { Accept: 'application/json' }, cache: 'no-store' },
+  );
+  if (!response.ok) throw await readError(response, 'Unable to explain this payslip.');
+  const body = await response.json();
+  if (!body?.explanation) throw new Error('The payslip explanation was not available.');
+  return body.explanation;
+};
