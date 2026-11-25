@@ -228,14 +228,6 @@ export const verifyPaystackSignature = (rawBody, signatureHeader) => {
   }
 };
 
-/** Constant-time shared-secret comparison (Hubtel placeholder auth). */
-export const verifySharedSecret = (provided, expected) => {
-  if (!provided || !expected) return false;
-  const a = crypto.createHash('sha256').update(String(provided)).digest();
-  const b = crypto.createHash('sha256').update(String(expected)).digest();
-  return crypto.timingSafeEqual(a, b);
-};
-
 /** Promotes SENT -> PAID (or FAILED) once the provider confirms the transfer's final state. */
 export const handlePaymentWebhook = async (payload) => {
   const { reference, status, failureReason } = payload;
