@@ -1,3 +1,4 @@
+import prisma from '../config/db.js';
 import { askPaylio } from '../services/askPaylioService.js';
 import { writeAuditSafe, actorFromReq } from '../services/auditService.js';
 
@@ -18,7 +19,7 @@ export const askPaylioQuestion = async (req, res, next) => {
       return res.status(403).json({ error: 'Your role is not permitted to access this report.' });
     }
 
-    await writeAuditSafe(null, {
+    await writeAuditSafe(prisma, {
       actor: actorFromReq(req),
       companyId: req.reviewCompanyId,
       action: 'ASK_PAYLIO_QUERY',
