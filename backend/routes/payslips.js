@@ -181,6 +181,7 @@ const findPayslip = async (req, itemId) => {
 
 // Employee self-service explanation. This endpoint intentionally selects no employee PII.
 router.get('/item/:itemId/explanation', rbac(['EMPLOYEE']), async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   if (req.userRole !== 'EMPLOYEE') return res.status(403).json({ error: 'Employee access only.' });
   try {
     const where = buildPayslipItemWhere({
@@ -194,7 +195,6 @@ router.get('/item/:itemId/explanation', rbac(['EMPLOYEE']), async (req, res) => 
     }
 
     const explanation = buildPayslipExplanation(item);
-    res.setHeader('Cache-Control', 'private, no-store');
     await writeAuditSafe(prisma, {
       actor: actorFromReq(req),
       companyId: item.payrollRun.companyId,
