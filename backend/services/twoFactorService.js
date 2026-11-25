@@ -12,8 +12,9 @@ export const base32Encode = (buffer) => {
     value = (value << 8) | byte;
     bits += 8;
     while (bits >= 5) {
-      output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
       bits -= 5;
+      output += BASE32_ALPHABET[(value >>> bits) & 31];
+      value &= (1 << bits) - 1;
     }
   }
   if (bits > 0) output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
@@ -32,8 +33,9 @@ export const base32Decode = (encoded) => {
     value = (value << 5) | index;
     bits += 5;
     if (bits >= 8) {
-      output.push((value >>> (bits - 8)) & 255);
       bits -= 8;
+      output.push((value >>> bits) & 255);
+      value &= (1 << bits) - 1;
     }
   }
   return Buffer.from(output);
