@@ -85,6 +85,7 @@ model User {
   twoFactorEnabled       Boolean               @default(false) @map("two_factor_enabled")
   twoFactorSecretEncrypted String?              @map("two_factor_secret_encrypted")
   twoFactorVerifiedAt    DateTime?              @map("two_factor_verified_at")
+  twoFactorLastCounter   BigInt?                @map("two_factor_last_counter")
   twoFactorRecoveryCodes TwoFactorRecoveryCode[]
   auditLogs              AuditLog[]
   invites                Invite[]
