@@ -110,6 +110,39 @@ export const sendTransactionalEmail = async ({ to, subject, body }) => {
 };
 
 /**
+ * Sends a short-lived password reset link. Never log the bearer token or URL.
+ */
+export const sendPasswordResetEmail = async (to, name, resetLink) => {
+  const t = getTransporter();
+  if (!t) {
+    logger.warn('sendPasswordResetEmail: no transporter configured, skipping send', { to });
+    return { skipped: true };
+  }
+  if (!to || !resetLink) throw new Error('Password reset recipient and link are required.');
+
+  try {
+    const info = await t.sendMail({
+      from: env.EMAIL_FROM || 'no-reply@paylio.app',
+      to,
+      subject: 'Reset your Paylio password',
+      text: `Hi ${name || 'there'},\n\nUse this link to reset your Paylio password. It expires in 30 minutes and can only be used once:\n${resetLink}\n\nIf you did not request this, you can ignore this email.`,
+      html: `<div style="font-family: Inter, system-ui, sans-serif; color: #0f172a; line-height: 1.5;">
+        <p>Hi ${escapeHtml(name || 'there')},</p>
+        <p>We received a request to reset your Paylio password.</p>
+        <p><a href="${escapeHtml(resetLink)}">Reset your password</a></p>
+        <p>This link expires in 30 minutes and can only be used once.</p>
+        <p>If you did not request this, you can ignore this email.</p>
+      </div>`,
+    });
+    logger.info('Password reset email sent', { to, messageId: info.messageId });
+    return info;
+  } catch (error) {
+    logger.error('sendPasswordResetEmail failed', { to, message: error.message });
+    throw error;
+  }
+};
+
+/**
  * Sends an invite email with a secure activation link.
  * Used by routes/users.js's POST /invite endpoint.
  */
