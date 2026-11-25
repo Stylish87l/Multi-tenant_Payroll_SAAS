@@ -344,29 +344,30 @@ router.post('/reset-password', passwordResetLimiter, async (req, res) => {
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
   try {
     await prisma.$transaction(async (tx) => {
+      const consumedAt = new Date();
       const current = await tx.passwordResetToken.findUnique({
         where: { id: candidate.id },
         include: { user: { select: { id: true, companyId: true, status: true, deletedAt: true } } },
       });
-      if (!current || current.usedAt || current.expiresAt <= now
+      if (!current || current.usedAt || current.expiresAt <= consumedAt
         || current.user.status !== 'ACTIVE' || current.user.deletedAt) {
         throw new Error('RESET_TOKEN_INVALID');
       }
 
       const consumed = await tx.passwordResetToken.updateMany({
-        where: { id: current.id, usedAt: null, expiresAt: { gt: now } },
-        data: { usedAt: now },
+        where: { id: current.id, usedAt: null, expiresAt: { gt: consumedAt } },
+        data: { usedAt: consumedAt },
       });
       if (consumed.count !== 1) throw new Error('RESET_TOKEN_INVALID');
 
       await tx.user.update({ where: { id: current.userId }, data: { password: passwordHash } });
       await tx.refreshToken.updateMany({
         where: { userId: current.userId, revokedAt: null },
-        data: { revokedAt: now, revocationReason: 'password_reset' },
+        data: { revokedAt: consumedAt, revocationReason: 'password_reset' },
       });
       await tx.passwordResetToken.updateMany({
         where: { userId: current.userId, usedAt: null },
-        data: { usedAt: now },
+        data: { usedAt: consumedAt },
       });
       await tx.auditLog.create({
         data: {
