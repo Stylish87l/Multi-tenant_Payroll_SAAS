@@ -1,12 +1,36 @@
 import express from 'express';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
+import { z } from 'zod';
+import { rateLimit } from 'express-rate-limit';
 import prisma from '../config/db.js';
 import logger from '../config/logger.js';
 import authMiddleware from '../middleware/auth.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, computeExpiryDate } from '../utils/authTokens.js';
 import { REFRESH_COOKIE_NAME, getRefreshCookieOptions, getClearCookieOptions } from '../config/cookies.js';
+import { passwordSchema } from '../schemas/authSchema.js';
+import { sendPasswordResetEmail } from '../services/emailService.js';
 
 const router = express.Router();
+const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many password reset attempts. Please try again later.' },
+});
+const passwordResetEmailSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+}).strict();
+const passwordResetCompleteSchema = z.object({
+  token: z.string().min(32).max(200),
+  password: passwordSchema,
+}).strict();
+const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
+const PASSWORD_RESET_GENERIC_MESSAGE = 'If an active account exists for that email, a password reset link will be sent.';
+const INVALID_RESET_MESSAGE = 'This password reset link is invalid or has expired. Request a new link and try again.';
+const hashPasswordResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+
 
 // 60s grace for parallel requests racing a rotation (multiple tabs, Apollo retries).
 const GRACE_PERIOD_MS = 60 * 1000;
@@ -236,6 +260,134 @@ router.post('/logout', csrfProtection, async (req, res) => {
   }
   res.clearCookie(REFRESH_COOKIE_NAME, getClearCookieOptions());
   res.json({ message: 'Logged out successfully' });
+});
+
+
+/**
+ * Password reset request is deliberately enumeration-safe: every syntactically
+ * valid or invalid email receives the same response. Only the SHA-256 token hash
+ * is persisted; the bearer token is delivered once by email and never logged.
+ */
+router.post('/forgot-password', passwordResetLimiter, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const parsed = passwordResetEmailSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(200).json({ message: PASSWORD_RESET_GENERIC_MESSAGE });
+
+  const user = await prisma.user.findUnique({
+    where: { email: parsed.data.email },
+    select: { id: true, email: true, name: true, status: true, deletedAt: true },
+  });
+  if (!user || user.status !== 'ACTIVE' || user.deletedAt || !process.env.FRONTEND_URL) {
+    if (!process.env.FRONTEND_URL) logger.error('Password reset unavailable: FRONTEND_URL is not configured.');
+    return res.status(200).json({ message: PASSWORD_RESET_GENERIC_MESSAGE });
+  }
+
+  try {
+    const recentRequest = await prisma.passwordResetToken.findFirst({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        createdAt: { gt: new Date(Date.now() - 60 * 1000) },
+      },
+      select: { id: true },
+    });
+    if (recentRequest) return res.status(200).json({ message: PASSWORD_RESET_GENERIC_MESSAGE });
+
+    const rawToken = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = hashPasswordResetToken(rawToken);
+    const now = new Date();
+    const resetUrl = new URL('/reset-password', process.env.FRONTEND_URL);
+    resetUrl.hash = new URLSearchParams({ token: rawToken }).toString();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.passwordResetToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: now },
+      });
+      await tx.passwordResetToken.create({
+        data: { userId: user.id, tokenHash, expiresAt: new Date(now.getTime() + PASSWORD_RESET_TTL_MS) },
+      });
+    });
+
+    try {
+      const delivery = await sendPasswordResetEmail(user.email, user.name, resetUrl.toString());
+      if (delivery?.skipped) {
+        await prisma.passwordResetToken.updateMany({ where: { tokenHash, usedAt: null }, data: { usedAt: new Date() } });
+      }
+    } catch (error) {
+      await prisma.passwordResetToken.updateMany({ where: { tokenHash, usedAt: null }, data: { usedAt: new Date() } });
+      logger.error('Password reset email delivery failed', { userId: user.id, message: error.message });
+    }
+  } catch (error) {
+    logger.error('Password reset request failed', { userId: user.id, message: error.message });
+  }
+
+  return res.status(200).json({ message: PASSWORD_RESET_GENERIC_MESSAGE });
+});
+
+router.post('/reset-password', passwordResetLimiter, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const parsed = passwordResetCompleteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: INVALID_RESET_MESSAGE });
+
+  const tokenHash = hashPasswordResetToken(parsed.data.token);
+  const now = new Date();
+  const candidate = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+    include: { user: { select: { id: true, companyId: true, status: true, deletedAt: true } } },
+  });
+  if (!candidate || candidate.usedAt || candidate.expiresAt <= now
+    || candidate.user.status !== 'ACTIVE' || candidate.user.deletedAt) {
+    return res.status(400).json({ error: INVALID_RESET_MESSAGE });
+  }
+
+  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+  try {
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.passwordResetToken.findUnique({
+        where: { id: candidate.id },
+        include: { user: { select: { id: true, companyId: true, status: true, deletedAt: true } } },
+      });
+      if (!current || current.usedAt || current.expiresAt <= now
+        || current.user.status !== 'ACTIVE' || current.user.deletedAt) {
+        throw new Error('RESET_TOKEN_INVALID');
+      }
+
+      const consumed = await tx.passwordResetToken.updateMany({
+        where: { id: current.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (consumed.count !== 1) throw new Error('RESET_TOKEN_INVALID');
+
+      await tx.user.update({ where: { id: current.userId }, data: { password: passwordHash } });
+      await tx.refreshToken.updateMany({
+        where: { userId: current.userId, revokedAt: null },
+        data: { revokedAt: now, revocationReason: 'password_reset' },
+      });
+      await tx.passwordResetToken.updateMany({
+        where: { userId: current.userId, usedAt: null },
+        data: { usedAt: now },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: current.userId,
+          companyId: current.user.companyId,
+          action: 'PASSWORD_RESET_COMPLETED',
+          details: { method: 'email' },
+          ipAddress: req.ip || null,
+          userAgent: req.get('User-Agent') || null,
+          resourceType: 'User',
+          resourceId: current.userId,
+          performedBy: 'system',
+        },
+      });
+    });
+    return res.status(200).json({ message: 'Password reset successfully. Please sign in again.' });
+  } catch (error) {
+    if (error.message === 'RESET_TOKEN_INVALID') return res.status(400).json({ error: INVALID_RESET_MESSAGE });
+    logger.error('Password reset completion failed', { message: error.message });
+    return res.status(500).json({ error: 'Unable to reset password right now. Please try again.' });
+  }
 });
 
 export default router;
