@@ -427,6 +427,7 @@ router.post('/reset-password', passwordResetLimiter, async (req, res) => {
 
 router.get('/2fa/status', authMiddleware, async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const user = await prisma.user.findUnique({
       where: { id: req.userId },
       select: { id: true, twoFactorEnabled: true, twoFactorVerifiedAt: true },
