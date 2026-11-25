@@ -176,4 +176,4 @@ export const sendInviteEmail = async (to, name, inviteLink) => {
   }
 };
 
-export default { sendInviteEmail, sendTransactionalEmail };
+export default { sendInviteEmail, sendTransactionalEmail, sendPasswordResetEmail };
