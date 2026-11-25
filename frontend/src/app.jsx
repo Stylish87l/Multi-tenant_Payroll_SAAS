@@ -16,6 +16,8 @@ import UpdateBanner from './components/UpdateBanner';
 
 const Login = lazy(() => import('./pages/Login'));
 const AcceptInvite = lazy(() => import('./pages/AcceptInvite'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Employees = lazy(() => import('./pages/Employees'));
 const Payroll = lazy(() => import('./pages/Payroll'));
@@ -82,6 +84,8 @@ function AppRoutes() {
         <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
         {/* Public: invitees have no session. The invite email links here. */}
         <Route path="/accept-invite" element={<AcceptInvite />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         {protectedRoutes.map((r) => (

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -62,6 +62,10 @@ const Login = () => {
                   placeholder="name@company.com" required
                 />
               </div>
+            </div>
+
+            <div className="flex justify-end -mb-2">
+              <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">Forgot password?</Link>
             </div>
 
             <div className="space-y-2">
