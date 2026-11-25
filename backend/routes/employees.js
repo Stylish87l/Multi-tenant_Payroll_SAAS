@@ -275,6 +275,12 @@ router.post('/import/commit', async (req, res) => {
   }
 
   try {
+    const company = await prisma.company.findFirst({
+      where: { id: companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!company) return res.status(404).json({ error: 'Company not found or inactive.' });
+
     const preview = await prisma.employeeImportPreview.findFirst({
       where: {
         id: previewId, companyId, userId: req.userId,
