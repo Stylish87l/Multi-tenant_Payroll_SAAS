@@ -89,6 +89,17 @@ describe('employee PII encryption', () => {
     expect(data.piiEncryptionVersion).toBe(1);
   });
 
+  it('encrypts Prisma scalar set operations and derives matching blind indexes', () => {
+    const data = encryptEmployeeWriteData({
+      ssnitNumber: { set: 'SSNIT-SET-123' },
+      ghanaCardPin: { set: 'GHA-SET-123' },
+    });
+    expect(decryptSensitiveValue(data.ssnitNumber)).toBe('SSNIT-SET-123');
+    expect(decryptSensitiveValue(data.ghanaCardPin)).toBe('GHA-SET-123');
+    expect(data.ssnitNumberHash).toBe(createEmployeePiiBlindIndex('SSNIT-SET-123', 'ssnitNumber'));
+    expect(data.ghanaCardPinHash).toBe(createEmployeePiiBlindIndex('GHA-SET-123', 'ghanaCardPin'));
+  });
+
   it('clears encrypted values and blind indexes when a field is explicitly cleared', () => {
     expect(encryptEmployeeWriteData({
       bankAccount: null, ssnitNumber: null, ghanaCardPin: null,
