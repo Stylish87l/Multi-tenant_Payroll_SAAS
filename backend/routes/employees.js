@@ -9,7 +9,7 @@ import employeeSchema, { validateEmployeeBusinessRules } from '../schemas/employ
 import { csvLine } from '../utils/csv.js';
 import { writeAudit, actorFromReq } from '../services/auditService.js';
 import { findEmployeeLoginUserId } from '../services/employeeIdentityService.js';
-import { buildEmployeeImportPreview, validateEmployeeImportCommitRows, MAX_IMPORT_FILE_BYTES } from '../services/employeeImportService.js';
+import { buildEmployeeImportPreview, validateEmployeeImportCommitRows, EmployeeImportInputError, MAX_IMPORT_FILE_BYTES } from '../services/employeeImportService.js';
 import { encryptSensitiveValue, decryptSensitiveValue } from '../services/employeePiiEncryption.js';
 import { canReadEmployeeField, assertEmployeeInputPermissions, redactEmployeeForRole } from '../policies/permissions.js';
 
@@ -258,9 +258,9 @@ router.post('/import/preview', async (req, res) => {
       ...preview.response,
     });
   } catch (error) {
-    if (error instanceof z.ZodError) return res.status(400).json({ error: 'The file contains invalid employee values.' });
-    logger.warn('Employee import preview rejected', { userId: req.userId, companyId: req.companyId, message: error.message });
-    return res.status(400).json({ error: error.message || 'Unable to preview employee import.' });
+    if (error instanceof EmployeeImportInputError) return res.status(400).json({ error: error.message });
+    logger.error('Employee import preview failed', { userId: req.userId, companyId: req.companyId, message: error.message });
+    return res.status(500).json({ error: 'Unable to preview employee import.' });
   }
 });
 
