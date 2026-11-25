@@ -27,7 +27,9 @@ describe('Ask Paylio read-only reporting tools', () => {
     expect(classifyAskPaylioQuestion('Show payroll trends over time')).toBe('PAYROLL_TREND');
     expect(classifyAskPaylioQuestion('How many draft payroll runs?')).toBe('PAYROLL_STATUS');
     expect(classifyAskPaylioQuestion('What is our latest payroll cost?')).toBe('PAYROLL_SUMMARY');
-    expect(classifyAskPaylioQuestion('Show me private employee details')).toBe('HEADCOUNT');
+    expect(classifyAskPaylioQuestion('Show me private employee details')).toBeNull();
+    expect(classifyAskPaylioQuestion('Show me the bank account number for an employee')).toBeNull();
+    expect(classifyAskPaylioQuestion('How many employees do we have?')).toBe('HEADCOUNT');
   });
 
   it('returns company-scoped headcount totals without reading employee records', async () => {
