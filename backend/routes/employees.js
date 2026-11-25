@@ -192,12 +192,26 @@ const noStoreImportResponse = (_req, res, next) => {
   res.setHeader('Cache-Control', 'private, no-store');
   next();
 };
+const employeeImportPreviewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many employee import previews. Try again later.' },
+});
+const employeeImportCommitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many employee import confirmations. Try again later.' },
+});
 const canImportEmployees = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN';
 const resolveImportCompanyId = (req) => (
   req.userRole === 'SUPER_ADMIN' ? req.body?.companyId : req.companyId
 );
 
-router.post('/import/preview', noStoreImportResponse, async (req, res) => {
+router.post('/import/preview', noStoreImportResponse, employeeImportPreviewLimiter, async (req, res) => {
   if (!canImportEmployees(req.userRole)) {
     return res.status(403).json({ error: 'Only company administrators can import employee records.' });
   }
@@ -267,7 +281,7 @@ router.post('/import/preview', noStoreImportResponse, async (req, res) => {
   }
 });
 
-router.post('/import/commit', noStoreImportResponse, async (req, res) => {
+router.post('/import/commit', noStoreImportResponse, employeeImportCommitLimiter, async (req, res) => {
   if (!canImportEmployees(req.userRole)) {
     return res.status(403).json({ error: 'Only company administrators can import employee records.' });
   }
