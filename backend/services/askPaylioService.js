@@ -89,9 +89,16 @@ const tools = {
 
 const classifyQuestion = (question) => {
   const q = question.toLowerCase();
-  if (/employee|headcount|workforce|staff count|how many staff/.test(q)) return 'HEADCOUNT';
+
+  // Never interpret employee-level lookup or sensitive-record requests as
+  // aggregate headcount questions. These are deliberately unsupported.
+  if (/\\b(name|email|phone|address|bank|account number|ghana card|ssnit number|employee id|staff id|individual|specific employee|personal|private|payslip|salary of|details)\\b/.test(q)) {
+    return null;
+  }
+
   if (/trend|trends|over time|compare.*month|month.*compare|history|historical/.test(q)) return 'PAYROLL_TREND';
   if (/status|draft|finalized|cancelled|pending payroll/.test(q)) return 'PAYROLL_STATUS';
+  if (/\\b(headcount|workforce|staff count|employee count|how many (?:employees|staff)|number of employees)\\b/.test(q)) return 'HEADCOUNT';
   if (/payroll|salary|gross|net pay|paye|ssnit|tax|deduction|cost|wage/.test(q)) return 'PAYROLL_SUMMARY';
   return null;
 };
