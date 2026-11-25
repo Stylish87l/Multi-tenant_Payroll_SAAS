@@ -3,7 +3,7 @@ import logger from '../config/logger.js';
 
 const FINANCE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']);
 const ALL_ADMIN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'HR']);
-const money = (value) => Number(value || 0).toFixed(2);
+const money = (value) => (value && typeof value.toFixed === 'function' ? value.toFixed(2) : Number(value || 0).toFixed(2));
 
 const tools = {
   HEADCOUNT: {
