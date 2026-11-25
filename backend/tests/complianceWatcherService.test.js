@@ -42,7 +42,7 @@ describe('official Ghana compliance source watcher', () => {
 
   it('establishes a baseline without raising a change notice on the first scan', async () => {
     global.fetch.mockResolvedValue(htmlResponse('<html><title>GRA PAYE</title><h1>PAYE guidance</h1><p>Official statutory guidance and tax information for employers. Please refer to the published authority guidance for further details.</p></html>'));
-    const result = await scanOfficialComplianceSources();
+    const result = await scanOfficialComplianceSources({ signalFactory: () => undefined });
     expect(result).toEqual({ sources: 1, baseline: 1, notices: 0, unchanged: 0, errors: 0 });
     expect(prisma.complianceSource.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'gra-paye' },
@@ -59,7 +59,7 @@ describe('official Ghana compliance source watcher', () => {
     prisma.$transaction.mockImplementation(async (callback) => callback(tx));
     global.fetch.mockResolvedValue(htmlResponse('<html><h1>New PAYE notice</h1><p>Official tax guidance has changed for employers and payroll operators. Further information is available on the authority website.</p></html>', { etag: '"v2"' }));
 
-    const result = await scanOfficialComplianceSources();
+    const result = await scanOfficialComplianceSources({ signalFactory: () => undefined });
     expect(result.notices).toBe(1);
     expect(tx.complianceNotice.createMany).toHaveBeenCalledWith(expect.objectContaining({
       data: [expect.objectContaining({
@@ -80,7 +80,7 @@ describe('official Ghana compliance source watcher', () => {
   it('uses conditional requests and records unchanged sources on HTTP 304', async () => {
     prisma.complianceSource.findMany.mockResolvedValue([{ ...source, etag: '"v1"', lastContentHash: 'known' }]);
     global.fetch.mockResolvedValue(new Response(null, { status: 304 }));
-    const result = await scanOfficialComplianceSources();
+    const result = await scanOfficialComplianceSources({ signalFactory: () => undefined });
     expect(result.unchanged).toBe(1);
     expect(global.fetch).toHaveBeenCalledWith(source.url, expect.objectContaining({
       headers: expect.objectContaining({ 'If-None-Match': '"v1"' }),
@@ -90,7 +90,7 @@ describe('official Ghana compliance source watcher', () => {
 
   it('never fetches a source URL outside the built-in official allowlist', async () => {
     prisma.complianceSource.findMany.mockResolvedValue([{ ...source, url: 'https://attacker.example/payload' }]);
-    const result = await scanOfficialComplianceSources();
+    const result = await scanOfficialComplianceSources({ signalFactory: () => undefined });
     expect(result.errors).toBe(1);
     expect(global.fetch).not.toHaveBeenCalled();
     expect(prisma.complianceSource.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -100,7 +100,7 @@ describe('official Ghana compliance source watcher', () => {
 
   it('rejects oversized source responses and records a safe error state', async () => {
     global.fetch.mockResolvedValue(htmlResponse(Buffer.alloc(1024 * 1024 + 1, 'x')));
-    const result = await scanOfficialComplianceSources();
+    const result = await scanOfficialComplianceSources({ signalFactory: () => undefined });
     expect(result.errors).toBe(1);
     expect(prisma.complianceSource.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ lastStatus: 'ERROR', lastError: expect.stringContaining('1 MB limit') }),
@@ -109,7 +109,7 @@ describe('official Ghana compliance source watcher', () => {
 
   it('records network failures without aborting the whole scheduled scan', async () => {
     global.fetch.mockRejectedValue(new Error('upstream timeout'));
-    const result = await scanOfficialComplianceSources();
+    const result = await scanOfficialComplianceSources({ signalFactory: () => undefined });
     expect(result.errors).toBe(1);
     expect(prisma.complianceSource.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ lastStatus: 'ERROR', lastError: 'upstream timeout' }),
