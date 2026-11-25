@@ -101,6 +101,9 @@ export const createEmployeePiiBlindIndex = (value, field) => {
 export const encryptEmployeeWriteData = (data, { markVersion = false } = {}) => {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
   const next = { ...data };
+  delete next.ssnitNumberHash;
+  delete next.ghanaCardPinHash;
+  delete next.piiEncryptionVersion;
   let sensitiveFieldChanged = false;
   for (const field of SENSITIVE_FIELDS) {
     if (!Object.prototype.hasOwnProperty.call(next, field)) continue;
