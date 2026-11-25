@@ -231,7 +231,7 @@ export const handlePaymentWebhook = async (payload) => {
     const nextStatus = successful ? 'PAID' : 'FAILED';
 
     const updated = await prisma.payrollItem.updateMany({
-      where: { paymentRef: reference, payoutProvider: 'PAYSTACK', paymentStatus: { in: ['SENT', 'PENDING', 'PROCESSING'] } },
+      where: { paymentRef: reference, OR: [{ payoutProvider: 'PAYSTACK' }, { payoutProvider: null }], paymentStatus: { in: ['SENT', 'PENDING', 'PROCESSING'] } },
       data: { paymentStatus: nextStatus },
     });
 
