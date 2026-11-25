@@ -44,15 +44,6 @@ pool.on('error', (err) => logger.error('Postgres pool error (idle client)', { me
 const adapter = new PrismaPg(pool);
 const basePrisma = new PrismaClient({
   adapter,
-  omit: {
-    employee: {
-      bankAccountEncrypted: true,
-      ssnitNumberEncrypted: true,
-      ssnitNumberHash: true,
-      ghanaCardPinEncrypted: true,
-      ghanaCardPinHash: true,
-    },
-  },
   log: [
     { emit: 'event', level: 'query' },
     { emit: 'event', level: 'info' },
@@ -80,23 +71,21 @@ export const assertEmployeePiiBackfillComplete = async () => {
     FROM information_schema.columns
     WHERE table_schema = current_schema()
       AND table_name = 'employees'
-      AND column_name IN (
-        'bank_account_encrypted', 'ssnit_number_encrypted', 'ssnit_number_hash',
-        'ghana_card_pin_encrypted', 'ghana_card_pin_hash'
-      )
+      AND column_name IN ('ssnit_number_hash', 'ghana_card_pin_hash', 'pii_encryption_version')
   `;
-  if (Number(columns[0]?.count || 0) !== 5) {
+  if (Number(columns[0]?.count || 0) !== 3) {
     throw new Error('Employee PII encryption migration is not fully applied.');
   }
   const remaining = await basePrisma.$queryRaw`
     SELECT COUNT(*)::int AS "count"
     FROM "employees"
-    WHERE "bankAccount" IS NOT NULL
-       OR "ssnitNumber" IS NOT NULL
-       OR "ghanaCardPin" IS NOT NULL
+    WHERE "pii_encryption_version" IS DISTINCT FROM 1
+       OR ("bankAccount" IS NOT NULL AND "bankAccount" NOT LIKE 'enc:v1:%')
+       OR ("ssnitNumber" IS NOT NULL AND "ssnitNumber" NOT LIKE 'enc:v1:%')
+       OR ("ghanaCardPin" IS NOT NULL AND "ghanaCardPin" NOT LIKE 'enc:v1:%')
   `;
   if (Number(remaining[0]?.count || 0) !== 0) {
-    throw new Error('Employee PII plaintext remains in legacy columns. Complete the maintenance backfill before serving traffic.');
+    throw new Error('Employee PII is not fully encrypted. Complete the maintenance backfill before serving traffic.');
   }
   return true;
 };
