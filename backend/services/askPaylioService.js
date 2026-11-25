@@ -98,7 +98,7 @@ const classifyQuestion = (question) => {
 
 const explainWithAi = async (intent, data, fallback) => {
   const apiKey = process.env.AI_API_KEY;
-  if (!apiKey) return fallback;
+  if (!apiKey) return { answer: fallback, provider: 'rules-only' };
   const baseUrl = (process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai').replace(/\/$/, '');
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -114,13 +114,15 @@ const explainWithAi = async (intent, data, fallback) => {
         ],
       }),
     });
-    if (!response.ok) return fallback;
+    if (!response.ok) return { answer: fallback, provider: 'rules-only' };
     const payload = await response.json();
     const answer = payload.choices?.[0]?.message?.content;
-    return typeof answer === 'string' && answer.trim() ? answer.trim().slice(0, 3000) : fallback;
+    return typeof answer === 'string' && answer.trim()
+      ? { answer: answer.trim().slice(0, 3000), provider: process.env.AI_PROVIDER_NAME || 'Gemini' }
+      : { answer: fallback, provider: 'rules-only' };
   } catch (error) {
     logger.warn('Ask Paylio AI narrative unavailable; using deterministic answer', { message: error.message });
-    return fallback;
+    return { answer: fallback, provider: 'rules-only' };
   }
 };
 
@@ -140,8 +142,8 @@ export const askPaylio = async ({ companyId, role, question }) => {
   }
   const data = await tool.run(companyId);
   const fallback = tool.fallback(data);
-  const answer = await explainWithAi(intent, data, fallback);
-  return { intent, answer, data, provider: process.env.AI_API_KEY ? (process.env.AI_PROVIDER_NAME || 'Gemini') : 'rules-only' };
+  const narrative = await explainWithAi(intent, data, fallback);
+  return { intent, answer: narrative.answer, data, provider: narrative.provider };
 };
 
 export const classifyAskPaylioQuestion = classifyQuestion;
