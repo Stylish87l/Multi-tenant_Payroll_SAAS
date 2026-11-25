@@ -31,6 +31,7 @@ Smart Employee Import supports administrator-led onboarding from CSV and XLSX fi
 - No employee data, identifiers, bank details or uploaded file contents are sent to an external AI provider.
 - Audit records contain only preview/import counts and references, not employee field values.
 - Preview and commit responses use `Cache-Control: private, no-store`.
+- Preview and commit endpoints are each rate-limited to 10 requests per 15 minutes.
 
 ## API
 
