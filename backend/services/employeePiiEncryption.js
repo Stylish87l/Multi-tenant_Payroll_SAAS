@@ -143,6 +143,7 @@ const encryptEmployeeWhere = (where) => {
   }
   for (const [plainField, hashField] of [['ssnitNumber', 'ssnitNumberHash'], ['ghanaCardPin', 'ghanaCardPinHash']]) {
     if (Object.prototype.hasOwnProperty.call(next, plainField)) {
+      if (next[plainField] === undefined) { delete next[plainField]; continue; }
       next[hashField] = encryptWhereFilter(next[plainField], plainField);
       delete next[plainField];
     }
