@@ -1,12 +1,10 @@
--- Add application-layer encrypted storage and keyed blind indexes.
--- Legacy plaintext columns remain temporarily so the maintenance backfill can migrate
--- existing rows before the new application version is allowed to serve traffic.
+-- Add keyed blind indexes and a per-record encryption version marker.
+-- Existing bankAccount/ssnitNumber/ghanaCardPin columns are encrypted in place by
+-- the maintenance backfill before the new application is allowed to serve traffic.
 ALTER TABLE "employees"
-  ADD COLUMN "bank_account_encrypted" TEXT,
-  ADD COLUMN "ssnit_number_encrypted" TEXT,
   ADD COLUMN "ssnit_number_hash" TEXT,
-  ADD COLUMN "ghana_card_pin_encrypted" TEXT,
-  ADD COLUMN "ghana_card_pin_hash" TEXT;
+  ADD COLUMN "ghana_card_pin_hash" TEXT,
+  ADD COLUMN "pii_encryption_version" INTEGER;
 
 -- Replace plaintext uniqueness with tenant-scoped blind-index uniqueness.
 DROP INDEX IF EXISTS "employees_companyId_ssnitNumber_key";
