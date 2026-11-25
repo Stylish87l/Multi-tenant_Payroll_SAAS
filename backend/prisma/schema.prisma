@@ -176,6 +176,10 @@ model PayrollItem {
   netPay        Decimal       @db.Decimal(18, 4)
   paymentStatus PaymentStatus @default(PENDING)
   paymentRef    String?
+  payoutProvider String? @map("payout_provider")
+  providerTransactionId String? @map("provider_transaction_id")
+  payoutSubmittedAt DateTime? @map("payout_submitted_at")
+  payoutLastCheckedAt DateTime? @map("payout_last_checked_at")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
