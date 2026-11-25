@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 import {
   createEmployeePiiBlindIndex,
   createEmployeePiiEncryptionExtension,
+  decryptEmployeePiiResults,
   decryptSensitiveValue,
   encryptEmployeeWriteData,
   encryptSensitiveValue,
@@ -44,7 +45,7 @@ describe('employee PII encryption', () => {
     expect(decryptSensitiveValue(nested)).toBe(first);
   });
 
-  it('supports decrypting old encryption keys during key rotation', () => {
+  it('supports decrypting and re-encrypting old keys during key rotation', () => {
     process.env.DATA_ENCRYPTION_KEY_ID = 'old-key';
     const oldCiphertext = encryptSensitiveValue('old-value');
     process.env.DATA_ENCRYPTION_KEY_ID = 'new-key';
@@ -72,66 +73,101 @@ describe('employee PII encryption', () => {
     expect(first).toMatch(/^hmac:v1:[a-f0-9]{64}$/);
   });
 
-  it('encrypts all sensitive employee write fields and removes plaintext keys', () => {
+  it('encrypts all sensitive employee write fields and removes plaintext identifiers from the write payload', () => {
     const data = encryptEmployeeWriteData({
       name: 'Employee',
       bankAccount: '0012345678',
       ssnitNumber: 'SSNIT-123456',
       ghanaCardPin: 'GHA-123456789-0',
-    });
+    }, { markVersion: true });
     expect(data).toHaveProperty('name', 'Employee');
-    expect(data).not.toHaveProperty('bankAccount');
-    expect(data).not.toHaveProperty('ssnitNumber');
-    expect(data).not.toHaveProperty('ghanaCardPin');
-    expect(decryptSensitiveValue(data.bankAccountEncrypted)).toBe('0012345678');
-    expect(decryptSensitiveValue(data.ssnitNumberEncrypted)).toBe('SSNIT-123456');
-    expect(decryptSensitiveValue(data.ghanaCardPinEncrypted)).toBe('GHA-123456789-0');
+    expect(decryptSensitiveValue(data.bankAccount)).toBe('0012345678');
+    expect(decryptSensitiveValue(data.ssnitNumber)).toBe('SSNIT-123456');
+    expect(decryptSensitiveValue(data.ghanaCardPin)).toBe('GHA-123456789-0');
     expect(data.ssnitNumberHash).toMatch(/^hmac:v1:/);
     expect(data.ghanaCardPinHash).toMatch(/^hmac:v1:/);
+    expect(data.piiEncryptionVersion).toBe(1);
   });
 
   it('clears encrypted values and blind indexes when a field is explicitly cleared', () => {
     expect(encryptEmployeeWriteData({
       bankAccount: null, ssnitNumber: null, ghanaCardPin: null,
     })).toMatchObject({
-      bankAccountEncrypted: null,
-      ssnitNumberEncrypted: null,
+      bankAccount: null,
+      ssnitNumber: null,
       ssnitNumberHash: null,
-      ghanaCardPinEncrypted: null,
+      ghanaCardPin: null,
       ghanaCardPinHash: null,
+      piiEncryptionVersion: 1,
     });
   });
 
-  it('applies encryption to direct Employee writes and decrypts nested Employee results', async () => {
+  it('encrypts direct Employee writes and decrypts returned records', async () => {
     const extension = createEmployeePiiEncryptionExtension();
-    const query = jest.fn(async (args) => args);
+    let persisted;
+    const query = jest.fn(async (args) => {
+      persisted = { ...args.data };
+      return { ...args.data };
+    });
     const args = { data: { bankAccount: '12345678', ssnitNumber: '123-456' } };
-    await extension.query.employee.$allOperations({ operation: 'create', args, query });
-    const stored = query.mock.calls[0][0].data;
-    expect(stored).not.toHaveProperty('bankAccount');
-    expect(decryptSensitiveValue(stored.bankAccountEncrypted)).toBe('12345678');
-    expect(decryptSensitiveValue(stored.ssnitNumberEncrypted)).toBe('123-456');
-
-    const account = extension.result.employee.bankAccount.compute({ bankAccountEncrypted: stored.bankAccountEncrypted });
-    const ssnit = extension.result.employee.ssnitNumber.compute({ ssnitNumberEncrypted: stored.ssnitNumberEncrypted });
-    expect(account).toBe('12345678');
-    expect(ssnit).toBe('123-456');
+    const result = await extension.query.$allModels.$allOperations({
+      model: 'Employee', operation: 'create', args, query,
+    });
+    expect(persisted.bankAccount).not.toBe('12345678');
+    expect(decryptSensitiveValue(persisted.bankAccount)).toBe('12345678');
+    expect(decryptSensitiveValue(persisted.ssnitNumber)).toBe('123-456');
+    expect(result.bankAccount).toBe('12345678');
+    expect(result.ssnitNumber).toBe('123-456');
+    expect(result).not.toHaveProperty('ssnitNumberHash');
+    expect(result).not.toHaveProperty('piiEncryptionVersion');
   });
 
-  it('rewrites exact SSNIT and Ghana Card filters to blind indexes', async () => {
+  it('decrypts Employee records nested inside other model results', () => {
+    const nested = {
+      payrollItem: {
+        employee: {
+          id: 'employee-1',
+          name: 'Employee',
+          bankAccount: encryptSensitiveValue('12345678'),
+          ssnitNumber: encryptSensitiveValue('123-456'),
+          ssnitNumberHash: createEmployeePiiBlindIndex('123-456', 'ssnitNumber'),
+          piiEncryptionVersion: 1,
+        },
+      },
+    };
+    const result = decryptEmployeePiiResults(nested);
+    expect(result.payrollItem.employee.bankAccount).toBe('12345678');
+    expect(result.payrollItem.employee.ssnitNumber).toBe('123-456');
+    expect(result.payrollItem.employee).not.toHaveProperty('ssnitNumberHash');
+    expect(result.payrollItem.employee).not.toHaveProperty('piiEncryptionVersion');
+  });
+
+  it('rewrites exact identifier filters to blind indexes', async () => {
     const extension = createEmployeePiiEncryptionExtension();
-    const query = jest.fn(async (args) => args);
+    const query = jest.fn(async () => ({ count: 0 }));
     const args = { where: { OR: [{ ssnitNumber: '123-456' }, { ghanaCardPin: { equals: 'GHA-123' } }] } };
-    await extension.query.employee.$allOperations({ operation: 'findMany', args, query });
+    await extension.query.$allModels.$allOperations({ model: 'Employee', operation: 'findMany', args, query });
     const where = query.mock.calls[0][0].where;
     expect(where.OR[0]).toEqual({ ssnitNumberHash: createEmployeePiiBlindIndex('123-456', 'ssnitNumber') });
     expect(where.OR[1]).toEqual({ ghanaCardPinHash: { equals: createEmployeePiiBlindIndex('GHA-123', 'ghanaCardPin') } });
   });
 
-  it('validates that both encryption and blind-index keys are configured', () => {
+  it('rejects nested Employee writes that could bypass encryption', async () => {
+    const extension = createEmployeePiiEncryptionExtension();
+    const query = jest.fn();
+    await expect(extension.query.$allModels.$allOperations({
+      model: 'PayrollItem',
+      operation: 'create',
+      args: { data: { employee: { create: { name: 'Employee', bankAccount: '12345678' } } } },
+      query,
+    })).rejects.toThrow(/Nested Employee writes are disabled/);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('validates that encryption and blind-index keys are configured separately', () => {
     expect(validateEmployeePiiEncryptionConfig()).toBe(true);
-    process.env.NODE_ENV = 'production';
     delete process.env.DATA_ENCRYPTION_INDEX_KEY;
+    process.env.NODE_ENV = 'production';
     expect(() => validateEmployeePiiEncryptionConfig()).toThrow(/DATA_ENCRYPTION_INDEX_KEY/);
   });
 });
