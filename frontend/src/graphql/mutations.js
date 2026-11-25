@@ -78,8 +78,8 @@ export const RUN_PAYROLL = gql`
 `;
 
 export const FINALIZE_PAYROLL = gql`
-  mutation FinalizePayroll($runId: ID!) {
-    finalizePayroll(runId: $runId) {
+  mutation FinalizePayroll($runId: ID!, $overrideReason: String) {
+    finalizePayroll(runId: $runId, overrideReason: $overrideReason) {
       id
       month
       status
