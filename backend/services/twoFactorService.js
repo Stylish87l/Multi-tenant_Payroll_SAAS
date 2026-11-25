@@ -71,6 +71,11 @@ export const matchTotpCounter = (secret, code, timestamp = Date.now(), window = 
   return null;
 };
 
+export const generateTotpCode = (secret, timestamp = Date.now()) => {
+  const counter = Math.floor(timestamp / 1000 / TOTP_STEP_SECONDS);
+  return generateTotpAtCounter(secret, counter);
+};
+
 export const verifyTotp = (secret, code, timestamp = Date.now(), window = 1) =>
   matchTotpCounter(secret, code, timestamp, window) !== null;
 
