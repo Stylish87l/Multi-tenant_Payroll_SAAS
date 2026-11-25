@@ -77,6 +77,7 @@ describe('individual payslip route authorization', () => {
       .set('x-test-company', 'tenant-a');
 
     expect(response.status).toBe(403);
+    expect(response.headers['cache-control']).toBe('private, no-store');
     expect(prisma.payrollItem.findFirst).not.toHaveBeenCalled();
   });
 
