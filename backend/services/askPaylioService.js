@@ -89,6 +89,8 @@ const tools = {
 
 const classifyQuestion = (question) => {
   const q = question.toLowerCase();
+  // Do not silently answer employee-level or sensitive-record requests with a different report.
+  if (/\\b(details?|profiles?|records?|names?|emails?|bank|account numbers?|ghana card|pins?|identifiers?|individual|personal|specific employee|payslip)\\b/.test(q)) return null;
 
   // Never interpret employee-level lookup or sensitive-record requests as
   // aggregate headcount questions. These are deliberately unsupported.
