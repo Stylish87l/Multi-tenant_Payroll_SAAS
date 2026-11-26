@@ -271,7 +271,7 @@ const ComplianceCenter = () => {
                 )}
               </div>
             ) : (
-              {!isComplianceSpecialist && <div>
+              !isComplianceSpecialist && <div>
                 {activeNoticeId === notice.id ? (
                   <form onSubmit={submitAssessment} className="space-y-4 rounded-xl border border-slate-200 p-4 dark:border-white/10">
                     <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200">
@@ -303,7 +303,7 @@ const ComplianceCenter = () => {
                     Draft impact assessment
                   </button>
                 )}
-              </div>}
+              </div>
             )}
           </Card>
         ))}
