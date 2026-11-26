@@ -18,6 +18,7 @@ const specialistSchema = z.object({
 }).strict();
 
 router.use(authMiddleware);
+router.use((_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
 
 router.get('/my-companies', async (req, res, next) => {
   try {
