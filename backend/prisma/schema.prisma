@@ -41,6 +41,41 @@ enum PayrollReviewDecision {
   RESOLVED
 }
 
+enum ComplianceSourceStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum ComplianceChangeStatus {
+  DETECTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SCHEDULED
+  ACTIVE
+  SUPERSEDED
+}
+
+enum ComplianceSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ComplianceImpactStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum ComplianceReviewDecision {
+  APPROVE
+  REJECT
+  REQUEST_CHANGES
+}
+
 model Company {
   id              String       @id @default(uuid())
   name            String
@@ -68,6 +103,7 @@ model Company {
   payrollReviewFindings PayrollReviewFinding[]
   payrollReviewActions PayrollReviewAction[]
   employeeImportPreviews EmployeeImportPreview[]
+  complianceImpacts ComplianceImpact[]
 
   @@map("companies")
 }
@@ -100,6 +136,7 @@ model User {
   requestedPayrollReviews PayrollReview[] @relation("PayrollReviewRequester")
   payrollReviewActions PayrollReviewAction[] @relation("PayrollReviewActor")
   employeeImportPreviews EmployeeImportPreview[]
+  complianceReviews ComplianceReview[]
 
   @@index([companyId])
   @@map("users")
@@ -425,6 +462,94 @@ model PayrollReviewAction {
   @@index([companyId, createdAt(sort: Desc)])
   @@index([findingId, createdAt(sort: Desc)])
   @@map("payroll_review_actions")
+}
+
+model ComplianceSource {
+  id            String                 @id @default(uuid())
+  name          String
+  authority     String
+  jurisdiction  String                 @default("GH")
+  url           String                 @unique
+  sourceType    String                 @default("MANUAL")
+  status        ComplianceSourceStatus @default(ACTIVE)
+  lastCheckedAt DateTime?
+  lastSuccessAt DateTime?
+  lastError     String?                @db.Text
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  changes       ComplianceChange[]
+
+  @@index([status, jurisdiction])
+  @@map("compliance_sources")
+}
+
+model ComplianceChange {
+  id             String                 @id @default(uuid())
+  sourceId       String
+  externalId     String?
+  title          String
+  summary        String                 @db.Text
+  category       String
+  jurisdiction   String                 @default("GH")
+  sourceUrl      String
+  publishedAt    DateTime?
+  effectiveFrom  DateTime?
+  evidence       Json
+  contentHash    String
+  severity       ComplianceSeverity     @default(MEDIUM)
+  status         ComplianceChangeStatus @default(DETECTED)
+  proposedConfig Json?
+  detectedAt     DateTime               @default(now())
+  reviewedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  source         ComplianceSource       @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  impacts        ComplianceImpact[]
+  reviews        ComplianceReview[]
+
+  @@unique([sourceId, contentHash])
+  @@unique([sourceId, externalId])
+  @@index([status, effectiveFrom])
+  @@index([sourceId, publishedAt(sort: Desc)])
+  @@map("compliance_changes")
+}
+
+model ComplianceImpact {
+  id           String                @id @default(uuid())
+  changeId     String
+  companyId    String
+  impactType   String
+  severity     ComplianceSeverity    @default(MEDIUM)
+  status       ComplianceImpactStatus @default(OPEN)
+  summary      String                @db.Text
+  details      Json
+  detectedAt   DateTime              @default(now())
+  acknowledgedAt DateTime?
+  resolvedAt   DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  change       ComplianceChange      @relation(fields: [changeId], references: [id], onDelete: Restrict)
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([changeId, companyId])
+  @@index([companyId, status, severity])
+  @@index([changeId, status])
+  @@map("compliance_impacts")
+}
+
+model ComplianceReview {
+  id        String                  @id @default(uuid())
+  changeId  String
+  actorId   String
+  decision  ComplianceReviewDecision
+  comment   String?                 @db.Text
+  createdAt DateTime                @default(now())
+  change    ComplianceChange        @relation(fields: [changeId], references: [id], onDelete: Restrict)
+  actor     User                    @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([changeId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@map("compliance_reviews")
 }
 
 model EmployeeImportPreview {
