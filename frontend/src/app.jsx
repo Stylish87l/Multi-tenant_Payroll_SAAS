@@ -63,7 +63,7 @@ const RoleRoute = ({ basePath, children }) => {
   const { user } = useAuth();
   const menuItem = sidebarMenuItems.find((item) => item.path === basePath);
   if (!menuItem || !Array.isArray(menuItem.roles)) return children;
-  if (!user?.role || !menuItem.roles.includes(user.role)) return <Navigate to="/dashboard" replace />;
+  if (!user?.role || !menuItem.roles.includes(user.role)) return <Navigate to={user?.role === 'COMPLIANCE_SPECIALIST' ? '/compliance' : '/dashboard'} replace />;
   return children;
 };
 RoleRoute.propTypes = { basePath: PropTypes.string.isRequired, children: PropTypes.node.isRequired };
