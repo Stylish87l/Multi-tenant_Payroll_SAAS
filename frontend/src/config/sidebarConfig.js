@@ -10,7 +10,7 @@ export const sidebarMenuItems = [
     name: 'Dashboard',
     path: '/dashboard',
     icon: Home,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'],
+    roles: ['SUPER_ADMIN', 'COMPLIANCE_SPECIALIST', 'ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'],
   },
   {
     name: 'Employees',
@@ -52,7 +52,7 @@ export const sidebarMenuItems = [
     name: 'Compliance Watcher',
     path: '/compliance',
     icon: ShieldCheck,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'],
+    roles: ['SUPER_ADMIN', 'COMPLIANCE_SPECIALIST', 'ADMIN', 'ACCOUNTANT'],
   },
   {
     name: 'Reports',
