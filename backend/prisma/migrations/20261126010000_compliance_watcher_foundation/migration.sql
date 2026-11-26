@@ -111,3 +111,17 @@ ALTER TABLE "compliance_reviews"
   ADD CONSTRAINT "compliance_reviews_actorId_fkey"
   FOREIGN KEY ("actorId") REFERENCES "users"("id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- Compliance review decisions are historical evidence and must be append-only.
+CREATE OR REPLACE FUNCTION reject_compliance_review_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'compliance_reviews is append-only; UPDATE and DELETE are prohibited';
+END;
+$$;
+
+CREATE TRIGGER compliance_reviews_append_only
+  BEFORE UPDATE OR DELETE ON compliance_reviews
+  FOR EACH ROW EXECUTE FUNCTION reject_compliance_review_mutation();
