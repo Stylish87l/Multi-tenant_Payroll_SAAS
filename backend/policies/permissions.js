@@ -22,10 +22,11 @@ export const ROLE_PERMISSIONS = Object.freeze({
     'payroll.read', 'payroll.write', 'payout.process', 'report.read',
   ],
   EMPLOYEE: ['payslip.read.own', 'notification.read.own', 'preferences.manage.own'],
+  COMPLIANCE_SPECIALIST: ['compliance.review'],
   CUSTOM: [],
 });
 
-const roleHierarchy = { SUPER_ADMIN: ['ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'], ADMIN: ['HR', 'ACCOUNTANT', 'EMPLOYEE'], HR: ['EMPLOYEE'], ACCOUNTANT: ['EMPLOYEE'], EMPLOYEE: [], CUSTOM: [] };
+const roleHierarchy = { SUPER_ADMIN: ['COMPLIANCE_SPECIALIST', 'ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'], ADMIN: ['HR', 'ACCOUNTANT', 'EMPLOYEE'], HR: ['EMPLOYEE'], ACCOUNTANT: ['EMPLOYEE'], EMPLOYEE: [], COMPLIANCE_SPECIALIST: [], CUSTOM: [] };
 
 export const hasRoleAccess = (role, allowedRoles) => [role, ...(roleHierarchy[role] || [])].some((candidate) => allowedRoles.includes(candidate));
 
