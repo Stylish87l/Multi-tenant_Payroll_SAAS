@@ -39,7 +39,7 @@
     "@vitest/coverage-v8": "^2.0.2",
     "autoprefixer": "^10.4.19",
     "eslint": "^9.8.0",
-    "eslint-config-prettier": "^9.0.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.35.0",
     "globals": "^14.0.0",
     "postcss": "^8.4.40",
