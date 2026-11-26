@@ -77,6 +77,23 @@ describe('official Ghana compliance source watcher', () => {
     }));
   });
 
+  it('keeps encoded markup entities encoded in stored text excerpts', async () => {
+    prisma.complianceSource.findMany.mockResolvedValue([{ ...source, lastContentHash: 'previous-hash' }]);
+    const tx = {
+      complianceNotice: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      complianceSource: { update: jest.fn().mockResolvedValue({}) },
+    };
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+    const safeText = 'Official PAYE guidance for employers and payroll operators remains available. Encoded markup such as &lt;script&gt; must remain text and must not be decoded into an HTML element.';
+    global.fetch.mockResolvedValue(htmlResponse(`<html><h1>PAYE update</h1><p>${safeText}</p></html>`));
+
+    await scanOfficialComplianceSources({ signalFactory: () => undefined });
+
+    const notice = tx.complianceNotice.createMany.mock.calls[0][0].data[0];
+    expect(notice.excerpt).toContain('&lt;script&gt;');
+    expect(notice.excerpt).not.toContain('<script>');
+  });
+
   it('uses conditional requests and records unchanged sources on HTTP 304', async () => {
     prisma.complianceSource.findMany.mockResolvedValue([{ ...source, etag: '"v1"', lastContentHash: 'known' }]);
     global.fetch.mockResolvedValue(new Response(null, { status: 304 }));
