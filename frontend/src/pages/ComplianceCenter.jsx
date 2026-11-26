@@ -114,6 +114,43 @@ const ComplianceCenter = () => {
     }
   };
 
+
+  const submitAssessmentForReview = async (assessmentId) => {
+    setSaving(true);
+    setError('');
+    try {
+      const response = await authFetch(REST_BASE + '/api/companies/' + encodeURIComponent(companyId) + '/compliance/assessments/' + encodeURIComponent(assessmentId) + '/submit', {
+        method: 'POST', headers: { Accept: 'application/json' },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Could not submit assessment.');
+      await loadNotices();
+    } catch (err) { setError(err.message || 'Could not submit assessment.'); }
+    finally { setSaving(false); }
+  };
+
+  const recordAssessmentReview = async (assessmentId, decision) => {
+    if (reviewRationale.trim().length < 30) {
+      setError('A review rationale of at least 30 characters is required.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const response = await authFetch(REST_BASE + '/api/companies/' + encodeURIComponent(companyId) + '/compliance/assessments/' + encodeURIComponent(assessmentId) + '/review', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ decision, rationale: reviewRationale.trim() }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Could not record review.');
+      setActiveReviewId('');
+      setReviewRationale('');
+      await loadNotices();
+    } catch (err) { setError(err.message || 'Could not record review.'); }
+    finally { setSaving(false); }
+  };
+
   const companyOptions = isSuperAdmin ? companies : assignedCompanies;
   const selectedCompany = useMemo(
     () => companyOptions.find((company) => company.id === companyId),
@@ -201,7 +238,37 @@ const ComplianceCenter = () => {
                 <p className="mt-2 text-xs text-slate-500">Impact areas: {(notice.assessment.impactAreas || []).join(', ')} · Status: {notice.assessment.status}</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-400">
                   {(notice.assessment.proposedActions || []).map((action, index) => <li key={index}>{action}</li>)}
+
                 </ul>
+                {(notice.assessment.reviews || []).map((review) => (
+                  <div key={review.createdAt} className="mt-3 border-t border-slate-200 pt-2 text-xs dark:border-white/10">
+                    <p className="font-semibold">{review.decision} · {review.reviewer?.name || review.reviewer?.email || 'Reviewer'}</p>
+                    <p className="mt-1 text-slate-600 dark:text-slate-400">{review.rationale}</p>
+                  </div>
+                ))}
+                {!isComplianceSpecialist && ['DRAFT', 'REJECTED'].includes(notice.assessment.status) && (
+                  <button type="button" disabled={saving} onClick={() => submitAssessmentForReview(notice.assessment.id)} className="mt-3 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                    {saving ? 'Submitting...' : 'Submit for specialist review'}
+                  </button>
+                )}
+                {isComplianceSpecialist && notice.assessment.status === 'SUBMITTED' && (
+                  <div className="mt-3 space-y-2 border-t border-slate-200 pt-3 dark:border-white/10">
+                    {activeReviewId === notice.assessment.id ? (
+                      <>
+                        <label className="block text-xs font-semibold">Review rationale
+                          <textarea value={reviewRationale} onChange={(event) => setReviewRationale(event.target.value)} rows={3} maxLength={3000} className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm dark:border-white/10 dark:bg-slate-900" placeholder="Explain the evidence reviewed and the reasons for your decision..." />
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" disabled={saving || reviewRationale.trim().length < 30} onClick={() => recordAssessmentReview(notice.assessment.id, 'APPROVED')} className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve assessment</button>
+                          <button type="button" disabled={saving || reviewRationale.trim().length < 30} onClick={() => recordAssessmentReview(notice.assessment.id, 'REJECTED')} className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold dark:border-white/10 disabled:opacity-50">Reject assessment</button>
+                          <button type="button" onClick={() => setActiveReviewId('')} className="rounded-xl px-3 py-2 text-xs">Cancel</button>
+                        </div>
+                      </>
+                    ) : (
+                      <button type="button" onClick={() => { setActiveReviewId(notice.assessment.id); setReviewRationale(''); }} className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white">Review assessment</button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div>
