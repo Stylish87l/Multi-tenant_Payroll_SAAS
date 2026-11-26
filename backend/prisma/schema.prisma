@@ -69,6 +69,8 @@ model Company {
   payrollReviewActions PayrollReviewAction[]
   employeeImportPreviews EmployeeImportPreview[]
   complianceAssessments ComplianceAssessment[]
+  complianceSpecialistAccess ComplianceSpecialistAccess[]
+  complianceReviews ComplianceAssessmentReview[]
 
   @@map("companies")
 }
@@ -102,6 +104,9 @@ model User {
   payrollReviewActions PayrollReviewAction[] @relation("PayrollReviewActor")
   employeeImportPreviews EmployeeImportPreview[]
   complianceAssessments ComplianceAssessment[] @relation("ComplianceAssessmentAuthor")
+  complianceSpecialistAccess ComplianceSpecialistAccess[] @relation("ComplianceSpecialistUser")
+  complianceAccessGranted ComplianceSpecialistAccess[] @relation("ComplianceAccessGrantor")
+  complianceReviews ComplianceAssessmentReview[] @relation("ComplianceAssessmentReviewer")
 
   @@index([companyId])
   @@map("users")
@@ -415,14 +420,52 @@ model ComplianceAssessment {
   status         String           @default("DRAFT")
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
+  submittedAt    DateTime?        @map("submitted_at")
+  reviewedAt     DateTime?        @map("reviewed_at")
   notice         ComplianceNotice @relation(fields: [noticeId], references: [id], onDelete: Restrict)
   company        Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   createdBy      User             @relation("ComplianceAssessmentAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  reviews        ComplianceAssessmentReview[]
 
   @@unique([noticeId, companyId])
   @@index([companyId, createdAt(sort: Desc)])
   @@index([noticeId, status])
   @@map("compliance_assessments")
+}
+
+
+model ComplianceSpecialistAccess {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  companyId   String   @map("company_id")
+  grantedById String   @map("granted_by_id")
+  grantedAt   DateTime @default(now()) @map("granted_at")
+  revokedAt   DateTime? @map("revoked_at")
+  user        User     @relation("ComplianceSpecialistUser", fields: [userId], references: [id], onDelete: Restrict)
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  grantedBy   User     @relation("ComplianceAccessGrantor", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  @@unique([userId, companyId])
+  @@index([companyId, revokedAt])
+  @@index([userId, revokedAt])
+  @@map("compliance_specialist_access")
+}
+
+model ComplianceAssessmentReview {
+  id           String              @id @default(uuid())
+  assessmentId String              @map("assessment_id")
+  companyId    String              @map("company_id")
+  reviewerId   String              @map("reviewer_id")
+  decision     String
+  rationale    String              @db.Text
+  createdAt    DateTime            @default(now()) @map("created_at")
+  assessment   ComplianceAssessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  reviewer     User                @relation("ComplianceAssessmentReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([assessmentId, createdAt(sort: Desc)])
+  @@index([companyId, createdAt(sort: Desc)])
+  @@map("compliance_assessment_reviews")
 }
 
 model PayrollReview {
@@ -510,6 +553,7 @@ model EmployeeImportPreview {
 
 enum Role {
   SUPER_ADMIN
+  COMPLIANCE_SPECIALIST
   ADMIN
   HR
   ACCOUNTANT
