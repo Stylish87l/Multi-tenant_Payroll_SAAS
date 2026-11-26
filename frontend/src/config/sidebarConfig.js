@@ -10,7 +10,7 @@ export const sidebarMenuItems = [
     name: 'Dashboard',
     path: '/dashboard',
     icon: Home,
-    roles: ['SUPER_ADMIN', 'COMPLIANCE_SPECIALIST', 'ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'],
+    roles: ['SUPER_ADMIN', 'ADMIN', 'HR', 'ACCOUNTANT', 'EMPLOYEE'],
   },
   {
     name: 'Employees',
