@@ -13,8 +13,10 @@ const IMPACT_AREAS = ['PAYE', 'SSNIT', 'ALLOWANCES', 'PAYROLL_PROCESS', 'EMPLOYE
 const ComplianceCenter = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const isComplianceSpecialist = user?.role === 'COMPLIANCE_SPECIALIST';
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
-  const companyId = isSuperAdmin ? selectedCompanyId : user?.companyId;
+  const [assignedCompanies, setAssignedCompanies] = useState([]);
+  const companyId = isSuperAdmin || isComplianceSpecialist ? selectedCompanyId : user?.companyId;
   const { data: companiesData, loading: companiesLoading } = useQuery(GET_COMPANIES, { skip: !isSuperAdmin });
   const companies = companiesData?.companies || [];
 
@@ -27,6 +29,25 @@ const ComplianceCenter = () => {
   const [impactAreas, setImpactAreas] = useState(['PAYE']);
   const [proposedActions, setProposedActions] = useState('');
   const [saving, setSaving] = useState(false);
+  const [reviewRationale, setReviewRationale] = useState('');
+  const [activeReviewId, setActiveReviewId] = useState('');
+
+  useEffect(() => {
+    if (!isComplianceSpecialist) return undefined;
+    let cancelled = false;
+    authFetch(REST_BASE + '/api/compliance-access/my-companies', { headers: { Accept: 'application/json' } })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Could not load assigned companies.');
+        if (!cancelled) {
+          const available = payload.companies || [];
+          setAssignedCompanies(available);
+          setSelectedCompanyId((current) => current || available[0]?.id || '');
+        }
+      })
+      .catch((err) => { if (!cancelled) setError(err.message || 'Could not load assigned companies.'); });
+    return () => { cancelled = true; };
+  }, [isComplianceSpecialist]);
 
   const loadNotices = useCallback(async () => {
     if (!companyId) {
@@ -93,9 +114,10 @@ const ComplianceCenter = () => {
     }
   };
 
+  const companyOptions = isSuperAdmin ? companies : assignedCompanies;
   const selectedCompany = useMemo(
-    () => companies.find((company) => company.id === companyId),
-    [companies, companyId],
+    () => companyOptions.find((company) => company.id === companyId),
+    [companyOptions, companyId],
   );
 
   if (isSuperAdmin && companiesLoading) return <Loader message="Loading companies..." />;
@@ -112,12 +134,12 @@ const ComplianceCenter = () => {
         </p>
       </header>
 
-      {isSuperAdmin && (
+      {(isSuperAdmin || isComplianceSpecialist) && (
         <Card className="space-y-2 p-5">
-          <label htmlFor="compliance-company" className="text-sm font-semibold text-slate-800 dark:text-slate-200">Company for this assessment</label>
-          <select id="compliance-company" value={selectedCompanyId} onChange={(event) => { setSelectedCompanyId(event.target.value); setActiveNoticeId(''); }} className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white">
+          <label htmlFor="compliance-company" className="text-sm font-semibold text-slate-800 dark:text-slate-200">{isSuperAdmin ? 'Company for this assessment' : 'Assigned company'}</label>
+          <select id="compliance-company" value={selectedCompanyId} onChange={(event) => { setSelectedCompanyId(event.target.value); setActiveNoticeId(''); setActiveReviewId(''); }} className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white">
             <option value="">Choose a company</option>
-            {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+            {companyOptions.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
           </select>
         </Card>
       )}
@@ -132,7 +154,7 @@ const ComplianceCenter = () => {
         </button>
       </div>
 
-      {!companyId && <Card className="p-5 text-sm text-slate-600 dark:text-slate-300">Select a company to review compliance notices.</Card>}
+      {!companyId && <Card className="p-5 text-sm text-slate-600 dark:text-slate-300">Select an assigned company to review compliance notices.</Card>}
       {error && <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-300">{error}</div>}
       {loading && <Loader message="Loading official notices..." />}
 
