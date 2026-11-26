@@ -4,10 +4,12 @@ import request from 'supertest';
 
 const prisma = {
   complianceNotice: { findMany: jest.fn(), findUnique: jest.fn() },
-  complianceAssessment: { findFirst: jest.fn() },
+  complianceAssessment: { findFirst: jest.fn(), updateMany: jest.fn() },
+  complianceAssessmentReview: { create: jest.fn() },
   complianceSource: { findMany: jest.fn() },
   $transaction: jest.fn(),
 };
+let testRole = 'ADMIN';
 const writeAudit = jest.fn();
 const actorFromReq = jest.fn(() => ({ userId: 'user-1' }));
 jest.unstable_mockModule('../config/db.js', () => ({ default: prisma }));
@@ -15,7 +17,7 @@ jest.unstable_mockModule('../middleware/auth.js', () => ({
   default: (req, _res, next) => {
     req.userId = 'user-1';
     req.companyId = 'tenant-a';
-    req.userRole = 'ADMIN';
+    req.userRole = testRole;
     next();
   },
 }));
@@ -37,6 +39,9 @@ describe('company compliance notice and draft assessment routes', () => {
     prisma.complianceNotice.findMany.mockReset();
     prisma.complianceNotice.findUnique.mockReset();
     prisma.complianceAssessment.findFirst.mockReset();
+    prisma.complianceAssessment.updateMany.mockReset();
+    prisma.complianceAssessmentReview.create.mockReset();
+    testRole = 'ADMIN';
     prisma.complianceSource.findMany.mockReset().mockResolvedValue([]);
     prisma.$transaction.mockReset();
     writeAudit.mockReset();
@@ -114,6 +119,39 @@ describe('company compliance notice and draft assessment routes', () => {
       proposedActions: ['Compare the notice effective date to current statutory configuration.'],
     });
     expect(response.status).toBe(409);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+  it('submits a draft assessment for specialist review and audits the transition', async () => {
+    prisma.complianceAssessment.findFirst.mockResolvedValue({ id: 'assessment-1', status: 'DRAFT', createdById: 'author-1' });
+    const updated = { id: 'assessment-1', status: 'SUBMITTED' };
+    const tx = { complianceAssessment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn().mockResolvedValue(updated) } };
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+    const response = await request(app).post('/api/companies/tenant-a/compliance/assessments/assessment-1/submit');
+    expect(response.status).toBe(200);
+    expect(response.body.assessment.status).toBe('SUBMITTED');
+    expect(tx.complianceAssessment.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'assessment-1', companyId: 'tenant-a', status: 'DRAFT' }, data: expect.objectContaining({ status: 'SUBMITTED' }) }));
+    expect(writeAudit).toHaveBeenCalledWith(tx, expect.objectContaining({ action: 'COMPLIANCE_ASSESSMENT_SUBMITTED' }));
+  });
+
+  it('records specialist approval with rationale and never activates tax configuration', async () => {
+    testRole = 'COMPLIANCE_SPECIALIST';
+    prisma.complianceAssessment.findFirst.mockResolvedValue({ id: 'assessment-1', status: 'SUBMITTED', createdById: 'author-1' });
+    const review = { id: 'review-1', decision: 'APPROVED', rationale: 'Verified the source publication and effective date with the relevant official guidance.' };
+    const tx = { complianceAssessment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) }, complianceAssessmentReview: { create: jest.fn().mockResolvedValue(review) } };
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+    const response = await request(app).patch('/api/companies/tenant-a/compliance/assessments/assessment-1/review').send({ decision: 'APPROVED', rationale: 'Verified the source publication and effective date with the relevant official guidance.' });
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('APPROVED');
+    expect(response.body.configurationChanged).toBe(false);
+    expect(tx.complianceAssessmentReview.create).toHaveBeenCalledWith({ data: expect.objectContaining({ assessmentId: 'assessment-1', companyId: 'tenant-a', reviewerId: 'user-1', decision: 'APPROVED' }) });
+    expect(writeAudit).toHaveBeenCalledWith(tx, expect.objectContaining({ action: 'COMPLIANCE_ASSESSMENT_APPROVED' }));
+  });
+
+  it('prevents a specialist from reviewing their own assessment', async () => {
+    testRole = 'COMPLIANCE_SPECIALIST';
+    prisma.complianceAssessment.findFirst.mockResolvedValue({ id: 'assessment-1', status: 'SUBMITTED', createdById: 'user-1' });
+    const response = await request(app).patch('/api/companies/tenant-a/compliance/assessments/assessment-1/review').send({ decision: 'REJECTED', rationale: 'The supplied impact assessment needs more source evidence before a decision can be made.' });
+    expect(response.status).toBe(403);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
