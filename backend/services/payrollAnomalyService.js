@@ -35,8 +35,35 @@ export const getPayrollReviewInputFingerprint = async ({ companyId, payrollRunId
     select: { id: true, isActive: true, deletedAt: true, updatedAt: true },
     orderBy: { id: 'asc' },
   });
+  // The deterministic review compares this draft with the latest earlier finalized
+  // run of the same type. Include that comparison basis in the fingerprint so edits,
+  // deletion, or a newly finalized prior run invalidate an otherwise unchanged review.
+  const comparisonRun = await client.payrollRun.findFirst({
+    where: { companyId, deletedAt: null, status: 'FINALIZED', runType: run.runType, month: { lt: run.month } },
+    orderBy: { month: 'desc' },
+    include: {
+      items: {
+        where: { deletedAt: null },
+        select: { employeeId: true, grossSalary: true, netPay: true, payeTax: true, ssnitEmployee: true },
+      },
+    },
+  });
   const payload = canonicalizeFingerprintValue({
     run: { id: run.id, companyId: run.companyId, month: run.month, runType: run.runType, taxConfigSnapshot: run.taxConfigSnapshot },
+    comparisonRun: comparisonRun ? {
+      id: comparisonRun.id,
+      month: comparisonRun.month,
+      runType: comparisonRun.runType,
+      items: comparisonRun.items
+        .map((item) => ({
+          employeeId: item.employeeId,
+          grossSalary: item.grossSalary,
+          netPay: item.netPay,
+          payeTax: item.payeTax,
+          ssnitEmployee: item.ssnitEmployee,
+        }))
+        .sort((a, b) => a.employeeId.localeCompare(b.employeeId)),
+    } : null,
     items: run.items.map((item) => ({
       id: item.id, employeeId: item.employeeId, deletedAt: item.deletedAt, updatedAt: item.updatedAt,
       grossSalary: item.grossSalary, basicSalarySnapshot: item.basicSalarySnapshot,
