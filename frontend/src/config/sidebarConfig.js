@@ -1,5 +1,5 @@
 // src/config/sidebarConfig.js
-import { Home, Users, DollarSign, FileText, Settings, Paintbrush, Receipt, UserCog, Sparkles, Upload } from 'lucide-react';
+import { Home, Users, DollarSign, FileText, Settings, Paintbrush, Receipt, UserCog, Sparkles, Upload, ShieldCheck } from 'lucide-react';
 
 /**
  * Role-based sidebar menu configuration
@@ -47,6 +47,12 @@ export const sidebarMenuItems = [
     path: '/ask-paylio',
     icon: Sparkles,
     roles: ['SUPER_ADMIN', 'ADMIN', 'HR', 'ACCOUNTANT'],
+  },
+  {
+    name: 'Compliance Watcher',
+    path: '/compliance',
+    icon: ShieldCheck,
+    roles: ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'],
   },
   {
     name: 'Reports',

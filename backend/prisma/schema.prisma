@@ -68,6 +68,7 @@ model Company {
   payrollReviewFindings PayrollReviewFinding[]
   payrollReviewActions PayrollReviewAction[]
   employeeImportPreviews EmployeeImportPreview[]
+  complianceAssessments ComplianceAssessment[]
 
   @@map("companies")
 }
@@ -100,6 +101,7 @@ model User {
   requestedPayrollReviews PayrollReview[] @relation("PayrollReviewRequester")
   payrollReviewActions PayrollReviewAction[] @relation("PayrollReviewActor")
   employeeImportPreviews EmployeeImportPreview[]
+  complianceAssessments ComplianceAssessment[] @relation("ComplianceAssessmentAuthor")
 
   @@index([companyId])
   @@map("users")
@@ -359,6 +361,69 @@ model TaxConfig {
   @@map("tax_configs")
 }
 
+
+model ComplianceSource {
+  id                  String             @id @default(uuid())
+  name                String
+  authority           String
+  topic               String
+  url                 String             @unique
+  active              Boolean            @default(true)
+  pollIntervalMinutes Int                @default(360) @map("poll_interval_minutes")
+  etag                String?
+  lastModified        String?            @map("last_modified")
+  lastContentHash     String?            @map("last_content_hash")
+  lastCheckedAt       DateTime?          @map("last_checked_at")
+  lastStatus          String?            @map("last_status")
+  lastError           String?            @db.Text @map("last_error")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  notices             ComplianceNotice[]
+
+  @@index([active, lastCheckedAt])
+  @@map("compliance_sources")
+}
+
+model ComplianceNotice {
+  id          String                 @id @default(uuid())
+  sourceId    String                 @map("source_id")
+  title       String
+  url         String
+  contentHash String                 @map("content_hash")
+  excerpt     String                 @db.Text
+  status      String                 @default("NEW")
+  detectedAt  DateTime               @default(now()) @map("detected_at")
+  publishedAt DateTime?              @map("published_at")
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+  source      ComplianceSource       @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  assessments ComplianceAssessment[]
+
+  @@unique([sourceId, contentHash])
+  @@index([status, detectedAt(sort: Desc)])
+  @@map("compliance_notices")
+}
+
+model ComplianceAssessment {
+  id             String           @id @default(uuid())
+  noticeId       String           @map("notice_id")
+  companyId      String           @map("company_id")
+  createdById    String           @map("created_by_id")
+  summary        String           @db.Text
+  impactAreas    Json             @map("impact_areas")
+  proposedActions Json            @map("proposed_actions")
+  status         String           @default("DRAFT")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  notice         ComplianceNotice @relation(fields: [noticeId], references: [id], onDelete: Restrict)
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdBy      User             @relation("ComplianceAssessmentAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([noticeId, companyId])
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([noticeId, status])
+  @@map("compliance_assessments")
+}
 
 model PayrollReview {
   id            String              @id @default(uuid())

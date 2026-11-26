@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import prisma, { assertDataEncryptionReady, disconnectDb } from '../config/db.js';
 import logger from '../config/logger.js';
 import { dispatchNotification } from '../services/notificationService.js';
-import { enqueueEmployeeReconciliation } from '../services/backgroundJobService.js';
+import { enqueueEmployeeReconciliation, enqueueComplianceWatcherScan } from '../services/backgroundJobService.js';
+import { scanOfficialComplianceSources } from '../services/complianceWatcherService.js';
 import { reconcileEmployeeAccountLinks } from '../services/employeeIdentityService.js';
 import { reconcileHubtelPayout } from '../services/paymentServices.js';
 
@@ -62,6 +63,11 @@ const processJob = async (job) => {
       logger.info('Hubtel payout reconciliation completed', { jobId: job.id, ...result });
       return;
     }
+    case 'COMPLIANCE_WATCHER_SCAN': {
+      const summary = await scanOfficialComplianceSources();
+      logger.info('Official compliance source scan completed', { jobId: job.id, ...summary });
+      return;
+    }
     case 'EMPLOYEE_ACCOUNT_RECONCILIATION': {
       const summary = await prisma.$transaction((tx) =>
         reconcileEmployeeAccountLinks(tx, { companyId: job.payload?.companyId })
@@ -102,6 +108,7 @@ const run = async () => {
   let lastReconcileHour = new Date().toISOString().slice(0, 13);
   let lastHealthReport = 0;
   let lastImportPreviewCleanup = 0;
+  let lastComplianceBucket = null;
   while (!shuttingDown) {
     try {
       if (Date.now() - lastHealthReport >= 5 * 60 * 1000) {
@@ -120,6 +127,11 @@ const run = async () => {
           logger.info('Expired encrypted employee import previews purged', { count: expired.count });
         }
         lastImportPreviewCleanup = Date.now();
+      }
+      const complianceBucket = Math.floor(Date.now() / (6 * 60 * 60 * 1000));
+      if (complianceBucket !== lastComplianceBucket) {
+        await enqueueComplianceWatcherScan();
+        lastComplianceBucket = complianceBucket;
       }
       const hour = new Date().toISOString().slice(0, 13);
       if (hour !== lastReconcileHour) {
