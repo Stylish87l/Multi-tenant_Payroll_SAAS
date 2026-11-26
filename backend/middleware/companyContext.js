@@ -13,15 +13,14 @@ const companyContext = async (req, _res, next) => {
       return next(notFound('Company not found.'));
     }
 
-    if (req.userRole !== 'SUPER_ADMIN' && req.companyId !== companyId) {
-      if (req.userRole !== 'COMPLIANCE_SPECIALIST') {
-        return next(forbidden('You do not have access to this company.'));
-      }
+    if (req.userRole === 'COMPLIANCE_SPECIALIST') {
       const access = await prisma.complianceSpecialistAccess.findFirst({
         where: { userId: req.userId, companyId, revokedAt: null },
         select: { id: true },
       });
       if (!access) return next(forbidden('You do not have an active specialist grant for this company.'));
+    } else if (req.userRole !== 'SUPER_ADMIN' && req.companyId !== companyId) {
+      return next(forbidden('You do not have access to this company.'));
     }
 
     const company = await prisma.company.findFirst({
