@@ -24,7 +24,7 @@ router.get('/my-companies', async (req, res, next) => {
   try {
     if (req.userRole !== 'COMPLIANCE_SPECIALIST') return res.status(403).json({ error: 'Specialist access required.' });
     const grants = await prisma.complianceSpecialistAccess.findMany({
-      where: { userId: req.userId, revokedAt: null, company: { deletedAt: null } },
+      where: { userId: req.userId, revokedAt: null, company: { is: { deletedAt: null } } },
       orderBy: { company: { name: 'asc' } },
       select: { company: { select: { id: true, name: true } } },
     });
