@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import http from 'http';
 import { randomUUID } from 'crypto';
@@ -90,7 +89,6 @@ app.get('/health', async (req, res) => {
   }
 });
 
-app.use(cookieParser());
 
 // Capture the raw body for Paystack's documented webhook HMAC verification.
 app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
