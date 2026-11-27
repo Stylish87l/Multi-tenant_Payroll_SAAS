@@ -1,4 +1,5 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
@@ -154,7 +155,7 @@ const csrfProtection = (req, res, next) => {
 
 // Safe bootstrap endpoint: issue a token once, then reuse the valid cookie token
 // so parallel tabs do not invalidate each other's in-flight refresh/logout requests.
-router.get('/csrf-token', (req, res) => {
+router.get('/csrf-token', cookieParser(), (req, res) => {
   let token = req.cookies?.csrf;
   if (!isValidCsrfToken(token)) {
     token = createCsrfToken();
@@ -168,7 +169,7 @@ router.get('/me', authMiddleware, (req, res) => {
   res.json({ user: req.user, companyId: req.companyId, role: req.userRole });
 });
 
-router.post('/refresh', csrfProtection, async (req, res) => {
+router.post('/refresh', cookieParser(), csrfProtection, async (req, res) => {
   const rawRefresh = req.cookies?.[REFRESH_COOKIE_NAME];
   if (!rawRefresh) {
     logger.warn('Refresh attempt blocked: No refresh cookie present', { origin: req.headers.origin });
@@ -276,7 +277,7 @@ router.post('/refresh', csrfProtection, async (req, res) => {
   }
 });
 
-router.post('/logout', csrfProtection, async (req, res) => {
+router.post('/logout', cookieParser(), csrfProtection, async (req, res) => {
   const rawRefresh = req.cookies?.[REFRESH_COOKIE_NAME];
   if (rawRefresh) {
     try {
