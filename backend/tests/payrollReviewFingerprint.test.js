@@ -41,6 +41,19 @@ const makeRun = () => ({
     },
   }],
 });
+const makePreviousRun = () => ({
+  id: 'prior-run-1',
+  month: '2026-10-01',
+  runType: 'REGULAR',
+  items: [{
+    employeeId: 'employee-1',
+    grossSalary: '4800.00',
+    netPay: '3900.00',
+    payeTax: '550.00',
+    ssnitEmployee: '260.00',
+  }],
+});
+
 const makeActiveEmployees = () => [{
   id: 'employee-1', isActive: true, deletedAt: null,
   updatedAt: new Date('2026-11-24T10:00:00.000Z'),
@@ -53,7 +66,9 @@ describe('payroll review input fingerprint', () => {
   beforeEach(() => {
     process.env.PAYROLL_REVIEW_FINGERPRINT_SECRET = 'test-payroll-review-fingerprint-secret-32-bytes';
     delete process.env.CSRF_SECRET;
-    prisma.payrollRun.findFirst.mockResolvedValue(makeRun());
+    prisma.payrollRun.findFirst.mockImplementation(async ({ where }) => (
+      where?.status === 'FINALIZED' ? makePreviousRun() : makeRun()
+    ));
     prisma.employee.findMany.mockResolvedValue(makeActiveEmployees());
   });
 
@@ -79,6 +94,26 @@ describe('payroll review input fingerprint', () => {
       ...makeRun(),
       items: [{ ...makeRun().items[0], netPay: '4000.00' }],
     });
+    const changed = await getPayrollReviewInputFingerprint({ companyId: 'tenant-1', payrollRunId: 'run-1' });
+    expect(changed).not.toBe(first);
+  });
+
+  it('changes when the previous finalized payroll comparison basis changes', async () => {
+    const first = await getPayrollReviewInputFingerprint({ companyId: 'tenant-1', payrollRunId: 'run-1' });
+    prisma.payrollRun.findFirst.mockImplementation(async ({ where }) => (
+      where?.status === 'FINALIZED'
+        ? { ...makePreviousRun(), items: [{ ...makePreviousRun().items[0], netPay: '3700.00' }] }
+        : makeRun()
+    ));
+    const changed = await getPayrollReviewInputFingerprint({ companyId: 'tenant-1', payrollRunId: 'run-1' });
+    expect(changed).not.toBe(first);
+  });
+
+  it('changes when a previous finalized payroll becomes available', async () => {
+    const first = await getPayrollReviewInputFingerprint({ companyId: 'tenant-1', payrollRunId: 'run-1' });
+    prisma.payrollRun.findFirst.mockImplementation(async ({ where }) => (
+      where?.status === 'FINALIZED' ? null : makeRun()
+    ));
     const changed = await getPayrollReviewInputFingerprint({ companyId: 'tenant-1', payrollRunId: 'run-1' });
     expect(changed).not.toBe(first);
   });
