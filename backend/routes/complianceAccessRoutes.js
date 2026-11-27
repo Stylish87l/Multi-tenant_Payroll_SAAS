@@ -34,6 +34,28 @@ router.get('/my-companies', async (req, res, next) => {
 
 router.use(rbac(['SUPER_ADMIN']));
 
+router.get('/specialists', async (req, res, next) => {
+  try {
+    const take = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+    const specialists = await prisma.user.findMany({
+      where: { role: 'COMPLIANCE_SPECIALIST', deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true, name: true, email: true, status: true, companyId: true, createdAt: true,
+        complianceSpecialistAccess: {
+          orderBy: { grantedAt: 'desc' },
+          select: {
+            id: true, companyId: true, grantedAt: true, revokedAt: true,
+            company: { select: { name: true } },
+          },
+        },
+      },
+    });
+    return res.json({ specialists });
+  } catch (error) { return next(error); }
+});
+
 router.post('/specialists', async (req, res, next) => {
   try {
     const parsed = specialistSchema.safeParse(req.body ?? {});
