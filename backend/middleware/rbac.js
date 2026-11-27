@@ -10,7 +10,7 @@ const rbac = (allowedRoles) => (req, res, next) => {
   if (!hasRoleAccess(userRole, allowedRoles)) {
     return res.status(403).json({ error: 'Access denied: Insufficient permissions' });
   }
-  if (userRole !== 'SUPER_ADMIN') {
+  if (userRole !== 'SUPER_ADMIN' && userRole !== 'COMPLIANCE_SPECIALIST') {
     if (!req.companyId) return res.status(403).json({ error: 'Access denied: Company context missing' });
     const targetCompanyId = req.params?.companyId || req.body?.companyId || req.query?.companyId;
     if (targetCompanyId && targetCompanyId !== req.companyId) {

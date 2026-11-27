@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import http from 'http';
 import { randomUUID } from 'crypto';
@@ -36,6 +35,7 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import payrollReviewRoutes from './routes/payrollReviewRoutes.js';
 import askPaylioRoutes from './routes/askPaylioRoutes.js';
 import complianceRoutes from './routes/complianceRoutes.js';
+import complianceAccessRoutes from './routes/complianceAccessRoutes.js';
 import webhookRoutes from './routes/webhooks.js';
 import typeDefs from './graphql/typeDefs.js';
 import resolvers from './graphql/resolvers.js';
@@ -89,7 +89,6 @@ app.get('/health', async (req, res) => {
   }
 });
 
-app.use(cookieParser());
 
 // Capture the raw body for Paystack's documented webhook HMAC verification.
 app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
@@ -161,6 +160,7 @@ app.use('/api/tenants', authMiddleware, tenantRoutes);
 app.use('/api/companies/:companyId/payroll-reviews', authMiddleware, payrollReviewRoutes);
 app.use('/api/companies/:companyId/ask-paylio', authMiddleware, askPaylioRoutes);
 app.use('/api/companies/:companyId/compliance', authMiddleware, complianceRoutes);
+app.use('/api/compliance-access', authMiddleware, complianceAccessRoutes);
 app.use('/api/companies', authMiddleware, tenantBrandingRoutes);
 app.use('/api/notifications', authMiddleware, notificationRoutes);
 // FIXED: users router was mounted behind authMiddleware, so POST /accept-invite (public by design)

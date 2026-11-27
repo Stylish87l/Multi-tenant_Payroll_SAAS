@@ -29,7 +29,7 @@ const assessmentSchema = z.object({
 router.use(authMiddleware);
 router.use(noStore);
 router.use(companyContext);
-router.use(rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']));
+router.use(rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'COMPLIANCE_SPECIALIST']));
 
 router.get('/notices', readLimiter, async (req, res, next) => {
   try {
@@ -44,7 +44,11 @@ router.get('/notices', readLimiter, async (req, res, next) => {
             take: 1,
             select: {
               id: true, summary: true, impactAreas: true, proposedActions: true,
-              status: true, createdAt: true,
+              status: true, createdAt: true, submittedAt: true, reviewedAt: true,
+              reviews: { orderBy: { createdAt: 'desc' }, take: 5, select: {
+                decision: true, rationale: true, createdAt: true,
+                reviewer: { select: { id: true, name: true, email: true } },
+              } },
             },
           },
         },
@@ -73,7 +77,7 @@ router.get('/notices', readLimiter, async (req, res, next) => {
   }
 });
 
-router.post('/notices/:noticeId/assessments', draftLimiter, async (req, res, next) => {
+router.post('/notices/:noticeId/assessments', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), draftLimiter, async (req, res, next) => {
   try {
     const parsed = assessmentSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -122,6 +126,90 @@ router.post('/notices/:noticeId/assessments', draftLimiter, async (req, res, nex
     if (error?.code === 'P2002') return res.status(409).json({ error: 'A draft assessment already exists for this notice and company.' });
     return next(error);
   }
+});
+
+
+const submitLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+const reviewLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+
+router.post('/assessments/:assessmentId/submit', rbac(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']), submitLimiter, async (req, res, next) => {
+  try {
+    const assessment = await prisma.complianceAssessment.findFirst({
+      where: { id: req.params.assessmentId, companyId: req.reviewCompanyId },
+      select: { id: true, status: true, createdById: true },
+    });
+    if (!assessment) return res.status(404).json({ error: 'Compliance assessment not found.' });
+    if (!['DRAFT', 'REJECTED'].includes(assessment.status)) {
+      return res.status(409).json({ error: 'Only draft or rejected assessments can be submitted.' });
+    }
+    const updated = await prisma.$transaction(async (tx) => {
+      const changed = await tx.complianceAssessment.updateMany({
+        where: { id: assessment.id, companyId: req.reviewCompanyId, status: assessment.status },
+        data: { status: 'SUBMITTED', submittedAt: new Date(), reviewedAt: null },
+      });
+      if (changed.count !== 1) return null;
+      const result = await tx.complianceAssessment.findFirst({ where: { id: assessment.id, companyId: req.reviewCompanyId } });
+      await writeAudit(tx, {
+        actor: actorFromReq(req), companyId: req.reviewCompanyId,
+        action: 'COMPLIANCE_ASSESSMENT_SUBMITTED', resourceType: 'ComplianceAssessment',
+        resourceId: assessment.id,
+      });
+      return result;
+    });
+    if (!updated) return res.status(409).json({ error: 'Assessment status changed. Refresh and try again.' });
+    return res.json({ assessment: updated });
+  } catch (error) { return next(error); }
+});
+
+const reviewSchema = z.object({
+  decision: z.enum(['APPROVED', 'REJECTED']),
+  rationale: z.string().trim().min(30).max(3000),
+}).strict();
+
+router.patch('/assessments/:assessmentId/review', rbac(['SUPER_ADMIN', 'COMPLIANCE_SPECIALIST']), reviewLimiter, async (req, res, next) => {
+  try {
+    const parsed = reviewSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({
+      error: 'Provide an approval or rejection decision and a rationale of at least 30 characters.',
+      details: parsed.error.issues.map((issue) => ({ path: issue.path, message: issue.message })),
+    });
+    const assessment = await prisma.complianceAssessment.findFirst({
+      where: { id: req.params.assessmentId, companyId: req.reviewCompanyId },
+      select: { id: true, status: true, createdById: true },
+    });
+    if (!assessment) return res.status(404).json({ error: 'Compliance assessment not found.' });
+    if (assessment.status !== 'SUBMITTED') return res.status(409).json({ error: 'Only submitted assessments can be reviewed.' });
+    if (assessment.createdById === req.userId) return res.status(403).json({ error: 'You cannot review your own assessment.' });
+
+    const result = await prisma.$transaction(async (tx) => {
+      const changed = await tx.complianceAssessment.updateMany({
+        where: { id: assessment.id, companyId: req.reviewCompanyId, status: 'SUBMITTED' },
+        data: {
+          status: parsed.data.decision,
+          reviewedAt: new Date(),
+        },
+      });
+      if (changed.count !== 1) return null;
+      const review = await tx.complianceAssessmentReview.create({
+        data: {
+          assessmentId: assessment.id,
+          companyId: req.reviewCompanyId,
+          reviewerId: req.userId,
+          decision: parsed.data.decision,
+          rationale: parsed.data.rationale,
+        },
+      });
+      await writeAudit(tx, {
+        actor: actorFromReq(req), companyId: req.reviewCompanyId,
+        action: parsed.data.decision === 'APPROVED' ? 'COMPLIANCE_ASSESSMENT_APPROVED' : 'COMPLIANCE_ASSESSMENT_REJECTED',
+        resourceType: 'ComplianceAssessment', resourceId: assessment.id,
+        details: { reviewId: review.id, decision: parsed.data.decision },
+      });
+      return review;
+    });
+    if (!result) return res.status(409).json({ error: 'Assessment was already reviewed. Refresh and try again.' });
+    return res.json({ review: result, status: parsed.data.decision, configurationChanged: false });
+  } catch (error) { return next(error); }
 });
 
 export default router;
